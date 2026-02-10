@@ -16,9 +16,9 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
     <div class="card-body">
         <h3>Export Data</h3>
         <div style="display: flex; gap: 15px; margin-top: 15px;">
-            <button class="btn btn-primary" onclick="exportGeoJSON()">📥 Download GeoJSON</button>
-            <button class="btn btn-danger" onclick="exportPDF()">📄 Download PDF Report</button>
-            <button class="btn btn-secondary" onclick="exportCSV()">📊 Export CSV Data</button>
+            <button class="btn btn-primary" onclick="exportGeoJSON()">Download GeoJSON</button>
+            <button class="btn btn-danger" onclick="exportPDF()">Download PDF Report</button>
+            <button class="btn btn-secondary" onclick="exportCSV()">Export CSV Data</button>
         </div>
     </div>
 </div>
@@ -90,7 +90,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
             </tbody>
         </table>
         
-        <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+        <div style="margin-top: 20px; padding: 15px; background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: 8px;">
             <h4>Audit Criteria:</h4>
             <ul>
                 <li><strong>Grade A (80-100):</strong> Excellent protection, low light exposure, high species diversity</li>
