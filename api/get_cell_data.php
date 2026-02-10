@@ -32,7 +32,7 @@ if ($cell) {
 } else {
     echo json_encode([
         'success' => false,
-        'error' => 'Cell not found',
+        'error' => 'Area not found',
         'message' => 'Try cell_2937 or cell_120.9000_14.3000'
     ]);
 }

@@ -12,7 +12,7 @@ require_once 'includes/header.php';
 
 <!-- Data Ingestion -->
 <div class="card">
-    <h2 class="card-header">Data Ingestion</h2>
+    <h2 class="card-header">📁 Data Ingestion</h2>
     <div class="card-body">
         <h4>Upload Bird Observation Data</h4>
         <form id="dataUploadForm" enctype="multipart/form-data">
@@ -34,11 +34,11 @@ require_once 'includes/header.php';
 <!-- API Management -->
 <div class="grid-2">
     <div class="card">
-        <h2 class="card-header"> Satellite Data Fetch</h2>
+        <h2 class="card-header">🛰️ Satellite Data Fetch</h2>
         <div class="card-body">
             <h4>NASA VIIRS (Light Pollution)</h4>
             <button class="btn btn-primary" onclick="fetchVIIRS()">
-                Fetch Latest VIIRS Data
+                🔄 Fetch Latest VIIRS Data
             </button>
             <p style="margin-top: 10px; color: #666;">
                 <strong>Last Fetch:</strong> 2026-01-28 14:30 UTC<br>
@@ -49,7 +49,7 @@ require_once 'includes/header.php';
             
             <h4>MODIS NDVI (Vegetation)</h4>
             <button class="btn btn-primary" onclick="fetchMODIS()">
-                Fetch Latest MODIS Data
+                🔄 Fetch Latest MODIS Data
             </button>
             <p style="margin-top: 10px; color: #666;">
                 <strong>Last Fetch:</strong> 2026-01-25 08:15 UTC<br>
@@ -59,11 +59,11 @@ require_once 'includes/header.php';
     </div>
     
     <div class="card">
-        <h2 class="card-header">Weather Data (NOAA)</h2>
+        <h2 class="card-header">🌡️ Weather Data (NOAA)</h2>
         <div class="card-body">
             <h4>Temperature & Precipitation</h4>
             <button class="btn btn-primary" onclick="fetchNOAA()">
-                Fetch NOAA Climate Data
+                🔄 Fetch NOAA Climate Data
             </button>
             <p style="margin-top: 10px; color: #666;">
                 <strong>Last Fetch:</strong> 2026-01-30 06:00 UTC<br>
@@ -84,7 +84,7 @@ require_once 'includes/header.php';
 
 <!-- Model Versioning -->
 <div class="card">
-    <h2 class="card-header">Model Versioning & Management</h2>
+    <h2 class="card-header">🤖 Model Versioning & Management</h2>
     <div class="card-body">
         <div class="grid-2">
             <div>
@@ -146,7 +146,7 @@ require_once 'includes/header.php';
 
 <!-- Threshold Configuration -->
 <div class="card">
-    <h2 class="card-header">Threshold Configuration</h2>
+    <h2 class="card-header">⚙️ Threshold Configuration</h2>
     <div class="card-body">
         <div class="grid-2">
             <div>
@@ -183,13 +183,13 @@ require_once 'includes/header.php';
                 </div>
             </div>
         </div>
-        <button class="btn btn-primary" style="margin-top: 15px;" onclick="saveThresholds()">Save Configuration</button>
+        <button class="btn btn-primary" style="margin-top: 15px;" onclick="saveThresholds()">💾 Save Configuration</button>
     </div>
 </div>
 
 <!-- Validation & Error Logs -->
 <div class="card">
-    <h2 class="card-header">Validation & Error Logs</h2>
+    <h2 class="card-header">⚠️ Validation & Error Logs</h2>
     <div class="card-body">
         <h4>Recent Data Quality Issues</h4>
         <table>
@@ -239,7 +239,7 @@ require_once 'includes/header.php';
 <!-- Security & Activity Logs -->
 <div class="grid-2">
     <div class="card">
-        <h2 class="card-header">Security & Access Logs</h2>
+        <h2 class="card-header">🔒 Security & Access Logs</h2>
         <div class="card-body">
             <h4>Recent Activity</h4>
             <table style="font-size: 0.9rem;">
@@ -272,7 +272,7 @@ require_once 'includes/header.php';
     </div>
     
     <div class="card">
-        <h2 class="card-header">System Health</h2>
+        <h2 class="card-header">📊 System Health</h2>
         <div class="card-body">
             <h4>Monitoring Status</h4>
             <div style="margin-top: 15px;">

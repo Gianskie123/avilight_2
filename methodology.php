@@ -94,7 +94,7 @@ require_once 'includes/header.php';
         <h3 style="margin-top: 30px;">2.2 Environmental Data</h3>
         <div class="grid-2">
             <div>
-                <h4>Satellite Imagery</h4>
+                <h4>🛰️ Satellite Imagery</h4>
                 <ul>
                     <li><strong>NASA VIIRS:</strong> Nighttime light radiance (DNB, 15 arc-second resolution)</li>
                     <li><strong>MODIS:</strong> NDVI vegetation index (250m resolution, 16-day composite)</li>
@@ -103,7 +103,7 @@ require_once 'includes/header.php';
             </div>
             
             <div>
-                <h4>Climate Data</h4>
+                <h4>🌡️ Climate Data</h4>
                 <ul>
                     <li><strong>NOAA:</strong> Temperature, precipitation, humidity</li>
                     <li><strong>PAGASA:</strong> Local weather station data</li>

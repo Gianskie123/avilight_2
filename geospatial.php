@@ -156,17 +156,17 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
     </div>
 </div>
 
-<!-- Cell Analysis Panel (Hidden by default) -->
+<!-- Area Analysis Panel (Hidden by default) -->
 <div id="cellPanel" class="side-panel" style="display: none;">
     <span class="side-panel-close" onclick="closeCellPanel()">&times;</span>
-    <h3 id="cellTitle">Cell Analysis</h3>
+    <h3 id="cellTitle">Area Analysis</h3>
     <div id="cellContent">
-        <p><strong>Cell ID:</strong> <span id="cellId"></span></p>
+        <p><strong>Area ID:</strong> <span id="cellId"></span></p>
         <p><strong>Coordinates:</strong> <span id="cellCoords"></span></p>
         <p><strong>Predicted Richness:</strong> <span id="predictedRichness"></span></p>
         <p><strong>Actual Richness:</strong> <span id="actualRichness"></span></p>
         <hr>
-        <h4>Species in this Cell:</h4>
+        <h4>Species in this Area:</h4>
         <ul id="speciesList"></ul>
         <hr>
         <h4>SHAP Feature Importance:</h4>
@@ -190,10 +190,10 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
     </div>
     
     <div class="card">
-        <h2 class="card-header">Local Explainer - Search Cell</h2>
+        <h2 class="card-header">Local Explainer - Search Area</h2>
         <div class="card-body">
             <div class="form-group">
-                <label class="form-label">Enter Cell ID:</label>
+                <label class="form-label">Enter Area ID:</label>
                 <input type="text" class="form-control" id="cellSearchInput" placeholder="e.g., cell_2937">
                 <button class="btn btn-primary" style="margin-top: 10px;" onclick="searchCell()">Search</button>
             </div>
@@ -212,10 +212,11 @@ const MM_BOUNDS = L.latLngBounds(
     L.latLng(14.78, 121.15)
 );
 
-// Initialize map centered on Metro Manila with bounded view
+// Initialize map centered on Metro Manila with bounded view and Canvas renderer for performance
 const map = L.map('map', {
     maxBounds: MM_BOUNDS.pad(0.1),
-    minZoom: 10
+    minZoom: 10,
+    preferCanvas: true
 }).setView([14.5995, 120.9842], 11);
 
 // Add OpenStreetMap tile layer
@@ -311,10 +312,24 @@ function applyLandCoverFilter() {
                 showCellAnalysis(feature.properties);
             });
 
+            // Bind tooltip for quick hover info (lightweight)
+            var lat = feature.properties.latitude;
+            var lng = feature.properties.longitude;
+            var lcCode = feature.properties.landcover;
+            if (lat != null && lng != null && lcCode != null) {
+                layer.bindTooltip(
+                    '<strong>' + getLandCoverName(lcCode) + '</strong><br>' +
+                    lat.toFixed(4) + ', ' + lng.toFixed(4),
+                    { sticky: true, className: 'map-tooltip' }
+                );
+            }
+
+            // Bind popup with more detail on click
             layer.bindPopup(
-                '<strong>Cell ID:</strong> ' + feature.properties.cell_id + '<br>' +
+                '<strong>Area:</strong> ' + feature.properties.cell_id + '<br>' +
                 '<strong>Land Cover:</strong> ' + getLandCoverName(feature.properties.landcover) + '<br>' +
-                '<strong>Coords:</strong> ' + feature.properties.latitude.toFixed(4) + ', ' + feature.properties.longitude.toFixed(4)
+                '<strong>Coords:</strong> ' + feature.properties.latitude.toFixed(4) + ', ' + feature.properties.longitude.toFixed(4) + '<br>' +
+                '<em>Click for full analysis</em>'
             );
         }
     }).addTo(map);
@@ -362,6 +377,9 @@ function filterSpecies(type) {
     alert('Filtering ' + type + ' species - Implementation will update map colors based on species type');
 }
 
+// Track the SHAP chart instance to prevent memory leaks
+let shapChartInstance = null;
+
 // Show cell analysis panel
 function showCellAnalysis(properties) {
     var cellData = cellsData.find(function(c) { return c.cell_id === properties.cell_id; });
@@ -397,8 +415,14 @@ function showCellAnalysis(properties) {
         speciesList.appendChild(li);
     });
 
+    // Destroy previous chart instance to prevent memory leaks and slowdown
+    if (shapChartInstance) {
+        shapChartInstance.destroy();
+        shapChartInstance = null;
+    }
+
     var ctx = document.getElementById('shapChart').getContext('2d');
-    new Chart(ctx, {
+    shapChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: ['Light', 'NDVI', 'Temperature', 'Elevation'],
@@ -436,7 +460,7 @@ function showCellAnalysis(properties) {
 
     document.getElementById('shapExplanation').innerHTML =
         '<p style="margin-top: 10px; font-size: 0.9rem; color: #666;">' +
-        '<strong>Interpretation:</strong> In this cell, ' + lightText +
+        '<strong>Interpretation:</strong> In this area, ' + lightText +
         ', while NDVI ' + ndviText + '.</p>';
 
     document.getElementById('cellPanel').style.display = 'block';
@@ -456,7 +480,7 @@ function searchCell() {
         var ndviImpact = cellData.shap_values.ndvi > 0 ? 'Positive' : 'Negative';
         document.getElementById('searchResult').innerHTML =
             '<div class="alert alert-info" style="margin-top: 15px;">' +
-            '<strong>Cell Found:</strong> ' + cellId + '<br>' +
+            '<strong>Area Found:</strong> ' + cellId + '<br>' +
             '<strong>Predicted Richness:</strong> ' + cellData.predicted_richness + '<br>' +
             '<strong>Light Impact:</strong> ' + lightImpact + ' (' + cellData.shap_values.light.toFixed(1) + '%)<br>' +
             '<strong>NDVI Impact:</strong> ' + ndviImpact + ' (' + cellData.shap_values.ndvi.toFixed(1) + '%)' +
@@ -467,7 +491,7 @@ function searchCell() {
     } else {
         document.getElementById('searchResult').innerHTML =
             '<div class="alert alert-danger" style="margin-top: 15px;">' +
-            'Cell ID not found. Try: cell_2937 or cell_120.9000_14.3000' +
+            'Area ID not found. Try: cell_2937 or cell_120.9000_14.3000' +
             '</div>';
     }
 }

@@ -803,6 +803,21 @@ tr:hover {
     background: var(--bg-card) !important;
 }
 
+/* Map hover tooltip (dark theme) */
+.map-tooltip {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px !important;
+    box-shadow: var(--shadow) !important;
+    padding: 6px 10px !important;
+    font-size: 0.85rem !important;
+}
+
+.map-tooltip::before {
+    border-top-color: var(--bg-card) !important;
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
     .dashboard-layout {
