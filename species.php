@@ -126,22 +126,28 @@ $filtered_species = array_filter($species_data, function($species) use ($toleran
 </div>
 
 <!-- Statistics Summary -->
+<?php
+// Single-pass counting instead of multiple array_filter passes
+$total_species = count($species_data);
+$sensitive_count = 0;
+$migratory_count = 0;
+foreach ($species_data as $s) {
+    if ($s['light_tolerance'] === 'Sensitive') $sensitive_count++;
+    if ($s['migration_status'] === 'Migratory') $migratory_count++;
+}
+?>
 <div class="grid-3" style="margin-top: 40px;">
     <div class="stat-card">
         <div class="stat-label">Total Species</div>
-        <div class="stat-value"><?php echo count($species_data); ?></div>
+        <div class="stat-value"><?php echo $total_species; ?></div>
     </div>
     <div class="stat-card danger">
         <div class="stat-label">Light-Sensitive Species</div>
-        <div class="stat-value">
-            <?php echo count(array_filter($species_data, function($s) { return $s['light_tolerance'] === 'Sensitive'; })); ?>
-        </div>
+        <div class="stat-value"><?php echo $sensitive_count; ?></div>
     </div>
     <div class="stat-card info">
         <div class="stat-label">Migratory Species</div>
-        <div class="stat-value">
-            <?php echo count(array_filter($species_data, function($s) { return $s['migration_status'] === 'Migratory'; })); ?>
-        </div>
+        <div class="stat-value"><?php echo $migratory_count; ?></div>
     </div>
 </div>
 

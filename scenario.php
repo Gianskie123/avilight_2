@@ -238,7 +238,7 @@ function updateRecoveryChart(impact) {
 
 function updateAffectedAreas(impact) {
     const tbody = document.getElementById('affectedAreasTable');
-    tbody.innerHTML = '';
+    let html = '';
     
     kbaData.forEach(area => {
         const currentSpecies = area.species_count;
@@ -246,7 +246,7 @@ function updateAffectedAreas(impact) {
         const change = predictedSpecies - currentSpecies;
         const impactLevel = Math.abs(change) > 10 ? 'High' : Math.abs(change) > 5 ? 'Medium' : 'Low';
         
-        const row = `
+        html += `
             <tr>
                 <td>${area.name}</td>
                 <td>${currentSpecies}</td>
@@ -257,8 +257,8 @@ function updateAffectedAreas(impact) {
                 <td><span class="badge ${impactLevel === 'High' ? 'badge-danger' : impactLevel === 'Medium' ? 'badge-warning' : 'badge-info'}">${impactLevel}</span></td>
             </tr>
         `;
-        tbody.innerHTML += row;
     });
+    tbody.innerHTML = html;
 }
 
 function generateRecommendations(light, ndvi, temp, totalImpact) {

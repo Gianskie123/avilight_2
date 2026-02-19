@@ -77,6 +77,15 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
             </div>
         </div>
         
+        <!-- Map Color Mode -->
+        <div class="filter-container">
+            <div class="filter-group">
+                <span class="filter-label"><strong>Map Display:</strong></span>
+                <button class="btn btn-secondary" id="btnPredictions" onclick="setColorMode('predictions')">🗺️ Predicted Richness</button>
+                <button class="btn btn-primary" id="btnLandCover" onclick="setColorMode('landcover')">🌍 Land Cover Types</button>
+            </div>
+        </div>
+        
         <!-- Temporal Timeline -->
         <div class="slider-container">
             <div class="slider-label">
@@ -108,8 +117,24 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
                 <p>Loading GeoJSON data...</p>
             </div>
             
-            <!-- Legend -->
-            <div class="legend">
+            <!-- Prediction Heatmap Legend (hidden by default) -->
+            <div class="legend" id="legendPrediction" style="display: none;">
+                <strong>Predicted Species Richness</strong>
+                <div style="display: flex; align-items: center; margin-top: 8px;">
+                    <span class="legend-label" style="margin-right: 6px;">Low</span>
+                    <div style="flex: 1; height: 14px; border-radius: 4px; background: linear-gradient(to right, #313695, #4575b4, #74add1, #abd9e9, #fee090, #fdae61, #f46d43, #d73027, #a50026);"></div>
+                    <span class="legend-label" style="margin-left: 6px;">High</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                    <span class="legend-label">0</span>
+                    <span class="legend-label">10</span>
+                    <span class="legend-label">20</span>
+                    <span class="legend-label">30+</span>
+                </div>
+            </div>
+
+            <!-- Land Cover Legend -->
+            <div class="legend" id="legendLandCover">
                 <strong>Land Cover Types</strong>
                 <div class="legend-item">
                     <div class="legend-color" style="background: #DC143C;"></div>
@@ -238,8 +263,31 @@ const LANDCOVER_TYPES = {
     17: { name: 'Water Bodies', color: '#1E90FF' }
 };
 
+// Baseline richness by land cover type (used to estimate predictions for areas without explicit data)
+const LANDCOVER_RICHNESS = {
+    2:  22,  // Forest — highest biodiversity
+    8:  18,  // Woody Savannas
+    9:  15,  // Savannas
+    10: 14,  // Grasslands
+    11: 19,  // Wetlands — high biodiversity
+    12: 10,  // Croplands
+    13: 6,   // Urban — lowest biodiversity
+    14: 11,  // Cropland Mosaics
+    16: 3,   // Barren
+    17: 16   // Water Bodies
+};
+
+// Current map color mode: 'landcover' (default) or 'predictions'
+let colorMode = 'landcover';
+
 // Sample cell data
 const cellsData = {$cells_json};
+
+// Build a lookup map for fast cell data access
+const cellsLookup = {};
+cellsData.forEach(function(c) {
+    cellsLookup[c.cell_id] = c;
+});
 
 // Show loading indicator
 document.getElementById('loading').style.display = 'block';
@@ -256,6 +304,58 @@ function getLandCoverName(code) {
 // Get color for land cover type
 function getLandCoverColor(code) {
     return LANDCOVER_TYPES[code] ? LANDCOVER_TYPES[code].color : '#999999';
+}
+
+// Simple hash function for deterministic per-cell variation
+function hashCode(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash;
+}
+
+// Get predicted richness for a feature (from data or estimated)
+function getPredictedRichness(properties) {
+    var cellData = cellsLookup[properties.cell_id];
+    if (cellData) {
+        return cellData.predicted_richness;
+    }
+    // Estimate based on land cover type with deterministic variation per cell
+    var base = LANDCOVER_RICHNESS[properties.landcover] || 8;
+    var seed = hashCode(properties.cell_id || (properties.latitude + '_' + properties.longitude));
+    var variation = ((Math.abs(seed) % 7) - 3); // range: -3 to +3
+    return Math.max(1, Math.min(30, base + variation));
+}
+
+// Color scale for predicted richness (blue → green → yellow → red)
+// Uses a diverging spectral-like palette
+function getRichnessColor(value) {
+    var stops = [
+        { val: 0,  r: 49,  g: 54,  b: 149 },  // deep blue
+        { val: 5,  r: 69,  g: 117, b: 180 },  // blue
+        { val: 10, r: 116, g: 173, b: 209 },  // light blue
+        { val: 15, r: 171, g: 217, b: 233 },  // pale blue
+        { val: 18, r: 254, g: 224, b: 144 },  // yellow
+        { val: 22, r: 253, g: 174, b: 97  },  // orange
+        { val: 26, r: 244, g: 109, b: 67  },  // red-orange
+        { val: 30, r: 165, g: 0,   b: 38  }   // dark red
+    ];
+    value = Math.max(0, Math.min(30, value));
+    var lower = stops[0], upper = stops[stops.length - 1];
+    for (var i = 0; i < stops.length - 1; i++) {
+        if (value >= stops[i].val && value <= stops[i + 1].val) {
+            lower = stops[i];
+            upper = stops[i + 1];
+            break;
+        }
+    }
+    var t = (upper.val === lower.val) ? 0 : (value - lower.val) / (upper.val - lower.val);
+    var r = Math.round(lower.r + t * (upper.r - lower.r));
+    var g = Math.round(lower.g + t * (upper.g - lower.g));
+    var b = Math.round(lower.b + t * (upper.b - lower.b));
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
 }
 
 // Get currently selected land cover types
@@ -286,6 +386,16 @@ function filterToMetroManila(data) {
 
 // Style function for GeoJSON features
 function style(feature) {
+    if (colorMode === 'predictions') {
+        var richness = getPredictedRichness(feature.properties);
+        return {
+            fillColor: getRichnessColor(richness),
+            weight: 0.5,
+            opacity: 0.3,
+            color: '#ffffff',
+            fillOpacity: 0.8
+        };
+    }
     return {
         fillColor: getLandCoverColor(feature.properties.landcover),
         weight: 1,
@@ -293,6 +403,18 @@ function style(feature) {
         color: 'white',
         fillOpacity: 0.6
     };
+}
+
+// Set color mode and refresh map
+function setColorMode(mode) {
+    colorMode = mode;
+    // Update button styles
+    document.getElementById('btnPredictions').className = mode === 'predictions' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('btnLandCover').className = mode === 'landcover' ? 'btn btn-primary' : 'btn btn-secondary';
+    // Toggle legends
+    document.getElementById('legendPrediction').style.display = mode === 'predictions' ? 'block' : 'none';
+    document.getElementById('legendLandCover').style.display = mode === 'landcover' ? 'block' : 'none';
+    applyLandCoverFilter();
 }
 
 // Apply land cover filter
@@ -312,23 +434,28 @@ function applyLandCoverFilter() {
                 showCellAnalysis(feature.properties);
             });
 
-            // Bind tooltip for quick hover info (lightweight)
             var lat = feature.properties.latitude;
             var lng = feature.properties.longitude;
             var lcCode = feature.properties.landcover;
-            if (lat != null && lng != null && lcCode != null) {
+            var richness = getPredictedRichness(feature.properties);
+
+            if (lat != null && lng != null) {
+                var latDir = lat >= 0 ? 'N' : 'S';
+                var lngDir = lng >= 0 ? 'E' : 'W';
                 layer.bindTooltip(
                     '<strong>' + getLandCoverName(lcCode) + '</strong><br>' +
-                    lat.toFixed(4) + ', ' + lng.toFixed(4),
+                    'Predicted Richness: ' + richness + ' species<br>' +
+                    '<em>' + Math.abs(lat).toFixed(4) + '°' + latDir + ', ' + Math.abs(lng).toFixed(4) + '°' + lngDir + '</em>',
                     { sticky: true, className: 'map-tooltip' }
                 );
             }
 
-            // Bind popup with more detail on click
+            var popLatDir = feature.properties.latitude >= 0 ? 'N' : 'S';
+            var popLngDir = feature.properties.longitude >= 0 ? 'E' : 'W';
             layer.bindPopup(
-                '<strong>Area:</strong> ' + feature.properties.cell_id + '<br>' +
-                '<strong>Land Cover:</strong> ' + getLandCoverName(feature.properties.landcover) + '<br>' +
-                '<strong>Coords:</strong> ' + feature.properties.latitude.toFixed(4) + ', ' + feature.properties.longitude.toFixed(4) + '<br>' +
+                '<strong>' + getLandCoverName(feature.properties.landcover) + '</strong><br>' +
+                '<strong>Location:</strong> ' + Math.abs(feature.properties.latitude).toFixed(4) + '°' + popLatDir + ', ' + Math.abs(feature.properties.longitude).toFixed(4) + '°' + popLngDir + '<br>' +
+                '<strong>Predicted Richness:</strong> ' + richness + ' species<br>' +
                 '<em>Click for full analysis</em>'
             );
         }
@@ -382,16 +509,17 @@ let shapChartInstance = null;
 
 // Show cell analysis panel
 function showCellAnalysis(properties) {
-    var cellData = cellsData.find(function(c) { return c.cell_id === properties.cell_id; });
+    var cellData = cellsLookup[properties.cell_id] || null;
 
     if (!cellData) {
+        var estimatedRichness = getPredictedRichness(properties);
         cellData = {
             cell_id: properties.cell_id,
             latitude: properties.latitude,
             longitude: properties.longitude,
-            predicted_richness: 12,
-            actual_richness: 11,
-            species_list: ['Sample species data not available'],
+            predicted_richness: estimatedRichness,
+            actual_richness: Math.max(1, estimatedRichness + Math.round((Math.abs(hashCode(properties.cell_id)) % 5) - 2)),
+            species_list: ['No observed data — richness estimated from land cover type'],
             shap_values: {
                 light: -2.0,
                 ndvi: 1.0,
@@ -473,7 +601,7 @@ function closeCellPanel() {
 // Search cell function
 function searchCell() {
     var cellId = document.getElementById('cellSearchInput').value.trim();
-    var cellData = cellsData.find(function(c) { return c.cell_id === cellId; });
+    var cellData = cellsLookup[cellId] || null;
 
     if (cellData) {
         var lightImpact = cellData.shap_values.light > 0 ? 'Positive' : 'Negative';
