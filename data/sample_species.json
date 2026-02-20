@@ -1,0 +1,272 @@
+[
+  {
+    "id": 1,
+    "scientific_name": "Passer montanus",
+    "common_name": "Eurasian Tree Sparrow",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder1.jpg"
+  },
+  {
+    "id": 2,
+    "scientific_name": "Geopelia striata",
+    "common_name": "Zebra Dove",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder2.jpg"
+  },
+  {
+    "id": 3,
+    "scientific_name": "Pycnonotus goiavier",
+    "common_name": "Yellow-vented Bulbul",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder3.jpg"
+  },
+  {
+    "id": 4,
+    "scientific_name": "Halcyon smyrnensis",
+    "common_name": "White-throated Kingfisher",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder4.jpg"
+  },
+  {
+    "id": 5,
+    "scientific_name": "Tringa nebularia",
+    "common_name": "Common Greenshank",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Migratory",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder5.jpg"
+  },
+  {
+    "id": 6,
+    "scientific_name": "Haliastur indus",
+    "common_name": "Brahminy Kite",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder6.jpg"
+  },
+  {
+    "id": 7,
+    "scientific_name": "Accipiter trivirgatus",
+    "common_name": "Crested Goshawk",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder7.jpg"
+  },
+  {
+    "id": 8,
+    "scientific_name": "Collocalia esculenta",
+    "common_name": "Glossy Swiftlet",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder8.jpg"
+  },
+  {
+    "id": 9,
+    "scientific_name": "Egretta garzetta",
+    "common_name": "Little Egret",
+    "light_tolerance": "Moderate",
+    "migration_status": "Both",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder9.jpg"
+  },
+  {
+    "id": 10,
+    "scientific_name": "Ardea alba",
+    "common_name": "Great Egret",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder10.jpg"
+  },
+  {
+    "id": 11,
+    "scientific_name": "Hirundo rustica",
+    "common_name": "Barn Swallow",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Migratory",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder11.jpg"
+  },
+  {
+    "id": 12,
+    "scientific_name": "Lonchura punctulata",
+    "common_name": "Scaly-breasted Munia",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder12.jpg"
+  },
+  {
+    "id": 13,
+    "scientific_name": "Dicrurus macrocercus",
+    "common_name": "Black Drongo",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder13.jpg"
+  },
+  {
+    "id": 14,
+    "scientific_name": "Corvus macrorhynchos",
+    "common_name": "Large-billed Crow",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder14.jpg"
+  },
+  {
+    "id": 15,
+    "scientific_name": "Calidris ruficollis",
+    "common_name": "Red-necked Stint",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Migratory",
+    "conservation_status": "Near Threatened",
+    "image": "assets/images/species/placeholder15.jpg"
+  },
+  {
+    "id": 16,
+    "scientific_name": "Anthreptes malacensis",
+    "common_name": "Plain-throated Sunbird",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder16.jpg"
+  },
+  {
+    "id": 17,
+    "scientific_name": "Merops philippinus",
+    "common_name": "Blue-tailed Bee-eater",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Migratory",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder17.jpg"
+  },
+  {
+    "id": 18,
+    "scientific_name": "Todiramphus chloris",
+    "common_name": "Collared Kingfisher",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder18.jpg"
+  },
+  {
+    "id": 19,
+    "scientific_name": "Psittacula krameri",
+    "common_name": "Rose-ringed Parakeet",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder19.jpg"
+  },
+  {
+    "id": 20,
+    "scientific_name": "Acridotheres javanicus",
+    "common_name": "Javan Myna",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder20.jpg"
+  },
+  {
+    "id": 21,
+    "scientific_name": "Streptopelia chinensis",
+    "common_name": "Spotted Dove",
+    "light_tolerance": "Tolerant",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder21.jpg"
+  },
+  {
+    "id": 22,
+    "scientific_name": "Nycticorax nycticorax",
+    "common_name": "Black-crowned Night Heron",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder22.jpg"
+  },
+  {
+    "id": 23,
+    "scientific_name": "Amaurornis phoenicurus",
+    "common_name": "White-breasted Waterhen",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder23.jpg"
+  },
+  {
+    "id": 24,
+    "scientific_name": "Gallinula chloropus",
+    "common_name": "Common Moorhen",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder24.jpg"
+  },
+  {
+    "id": 25,
+    "scientific_name": "Actitis hypoleucos",
+    "common_name": "Common Sandpiper",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Migratory",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder25.jpg"
+  },
+  {
+    "id": 26,
+    "scientific_name": "Charadrius alexandrinus",
+    "common_name": "Kentish Plover",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Both",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder26.jpg"
+  },
+  {
+    "id": 27,
+    "scientific_name": "Porphyrio porphyrio",
+    "common_name": "Purple Swamphen",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder27.jpg"
+  },
+  {
+    "id": 28,
+    "scientific_name": "Cinnyris jugularis",
+    "common_name": "Olive-backed Sunbird",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder28.jpg"
+  },
+  {
+    "id": 29,
+    "scientific_name": "Orthotomus ruficeps",
+    "common_name": "Ashy Tailorbird",
+    "light_tolerance": "Sensitive",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder29.jpg"
+  },
+  {
+    "id": 30,
+    "scientific_name": "Cisticola juncidis",
+    "common_name": "Zitting Cisticola",
+    "light_tolerance": "Moderate",
+    "migration_status": "Resident",
+    "conservation_status": "Least Concern",
+    "image": "assets/images/species/placeholder30.jpg"
+  }
+]
