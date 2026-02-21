@@ -41,6 +41,7 @@ require_login(); // Require login for all dashboard pages
                 <li><a href="home.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'home.php' ? 'active' : ''; ?>">Home</a></li>
                 <li><a href="dashboard.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'dashboard.php' ? 'active' : ''; ?>">Dashboard</a></li>
                 <li><a href="geospatial.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'geospatial.php' ? 'active' : ''; ?>">Analytics</a></li>
+                <li><a href="species.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'species.php' ? 'active' : ''; ?>">Species</a></li>
                 <li><a href="reports.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">Reports</a></li>
                 <li><a href="admin.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'admin.php' ? 'active' : ''; ?>">Settings</a></li>
             </ul>

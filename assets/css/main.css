@@ -1053,6 +1053,30 @@ tr:hover {
     line-height: 1.5;
 }
 
+.announcement-title a {
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.announcement-title a:hover {
+    text-decoration: underline;
+    color: var(--accent-blue);
+}
+
+.bmb-view-all {
+    float: right;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--accent-blue);
+    text-decoration: none;
+    opacity: 0.8;
+}
+
+.bmb-view-all:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
 /* ── Theme toggle button ────────────────────────────────── */
 
 /* Smooth transitions active only during an explicit theme switch */
