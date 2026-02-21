@@ -2,8 +2,50 @@
 $page_title = 'Geospatial Forecasting';
 require_once 'includes/header.php';
 
-// Load sample data
-$cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
+// Load real observation data from DB (most recent visit per site, top 200 richest)
+require_once 'includes/db.php';
+$pdo = get_db();
+$obs_rows = $pdo->query("
+    SELECT o1.* FROM observations o1
+    INNER JOIN (
+        SELECT site_name, MAX(year * 100 + month) AS max_ym
+        FROM observations
+        WHERE site_name != '' AND latitude != 0 AND longitude != 0
+        GROUP BY site_name
+    ) latest ON o1.site_name = latest.site_name
+           AND (o1.year * 100 + o1.month) = latest.max_ym
+    ORDER BY o1.total_unique DESC
+    LIMIT 200
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$cells_data = array_map(function (array $r): array {
+    // Parse Python-style list "'A', 'B'" → PHP array
+    $raw = trim($r['species_list'], "[]");
+    $parts = preg_split("/'\s*,\s*'/", trim($raw, "'"));
+    $species = array_filter(array_map('trim', $parts));
+
+    $cell_id = 'site_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $r['site_name']);
+    return [
+        'cell_id'          => $cell_id,
+        'site_name'        => $r['site_name'],
+        'latitude'         => (float)$r['latitude'],
+        'longitude'        => (float)$r['longitude'],
+        'predicted_richness' => (int)$r['total_unique'],
+        'actual_richness'  => (int)$r['total_unique'],
+        'month'            => (int)$r['month'],
+        'year'             => (int)$r['year'],
+        'total_tolerant'   => (int)$r['total_tolerant'],
+        'total_sensitive'  => (int)$r['total_sensitive'],
+        'total_resident'   => (int)$r['total_resident'],
+        'total_migrant'    => (int)$r['total_migrant'],
+        'total_count'      => (int)$r['total_count'],
+        'species_list'     => array_values($species),
+        'shap_values'      => ['light' => 0.0, 'ndvi' => 0.0, 'temperature' => 0.0, 'elevation' => 0.0],
+    ];
+}, $obs_rows);
+
+require_once 'includes/load_species.php';
+$species_data = load_species_from_csv();
 ?>
 
 <div class="page-header">
@@ -98,10 +140,16 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
         <!-- Species Filter -->
         <div class="filter-container">
             <div class="filter-group">
-                <span class="filter-label">Species Filter:</span>
-                <button class="btn btn-primary" onclick="filterSpecies('all')">All Species</button>
-                <button class="btn btn-warning" onclick="filterSpecies('sensitive')">Light-Sensitive</button>
-                <button class="btn btn-secondary" onclick="filterSpecies('tolerant')">Light-Tolerant</button>
+                <span class="filter-label"><strong>Light Tolerance:</strong></span>
+                <button class="btn btn-primary" id="btnFilterAll" onclick="filterSpecies('all')">All Species</button>
+                <button class="btn btn-secondary" id="btnFilterSensitive" onclick="filterSpecies('sensitive')">💡 Light-Sensitive</button>
+                <button class="btn btn-secondary" id="btnFilterTolerant" onclick="filterSpecies('tolerant')">☀️ Light-Tolerant</button>
+            </div>
+            <div class="filter-group" style="margin-top: 10px;">
+                <span class="filter-label"><strong>Migratory Status:</strong></span>
+                <button class="btn btn-primary" id="btnMigAll" onclick="filterMigration('all')">All Types</button>
+                <button class="btn btn-secondary" id="btnMigResident" onclick="filterMigration('resident')">🏡 Resident</button>
+                <button class="btn btn-secondary" id="btnMigMigratory" onclick="filterMigration('migratory')">✈️ Migratory</button>
             </div>
         </div>
     </div>
@@ -186,10 +234,11 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
     <span class="side-panel-close" onclick="closeCellPanel()">&times;</span>
     <h3 id="cellTitle">Area Analysis</h3>
     <div id="cellContent">
-        <p><strong>Area ID:</strong> <span id="cellId"></span></p>
+        <p><strong>Site:</strong> <span id="cellId"></span></p>
         <p><strong>Coordinates:</strong> <span id="cellCoords"></span></p>
-        <p><strong>Predicted Richness:</strong> <span id="predictedRichness"></span></p>
-        <p><strong>Actual Richness:</strong> <span id="actualRichness"></span></p>
+        <p><strong>Unique Species (Richness):</strong> <span id="predictedRichness"></span></p>
+        <p><strong>Observed Richness:</strong> <span id="actualRichness"></span></p>
+        <div id="obsBreakdown" style="display:none; background:#f8f9fa; border-radius:6px; padding:8px 10px; margin-bottom:8px;"></div>
         <hr>
         <h4>Species in this Area:</h4>
         <ul id="speciesList"></ul>
@@ -219,7 +268,7 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
         <div class="card-body">
             <div class="form-group">
                 <label class="form-label">Enter Area ID:</label>
-                <input type="text" class="form-control" id="cellSearchInput" placeholder="e.g., cell_2937">
+                <input type="text" class="form-control" id="cellSearchInput" placeholder="e.g., site_Tanza">
                 <button class="btn btn-primary" style="margin-top: 10px;" onclick="searchCell()">Search</button>
             </div>
             <div id="searchResult"></div>
@@ -229,6 +278,7 @@ $cells_data = json_decode(file_get_contents('data/sample_cells.json'), true);
 
 <?php
 $cells_json = json_encode($cells_data, JSON_HEX_TAG | JSON_HEX_AMP);
+$species_json = json_encode($species_data, JSON_HEX_TAG | JSON_HEX_AMP);
 $extra_scripts = <<<EOD
 <script>
 // Metro Manila bounding box
@@ -289,6 +339,17 @@ cellsData.forEach(function(c) {
     cellsLookup[c.cell_id] = c;
 });
 
+// Species masterlist data and lookup by common name
+const speciesData = {$species_json};
+const speciesLookup = {};
+speciesData.forEach(function(s) {
+    speciesLookup[s.common_name] = s;
+});
+
+// Active species filter state
+let activeLightFilter = 'all';
+let activeMigrationFilter = 'all';
+
 // Show loading indicator
 document.getElementById('loading').style.display = 'block';
 
@@ -327,6 +388,37 @@ function getPredictedRichness(properties) {
     var seed = hashCode(properties.cell_id || (properties.latitude + '_' + properties.longitude));
     var variation = ((Math.abs(seed) % 7) - 3); // range: -3 to +3
     return Math.max(1, Math.min(30, base + variation));
+}
+
+// Get richness filtered by active Light Tolerance and Migratory Status filters.
+// For cells with known species lists, counts only matching species.
+// For cells without species data, returns the full estimated richness.
+function getFilteredRichness(properties) {
+    if (activeLightFilter === 'all' && activeMigrationFilter === 'all') {
+        return getPredictedRichness(properties);
+    }
+    var cellData = cellsLookup[properties.cell_id];
+    if (!cellData || !cellData.species_list) {
+        return getPredictedRichness(properties);
+    }
+    var count = 0;
+    cellData.species_list.forEach(function(name) {
+        var sp = speciesLookup[name];
+        if (!sp || speciesMatchesFilters(sp)) count++;
+    });
+    return count;
+}
+
+// Returns true if a species object matches the currently active Light Tolerance
+// and Migratory Status filters.
+function speciesMatchesFilters(sp) {
+    var lightMatch = activeLightFilter === 'all' ||
+        (activeLightFilter === 'sensitive' && sp.light_tolerance === 'Sensitive') ||
+        (activeLightFilter === 'tolerant' && sp.light_tolerance === 'Tolerant');
+    var migMatch = activeMigrationFilter === 'all' ||
+        (activeMigrationFilter === 'resident' && sp.migration_status === 'Resident') ||
+        (activeMigrationFilter === 'migratory' && sp.migration_status === 'Migratory');
+    return lightMatch && migMatch;
 }
 
 // Color scale for predicted richness (blue → green → yellow → red)
@@ -387,7 +479,7 @@ function filterToMetroManila(data) {
 // Style function for GeoJSON features
 function style(feature) {
     if (colorMode === 'predictions') {
-        var richness = getPredictedRichness(feature.properties);
+        var richness = getFilteredRichness(feature.properties);
         return {
             fillColor: getRichnessColor(richness),
             weight: 0.5,
@@ -437,14 +529,19 @@ function applyLandCoverFilter() {
             var lat = feature.properties.latitude;
             var lng = feature.properties.longitude;
             var lcCode = feature.properties.landcover;
-            var richness = getPredictedRichness(feature.properties);
+            var richness = getFilteredRichness(feature.properties);
+            var totalRichness = getPredictedRichness(feature.properties);
+            var isFiltered = activeLightFilter !== 'all' || activeMigrationFilter !== 'all';
+            var richnessText = isFiltered ?
+                'Filtered Richness: ' + richness + ' (of ' + totalRichness + ' total)' :
+                'Predicted Richness: ' + richness + ' species';
 
             if (lat != null && lng != null) {
                 var latDir = lat >= 0 ? 'N' : 'S';
                 var lngDir = lng >= 0 ? 'E' : 'W';
                 layer.bindTooltip(
                     '<strong>' + getLandCoverName(lcCode) + '</strong><br>' +
-                    'Predicted Richness: ' + richness + ' species<br>' +
+                    richnessText + '<br>' +
                     '<em>' + Math.abs(lat).toFixed(4) + '°' + latDir + ', ' + Math.abs(lng).toFixed(4) + '°' + lngDir + '</em>',
                     { sticky: true, className: 'map-tooltip' }
                 );
@@ -455,7 +552,7 @@ function applyLandCoverFilter() {
             layer.bindPopup(
                 '<strong>' + getLandCoverName(feature.properties.landcover) + '</strong><br>' +
                 '<strong>Location:</strong> ' + Math.abs(feature.properties.latitude).toFixed(4) + '°' + popLatDir + ', ' + Math.abs(feature.properties.longitude).toFixed(4) + '°' + popLngDir + '<br>' +
-                '<strong>Predicted Richness:</strong> ' + richness + ' species<br>' +
+                '<strong>' + (isFiltered ? 'Filtered Richness:' : 'Predicted Richness:') + '</strong> ' + richness + (isFiltered ? ' (of ' + totalRichness + ' total)' : ' species') + '<br>' +
                 '<em>Click for full analysis</em>'
             );
         }
@@ -498,10 +595,22 @@ document.getElementById('monthSlider').addEventListener('input', function() {
     document.getElementById('monthValue').textContent = months[this.value - 1];
 });
 
-// Filter species function
+// Filter species by Light Tolerance
 function filterSpecies(type) {
-    console.log('Filtering species:', type);
-    alert('Filtering ' + type + ' species - Implementation will update map colors based on species type');
+    activeLightFilter = type;
+    document.getElementById('btnFilterAll').className = type === 'all' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('btnFilterSensitive').className = type === 'sensitive' ? 'btn btn-warning' : 'btn btn-secondary';
+    document.getElementById('btnFilterTolerant').className = type === 'tolerant' ? 'btn btn-success' : 'btn btn-secondary';
+    applyLandCoverFilter();
+}
+
+// Filter species by Migratory Status
+function filterMigration(type) {
+    activeMigrationFilter = type;
+    document.getElementById('btnMigAll').className = type === 'all' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('btnMigResident').className = type === 'resident' ? 'btn btn-success' : 'btn btn-secondary';
+    document.getElementById('btnMigMigratory').className = type === 'migratory' ? 'btn btn-info' : 'btn btn-secondary';
+    applyLandCoverFilter();
 }
 
 // Track the SHAP chart instance to prevent memory leaks
@@ -529,19 +638,52 @@ function showCellAnalysis(properties) {
         };
     }
 
-    document.getElementById('cellId').textContent = cellData.cell_id;
+    document.getElementById('cellId').textContent = cellData.site_name || cellData.cell_id;
     document.getElementById('cellCoords').textContent =
         cellData.latitude.toFixed(4) + ', ' + cellData.longitude.toFixed(4);
     document.getElementById('predictedRichness').textContent = cellData.predicted_richness;
     document.getElementById('actualRichness').textContent = cellData.actual_richness;
 
+    // Show observation breakdown if real data is available
+    var breakdownEl = document.getElementById('obsBreakdown');
+    if (breakdownEl) {
+        if (cellData.total_tolerant !== undefined) {
+            var months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var period = cellData.month ? months[cellData.month] + ' ' + cellData.year : '';
+            breakdownEl.style.display = 'block';
+            breakdownEl.innerHTML =
+                (period ? '<small style="color:#888;">Last observed: ' + period + '</small><br>' : '') +
+                '<small>🌅 Tolerant: <strong>' + cellData.total_tolerant + '</strong> &nbsp; ' +
+                '💡 Sensitive: <strong>' + cellData.total_sensitive + '</strong> &nbsp; ' +
+                '🏡 Resident: <strong>' + cellData.total_resident + '</strong> &nbsp; ' +
+                '✈️ Migrant: <strong>' + cellData.total_migrant + '</strong> &nbsp; ' +
+                '👁 Total birds: <strong>' + (cellData.total_count || '—') + '</strong></small>';
+        } else {
+            breakdownEl.style.display = 'none';
+        }
+    }
+
     var speciesList = document.getElementById('speciesList');
     speciesList.innerHTML = '';
+    var isFiltered = activeLightFilter !== 'all' || activeMigrationFilter !== 'all';
+    var matchCount = 0;
     cellData.species_list.forEach(function(species) {
+        if (isFiltered) {
+            var sp = speciesLookup[species];
+            if (sp && !speciesMatchesFilters(sp)) return;
+        }
+        matchCount++;
         var li = document.createElement('li');
         li.textContent = species;
         speciesList.appendChild(li);
     });
+    if (isFiltered && matchCount === 0) {
+        var li = document.createElement('li');
+        li.textContent = 'No species match the active filter criteria.';
+        li.style.color = '#999';
+        speciesList.appendChild(li);
+    }
 
     // Destroy previous chart instance to prevent memory leaks and slowdown
     if (shapChartInstance) {
@@ -604,14 +746,11 @@ function searchCell() {
     var cellData = cellsLookup[cellId] || null;
 
     if (cellData) {
-        var lightImpact = cellData.shap_values.light > 0 ? 'Positive' : 'Negative';
-        var ndviImpact = cellData.shap_values.ndvi > 0 ? 'Positive' : 'Negative';
         document.getElementById('searchResult').innerHTML =
             '<div class="alert alert-info" style="margin-top: 15px;">' +
-            '<strong>Area Found:</strong> ' + cellId + '<br>' +
-            '<strong>Predicted Richness:</strong> ' + cellData.predicted_richness + '<br>' +
-            '<strong>Light Impact:</strong> ' + lightImpact + ' (' + cellData.shap_values.light.toFixed(1) + '%)<br>' +
-            '<strong>NDVI Impact:</strong> ' + ndviImpact + ' (' + cellData.shap_values.ndvi.toFixed(1) + '%)' +
+            '<strong>Site Found:</strong> ' + (cellData.site_name || cellId) + '<br>' +
+            '<strong>Unique Species:</strong> ' + cellData.predicted_richness + '<br>' +
+            '<strong>Total Birds Counted:</strong> ' + (cellData.total_count || '—') +
             '</div>';
 
         map.setView([cellData.latitude, cellData.longitude], 14);
@@ -619,7 +758,7 @@ function searchCell() {
     } else {
         document.getElementById('searchResult').innerHTML =
             '<div class="alert alert-danger" style="margin-top: 15px;">' +
-            'Area ID not found. Try: cell_2937 or cell_120.9000_14.3000' +
+            'Site not found. Try site IDs like: site_Tanza, site_Las_Pinas_Paranaque_Wetland_Park' +
             '</div>';
     }
 }

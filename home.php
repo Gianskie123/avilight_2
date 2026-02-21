@@ -3,11 +3,10 @@ $page_title = 'Home';
 require_once 'includes/header.php';
 
 // Load data
-$species_data = json_decode(file_get_contents('data/sample_species.json'), true);
-$kba_data     = json_decode(file_get_contents('data/sample_kba.json'), true);
-
-// --- Total Species Tracked ---
-$total_species = $species_data ? count($species_data) : 0;
+require_once 'includes/db.php';
+$pdo         = get_db();
+$total_species = (int) $pdo->query('SELECT COUNT(*) FROM species')->fetchColumn();
+$kba_data    = json_decode(file_get_contents('data/sample_kba.json'), true);
 
 // --- Current Light Risk Level (Metro Manila average VIIRS radiance) ---
 $metro_manila_light = 0;
@@ -34,42 +33,19 @@ if ($avg_radiance > 40) {
     $risk_icon  = '🟡';
 }
 
-// --- DENR-BMB Announcements (manual feed) ---
-$announcements = [
-    [
-        'date'    => 'Feb 18, 2026',
-        'title'   => 'DENR-BMB Issues Advisory on Light Pollution Impact to Migratory Birds',
-        'summary' => 'The Biodiversity Management Bureau reminds local government units to enforce ordinances limiting artificial light near key flyways during peak migration (Oct–Apr).',
-        'tag'     => 'Advisory',
-        'tag_class' => 'warning',
-    ],
-    [
-        'date'    => 'Feb 10, 2026',
-        'title'   => 'Updated Species List for Metro Manila KBAs Released',
-        'summary' => 'DENR-BMB has published an updated checklist of bird species recorded across Metro Manila Key Biodiversity Areas, adding 12 newly documented species.',
-        'tag'     => 'Update',
-        'tag_class' => 'info',
-    ],
-    [
-        'date'    => 'Jan 28, 2026',
-        'title'   => 'La Mesa Watershed Monitoring Report – Q4 2025',
-        'summary' => 'Quarterly monitoring confirms stable bird richness at La Mesa Watershed despite increased surrounding urbanization. Recommend continued buffer zone protection.',
-        'tag'     => 'Report',
-        'tag_class' => 'success',
-    ],
-    [
-        'date'    => 'Jan 15, 2026',
-        'title'   => 'Las Piñas-Parañaque Critical Habitat Under Heightened Watch',
-        'summary' => 'Following elevated VIIRS radiance readings, DENR-BMB has elevated monitoring priority for the Las Piñas-Parañaque Critical Habitat and Ecotourism Area.',
-        'tag'     => 'Alert',
-        'tag_class' => 'danger',
-    ],
-];
+// --- DENR-BMB Announcements (live feed from faps.bmb.gov.ph) ---
+require_once 'includes/fetch_bmb_announcements.php';
+$announcements = fetch_bmb_announcements(5);
 ?>
 
 <div class="page-header">
     <h1 class="page-title">Home — Executive Summary</h1>
     <p class="page-subtitle">Overview of AVILIGHT monitoring status for Metro Manila and key biodiversity sites.</p>
+</div>
+
+<div class="alert alert-info" role="status">
+    📅 <strong>Dataset Period: 2014 – 2024</strong> —
+    All metrics, species records, light-exposure readings, and site analyses displayed in this dashboard are derived from historical datasets covering the years 2014 to 2024 only.
 </div>
 
 <!-- Top stat cards -->
@@ -110,7 +86,7 @@ $announcements = [
 
     <!-- KBA / PA Monitoring Status -->
     <div class="card">
-        <div class="card-header">KBA / PA Monitoring Status</div>
+        <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2014 – 2024)</span></div>
         <div class="card-body">
             <table class="home-kba-table">
                 <thead>
@@ -151,17 +127,32 @@ $announcements = [
 
     <!-- DENR-BMB Announcements -->
     <div class="card">
-        <div class="card-header">DENR-BMB Announcements</div>
+        <div class="card-header">
+            DENR-BMB Announcements
+            <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="bmb-view-all">View All ↗</a>
+        </div>
         <div class="card-body">
             <div class="announcements-feed">
                 <?php foreach ($announcements as $ann): ?>
                 <div class="announcement-item">
                     <div class="announcement-meta">
-                        <span class="badge badge-<?php echo $ann['tag_class']; ?>"><?php echo htmlspecialchars($ann['tag']); ?></span>
+                        <span class="badge badge-<?php echo htmlspecialchars($ann['tag_class']); ?>"><?php echo htmlspecialchars($ann['tag']); ?></span>
+                        <?php if ($ann['date'] !== ''): ?>
                         <span class="announcement-date"><?php echo htmlspecialchars($ann['date']); ?></span>
+                        <?php endif; ?>
                     </div>
-                    <div class="announcement-title"><?php echo htmlspecialchars($ann['title']); ?></div>
+                    <div class="announcement-title">
+                        <?php if (!empty($ann['link'])): ?>
+                        <a href="<?php echo htmlspecialchars($ann['link']); ?>" target="_blank" rel="noopener noreferrer">
+                            <?php echo htmlspecialchars($ann['title']); ?>
+                        </a>
+                        <?php else: ?>
+                        <?php echo htmlspecialchars($ann['title']); ?>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($ann['summary'] !== ''): ?>
                     <div class="announcement-summary"><?php echo htmlspecialchars($ann['summary']); ?></div>
+                    <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
             </div>
