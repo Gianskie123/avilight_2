@@ -47,11 +47,6 @@ $announcements = fetch_bmb_announcements(5);
     <strong>Dataset Period: 2014 – 2024 | Monitoring Status: 2014 - 2024</strong> - All metrics, records, readings, and site analyses displayed are derived from historical datasets that was updated last 2024.
 </div>
 
-<div class="alert alert-info" role="status">
-    📅 <strong>Dataset Period: 2014 – 2024</strong> —
-    All metrics, species records, light-exposure readings, and site analyses displayed in this dashboard are derived from historical datasets covering the years 2014 to 2024 only.
-</div>
-
 <!-- Top stat cards -->
 <div class="stats-grid home-stats-grid">
     <!-- Total Species -->
