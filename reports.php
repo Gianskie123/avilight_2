@@ -16,9 +16,9 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
     <div class="card-body">
         <h3>Export Data</h3>
         <div style="display: flex; gap: 15px; margin-top: 15px;">
-            <button class="btn btn-primary" onclick="exportGeoJSON()">📥 Download GeoJSON</button>
-            <button class="btn btn-danger" onclick="exportPDF()">📄 Download PDF Report</button>
-            <button class="btn btn-secondary" onclick="exportCSV()">📊 Export CSV Data</button>
+            <button class="btn btn-primary" onclick="exportGeoJSON()">Download GeoJSON</button>
+            <button class="btn btn-danger" onclick="exportPDF()">Download PDF Report</button>
+            <button class="btn btn-secondary" onclick="exportCSV()">Export CSV Data</button>
         </div>
     </div>
 </div>

@@ -57,7 +57,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 
         <!-- Recent Activity -->
         <div>
-            <div class="section-title">Recent Activity</div>
+            <div class="section-title">Recent Updates</div>
             <div class="activity-feed">
                 <div class="activity-item">
                     <div class="activity-icon red">⚠</div>

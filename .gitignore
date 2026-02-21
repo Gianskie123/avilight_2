@@ -32,6 +32,8 @@ config.local.php
 /uploads/
 *.csv
 *.xlsx
+# Allow the CSV datasets committed to data/
+!data/*.csv
 
 # Model files (large binary files)
 *.pkl
