@@ -1,0 +1,84 @@
+# Dependency directories
+node_modules/
+vendor/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+/tmp/
+*.tmp
+*.log
+
+# Cache files
+/cache/
+*.cache
+
+# Environment files
+.env
+.env.local
+config.local.php
+
+# Build artifacts
+/dist/
+/build/
+
+# Uploaded files (in production, manage separately)
+/uploads/
+*.csv
+*.xlsx
+# Allow the CSV datasets committed to data/
+!data/*.csv
+
+# Model files (large binary files)
+*.pkl
+*.h5
+*.pth
+*.joblib
+
+# Database files
+*.sqlite
+*.db
+
+# Backup files
+*.bak
+*.backup
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Compiled Python files (if using Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Package manager locks (optional - keep if using)
+# composer.lock
+# package-lock.json
+
+# Session files
+/sessions/
+
+# Coverage and test reports
+/coverage/
+*.coverage
+htmlcov/
+
+# Documentation build files
+/docs/_build/
+
+# Misc
+*.orig
+*.rej
