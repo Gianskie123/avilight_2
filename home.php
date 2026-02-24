@@ -44,7 +44,8 @@ $announcements = fetch_bmb_announcements(5);
 </div>
 
 <div class="alert alert-info" role="status">
-    <strong>Dataset Period: 2014 – 2024 | Monitoring Status: 2014 - 2024</strong> - All metrics, records, readings, and site analyses displayed are derived from historical datasets that was updated last 2024.
+    📅 <strong>Dataset Period: 2014 – 2024</strong> | <strong>Monitoring Status: 2014 – 2024</strong> —
+    All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in 2024.
 </div>
 
 <!-- Top stat cards -->
@@ -58,7 +59,7 @@ $announcements = fetch_bmb_announcements(5);
 
     <!-- Light Risk Level -->
     <div class="stat-card <?php echo $risk_class; ?>">
-        <div class="stat-label">Light Risk Level</div>
+        <div class="stat-label">Current Light Risk Level</div>
         <div class="stat-value"><?php echo $risk_icon . ' ' . $risk_label; ?></div>
         <div class="stat-description">
             Metro Manila avg. VIIRS radiance: <strong><?php echo $avg_radiance; ?> nW/cm²/sr</strong>
@@ -69,14 +70,14 @@ $announcements = fetch_bmb_announcements(5);
     <div class="stat-card info">
         <div class="stat-label">KBAs Monitored</div>
         <div class="stat-value"><?php echo $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'KBA')) : 0; ?></div>
-        <div class="stat-description">Key Biodiversity Areas covered</div>
+        <div class="stat-description">Key Biodiversity Areas currently covered</div>
     </div>
 
     <!-- PA count -->
     <div class="stat-card warning">
         <div class="stat-label">Protected Areas Monitored</div>
         <div class="stat-value"><?php echo $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'PA')) : 0; ?></div>
-        <div class="stat-description">Protected Areas covered</div>
+        <div class="stat-description">Protected Areas currently covered</div>
     </div>
 </div>
 
@@ -85,7 +86,7 @@ $announcements = fetch_bmb_announcements(5);
 
     <!-- KBA / PA Monitoring Status -->
     <div class="card">
-        <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;"></span></div>
+        <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2014 – 2024)</span></div>
         <div class="card-body">
             <table class="home-kba-table">
                 <thead>
