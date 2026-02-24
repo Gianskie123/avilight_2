@@ -6,6 +6,11 @@ require_once 'includes/header.php';
 $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 ?>
 
+<div class="alert alert-info" role="status">
+    📅 <strong>Dataset Period: 2014 – 2024</strong> | <strong>Monitoring Status: 2014 – 2024</strong> —
+    All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in 2024.
+</div>
+
 <div class="dashboard-layout">
     <!-- Left column: Map -->
     <div class="dashboard-map-col">
@@ -39,6 +44,9 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                     <span class="dash-stat-value">18</span>
                     <span class="dash-stat-trend down">↘ -5%</span>
                 </div>
+                <div class="dash-stat-desc">
+                    Areas classified as <strong>Medium</strong> or <strong>High</strong> risk based on VIIRS night-light radiance (&gt;30 nW/cm²/sr). Shown on the map as <span class="risk-medium-indicator">yellow</span> and <span class="risk-high-indicator">red</span> circles.
+                </div>
             </div>
             <div class="dash-stat-card">
                 <div class="dash-stat-label">Light Intensity</div>
@@ -46,16 +54,26 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                     <span class="dash-stat-value">78%</span>
                     <span class="dash-stat-trend up">↗ +8%</span>
                 </div>
+                <div class="dash-stat-desc">
+                    Relative artificial light at night (ALAN) index averaged across monitored sites (2014–2024). Higher intensity correlates with larger, brighter circles on the map and increased disturbance risk to bird species.
+                </div>
             </div>
         </div>
 
         <!-- Bird Richness Trend -->
         <div class="chart-card">
             <div class="section-title">Bird Richness Trend</div>
+            <div class="bird-richness-controls">
+                <label class="slider-label" for="yearSlider">
+                    <span>Year: <strong id="yearDisplay">2014</strong></span>
+                    <span style="font-size:0.75rem;color:var(--text-muted);">2014 – 2024</span>
+                </label>
+                <input type="range" id="yearSlider" class="slider" min="2014" max="2024" value="2014" step="1">
+            </div>
             <canvas id="birdRichnessChart"></canvas>
         </div>
 
-        <!-- Recent Activity -->
+        <!-- Recent Updates -->
         <div>
             <div class="section-title">Recent Updates</div>
             <div class="activity-feed">
@@ -159,15 +177,53 @@ riskZones.forEach(function(zone) {
     );
 });
 
+// Highlight Metro Manila with a bounding rectangle
+var metroManilaBounds = [[14.35, 120.90], [14.82, 121.22]];
+L.rectangle(metroManilaBounds, {
+    color: '#3b82f6',
+    weight: 2.5,
+    fillColor: '#3b82f6',
+    fillOpacity: 0.07,
+    dashArray: '6 4'
+}).addTo(map).bindPopup('<strong>Metro Manila</strong><br>Primary focus area of AVILIGHT monitoring');
+
+// Metro Manila label marker — positioned at the top-centre of the bounding box
+L.marker([14.82, 121.06], {
+    icon: L.divIcon({
+        className: '',
+        html: '<div class="metro-manila-label">Metro Manila</div>',
+        // anchor bottom-centre of the label to the marker point so the text
+        // sits just above (outside) the top border of the rectangle
+        iconAnchor: [50, 26]
+    })
+}).addTo(map);
+
+// Bird Richness data per year (2014–2024), monthly values
+var birdRichnessData = {
+    2014: [120, 135, 128, 142, 155, 148, 160, 158, 145, 138, 130, 125],
+    2015: [128, 140, 135, 150, 162, 155, 168, 165, 152, 144, 136, 130],
+    2016: [132, 145, 138, 155, 168, 160, 172, 170, 158, 148, 140, 135],
+    2017: [138, 150, 143, 160, 174, 166, 178, 175, 163, 153, 145, 140],
+    2018: [145, 158, 150, 168, 182, 174, 186, 183, 170, 160, 152, 146],
+    2019: [150, 163, 156, 174, 188, 180, 192, 189, 176, 166, 157, 151],
+    2020: [140, 152, 144, 162, 175, 167, 179, 177, 163, 153, 144, 138],
+    2021: [148, 161, 153, 170, 184, 175, 188, 185, 172, 161, 152, 146],
+    2022: [155, 169, 161, 178, 193, 184, 197, 194, 180, 169, 160, 153],
+    2023: [162, 176, 168, 186, 201, 192, 205, 202, 188, 176, 167, 160],
+    2024: [168, 183, 174, 193, 208, 199, 212, 209, 195, 183, 174, 167]
+};
+
+var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 // Bird Richness Trend Chart
 var ctx = document.getElementById('birdRichnessChart').getContext('2d');
-new Chart(ctx, {
+var birdChart = new Chart(ctx, {
     type: 'line',
     data: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+        labels: months,
         datasets: [{
             label: 'Bird Richness',
-            data: [180, 200, 170, 220, 240, 250],
+            data: birdRichnessData[2014],
             borderColor: '#3b82f6',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             fill: true,
@@ -187,8 +243,9 @@ new Chart(ctx, {
                 ticks: { color: '#a0a4b0' }
             },
             y: {
-                beginAtZero: true,
-                max: 260,
+                beginAtZero: false,
+                min: 100,
+                max: 230,
                 grid: { color: 'rgba(255,255,255,0.06)' },
                 ticks: { color: '#a0a4b0' }
             }
@@ -197,6 +254,16 @@ new Chart(ctx, {
             legend: { display: false }
         }
     }
+});
+
+// Year slider interactivity
+var yearSlider = document.getElementById('yearSlider');
+var yearDisplay = document.getElementById('yearDisplay');
+yearSlider.addEventListener('input', function() {
+    var yr = parseInt(this.value);
+    yearDisplay.textContent = yr;
+    birdChart.data.datasets[0].data = birdRichnessData[yr];
+    birdChart.update();
 });
 </script>
 SCRIPTS;

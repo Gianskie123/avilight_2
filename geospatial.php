@@ -50,121 +50,86 @@ $species_data = load_species_from_csv();
 
 <div class="page-header">
     <h1 class="page-title">Geospatial Forecasting & Interpretability</h1>
-    <p class="page-subtitle">Interactive map with species richness predictions and environmental layers</p>
+    <p class="page-subtitle">Click any city/municipality area on the map to explore species predictions</p>
 </div>
 
-<!-- Map Controls -->
+<!-- Map Container with embedded compact controls -->
 <div class="card">
-    <div class="card-body">
-        <div class="filter-container">
-            <div class="filter-group">
-                <label class="filter-label">
-                    <input type="checkbox" id="layerResident" checked> Resident Species
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" id="layerMigratory" checked> Migratory Species
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" id="layerLight"> Light Intensity (VIIRS)
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" id="layerNDVI"> Vegetation (NDVI)
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" id="layerKBA"> KBA/PA Boundaries
-                </label>
-            </div>
-        </div>
-        
-        <!-- Land Cover Type Filter -->
-        <div class="filter-container">
-            <div class="filter-group">
-                <span class="filter-label"><strong>Land Cover Filter (Metro Manila):</strong></span>
-            </div>
-            <div class="filter-group" style="margin-top: 10px;">
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="13" checked> 🏙️ Urban & Built-up
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="17" checked> 💧 Water Bodies
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="2" checked> 🌳 Forest
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="12" checked> 🌾 Croplands
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="10" checked> 🌿 Grasslands
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="11" checked> 🌊 Wetlands
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="9" checked> 🌾 Savannas
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="8" checked> 🌲 Woody Savannas
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="14" checked> 🌱 Cropland Mosaics
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" class="lc-filter" value="16" checked> 🏜️ Barren
-                </label>
-            </div>
-            <div style="margin-top: 10px;">
-                <button class="btn btn-primary" onclick="selectAllLandCover(true)">Select All</button>
-                <button class="btn btn-secondary" onclick="selectAllLandCover(false)">Deselect All</button>
-            </div>
-        </div>
-        
-        <!-- Map Color Mode -->
-        <div class="filter-container">
-            <div class="filter-group">
-                <span class="filter-label"><strong>Map Display:</strong></span>
-                <button class="btn btn-secondary" id="btnPredictions" onclick="setColorMode('predictions')">🗺️ Predicted Richness</button>
-                <button class="btn btn-primary" id="btnLandCover" onclick="setColorMode('landcover')">🌍 Land Cover Types</button>
-            </div>
-        </div>
-        
-        <!-- Temporal Timeline -->
-        <div class="slider-container">
-            <div class="slider-label">
-                <span>Temporal Timeline - Month:</span>
-                <span id="monthValue">June</span>
-            </div>
-            <input type="range" min="1" max="12" value="6" class="slider" id="monthSlider">
-        </div>
-        
-        <!-- Species Filter -->
-        <div class="filter-container">
-            <div class="filter-group">
-                <span class="filter-label"><strong>Light Tolerance:</strong></span>
-                <button class="btn btn-primary" id="btnFilterAll" onclick="filterSpecies('all')">All Species</button>
-                <button class="btn btn-secondary" id="btnFilterSensitive" onclick="filterSpecies('sensitive')">💡 Light-Sensitive</button>
-                <button class="btn btn-secondary" id="btnFilterTolerant" onclick="filterSpecies('tolerant')">☀️ Light-Tolerant</button>
-            </div>
-            <div class="filter-group" style="margin-top: 10px;">
-                <span class="filter-label"><strong>Migratory Status:</strong></span>
-                <button class="btn btn-primary" id="btnMigAll" onclick="filterMigration('all')">All Types</button>
-                <button class="btn btn-secondary" id="btnMigResident" onclick="filterMigration('resident')">🏡 Resident</button>
-                <button class="btn btn-secondary" id="btnMigMigratory" onclick="filterMigration('migratory')">✈️ Migratory</button>
-            </div>
-        </div>
-    </div>
-</div>
+    <div class="card-body" style="padding: 0;">
 
-<!-- Map Container -->
-<div class="card">
-    <div class="card-body">
-        <div class="map-container">
+        <!-- ── Compact Control Bar ── -->
+        <div id="geoControlBar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border-color); background:var(--bg-card-alt);">
+
+            <!-- Map display mode -->
+            <div style="display:flex; align-items:center; gap:4px;">
+                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">View:</span>
+                <button class="btn btn-primary btn-sm" id="btnLandCover" onclick="setColorMode('landcover')">🌍 Land Cover</button>
+                <button class="btn btn-secondary btn-sm" id="btnPredictions" onclick="setColorMode('predictions')">🗺️ Richness</button>
+            </div>
+
+            <div style="width:1px; height:24px; background:var(--border-color);"></div>
+
+            <!-- Light tolerance -->
+            <div style="display:flex; align-items:center; gap:4px;">
+                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Tolerance:</span>
+                <button class="btn btn-primary btn-sm" id="btnFilterAll" onclick="filterSpecies('all')">All</button>
+                <button class="btn btn-secondary btn-sm" id="btnFilterSensitive" onclick="filterSpecies('sensitive')">💡 Sensitive</button>
+                <button class="btn btn-secondary btn-sm" id="btnFilterTolerant" onclick="filterSpecies('tolerant')">☀️ Tolerant</button>
+            </div>
+
+            <div style="width:1px; height:24px; background:var(--border-color);"></div>
+
+            <!-- Migration filter -->
+            <div style="display:flex; align-items:center; gap:4px;">
+                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Migration:</span>
+                <button class="btn btn-primary btn-sm" id="btnMigAll" onclick="filterMigration('all')">All</button>
+                <button class="btn btn-secondary btn-sm" id="btnMigResident" onclick="filterMigration('resident')">🏡 Resident</button>
+                <button class="btn btn-secondary btn-sm" id="btnMigMigratory" onclick="filterMigration('migratory')">✈️ Migratory</button>
+            </div>
+
+            <div style="width:1px; height:24px; background:var(--border-color);"></div>
+
+            <!-- Month slider -->
+            <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:160px;">
+                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Month: <strong id="monthValue">June</strong></span>
+                <input type="range" min="1" max="12" value="6" class="slider" id="monthSlider" style="flex:1; margin:0;">
+            </div>
+
+            <div style="width:1px; height:24px; background:var(--border-color);"></div>
+
+            <!-- Land cover filter toggle -->
+            <div style="position:relative;">
+                <button class="btn btn-secondary btn-sm" id="btnLCToggle" onclick="toggleLCPanel()">🏷️ Land Cover ▾</button>
+                <!-- Dropdown panel -->
+                <div id="lcDropdown" style="display:none; position:absolute; top:calc(100% + 4px); right:0; z-index:2000; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; box-shadow:0 4px 16px rgba(0,0,0,.15); min-width:220px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; margin-bottom:8px;">
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="13" checked> 🏙️ Urban</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="17" checked> 💧 Water</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="2"  checked> 🌳 Forest</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="12" checked> 🌾 Croplands</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="10" checked> 🌿 Grasslands</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="11" checked> 🌊 Wetlands</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="9"  checked> 🌾 Savannas</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="8"  checked> 🌲 Woody Sav.</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="14" checked> 🌱 Crop Mosaic</label>
+                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="16" checked> 🏜️ Barren</label>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn btn-primary btn-sm" style="flex:1;" onclick="selectAllLandCover(true)">All</button>
+                        <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="selectAllLandCover(false)">None</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ── End Control Bar ── -->
+
+        <div class="map-container" style="border-radius:0 0 8px 8px; overflow:hidden;">
             <div id="map"></div>
             <div id="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
                 <div class="loading"></div>
-                <p>Loading GeoJSON data...</p>
+                <p>Loading map data…</p>
             </div>
-            
+
             <!-- Prediction Heatmap Legend (hidden by default) -->
             <div class="legend" id="legendPrediction" style="display: none;">
                 <strong>Predicted Species Richness</strong>
@@ -184,46 +149,20 @@ $species_data = load_species_from_csv();
             <!-- Land Cover Legend -->
             <div class="legend" id="legendLandCover">
                 <strong>Land Cover Types</strong>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #DC143C;"></div>
-                    <span class="legend-label">Urban & Built-up</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #1E90FF;"></div>
-                    <span class="legend-label">Water Bodies</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #006400;"></div>
-                    <span class="legend-label">Forest</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #FFD700;"></div>
-                    <span class="legend-label">Croplands</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #90EE90;"></div>
-                    <span class="legend-label">Grasslands</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #008B8B;"></div>
-                    <span class="legend-label">Wetlands</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #BDB76B;"></div>
-                    <span class="legend-label">Savannas</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #556B2F;"></div>
-                    <span class="legend-label">Woody Savannas</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #FFA500;"></div>
-                    <span class="legend-label">Cropland Mosaics</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #8B4513;"></div>
-                    <span class="legend-label">Barren</span>
-                </div>
+                <div class="legend-item"><div class="legend-color" style="background:#DC143C;"></div><span class="legend-label">Urban & Built-up</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#1E90FF;"></div><span class="legend-label">Water Bodies</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#006400;"></div><span class="legend-label">Forest</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#FFD700;"></div><span class="legend-label">Croplands</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#90EE90;"></div><span class="legend-label">Grasslands</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#008B8B;"></div><span class="legend-label">Wetlands</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#556B2F;"></div><span class="legend-label">Woody Savannas</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#FFA500;"></div><span class="legend-label">Cropland Mosaics</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#8B4513;"></div><span class="legend-label">Barren</span></div>
+            </div>
+
+            <!-- Hint label -->
+            <div id="mapHint" style="position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#fff; font-size:0.78rem; padding:4px 12px; border-radius:20px; z-index:900; pointer-events:none;">
+                Click a city area to explore predictions
             </div>
         </div>
     </div>
@@ -234,16 +173,16 @@ $species_data = load_species_from_csv();
     <span class="side-panel-close" onclick="closeCellPanel()">&times;</span>
     <h3 id="cellTitle">Area Analysis</h3>
     <div id="cellContent">
-        <p><strong>Site:</strong> <span id="cellId"></span></p>
-        <p><strong>Coordinates:</strong> <span id="cellCoords"></span></p>
-        <p><strong>Unique Species (Richness):</strong> <span id="predictedRichness"></span></p>
-        <p><strong>Observed Richness:</strong> <span id="actualRichness"></span></p>
+        <p><strong>City / Area:</strong> <span id="cellId"></span></p>
+        <p><strong>Dominant Land Cover:</strong> <span id="cellCoords"></span></p>
+        <p><strong>Total Unique Species:</strong> <span id="predictedRichness"></span></p>
+        <p><strong>Observation Sites:</strong> <span id="actualRichness"></span></p>
         <div id="obsBreakdown" style="display:none; background:#f8f9fa; border-radius:6px; padding:8px 10px; margin-bottom:8px;"></div>
         <hr>
-        <h4>Species in this Area:</h4>
+        <h4>Species Observed in this City:</h4>
         <ul id="speciesList"></ul>
         <hr>
-        <h4>SHAP Feature Importance:</h4>
+        <h4>Environmental Factors (SHAP):</h4>
         <canvas id="shapChart"></canvas>
         <div id="shapExplanation"></div>
     </div>
@@ -264,11 +203,11 @@ $species_data = load_species_from_csv();
     </div>
     
     <div class="card">
-        <h2 class="card-header">Local Explainer - Search Area</h2>
+        <h2 class="card-header">Local Explainer - Search City</h2>
         <div class="card-body">
             <div class="form-group">
-                <label class="form-label">Enter Area ID:</label>
-                <input type="text" class="form-control" id="cellSearchInput" placeholder="e.g., site_Tanza">
+                <label class="form-label">Enter City / Municipality Name:</label>
+                <input type="text" class="form-control" id="cellSearchInput" placeholder="e.g., Makati, Quezon City, Taguig">
                 <button class="btn btn-primary" style="margin-top: 10px;" onclick="searchCell()">Search</button>
             </div>
             <div id="searchResult"></div>
@@ -281,18 +220,18 @@ $cells_json = json_encode($cells_data, JSON_HEX_TAG | JSON_HEX_AMP);
 $species_json = json_encode($species_data, JSON_HEX_TAG | JSON_HEX_AMP);
 $extra_scripts = <<<EOD
 <script>
-// Metro Manila bounding box
+// Metro Manila bounding box (exact bounds from boundary file)
 const MM_BOUNDS = L.latLngBounds(
     L.latLng(14.35, 120.90),
-    L.latLng(14.78, 121.15)
+    L.latLng(14.79, 121.14)
 );
 
-// Initialize map centered on Metro Manila with bounded view and Canvas renderer for performance
+// Initialize map centered on Metro Manila
 const map = L.map('map', {
-    maxBounds: MM_BOUNDS.pad(0.1),
-    minZoom: 10,
+    maxBounds: MM_BOUNDS.pad(0.08),
+    minZoom: 11,
     preferCanvas: true
-}).setView([14.5995, 120.9842], 11);
+}).setView([14.565, 121.01], 12);
 
 // Add OpenStreetMap tile layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -313,7 +252,7 @@ const LANDCOVER_TYPES = {
     17: { name: 'Water Bodies', color: '#1E90FF' }
 };
 
-// Baseline richness by land cover type (used to estimate predictions for areas without explicit data)
+// Baseline richness by land cover type (used to estimate predictions for areas without observed data)
 const LANDCOVER_RICHNESS = {
     2:  22,  // Forest — highest biodiversity
     8:  18,  // Woody Savannas
@@ -330,44 +269,41 @@ const LANDCOVER_RICHNESS = {
 // Current map color mode: 'landcover' (default) or 'predictions'
 let colorMode = 'landcover';
 
-// Sample cell data
+// Observation site data from DB
 const cellsData = {$cells_json};
 
-// Build a lookup map for fast cell data access
+// Build a lookup by site cell_id
 const cellsLookup = {};
-cellsData.forEach(function(c) {
-    cellsLookup[c.cell_id] = c;
-});
+cellsData.forEach(function(c) { cellsLookup[c.cell_id] = c; });
 
-// Species masterlist data and lookup by common name
+// Species masterlist
 const speciesData = {$species_json};
 const speciesLookup = {};
-speciesData.forEach(function(s) {
-    speciesLookup[s.common_name] = s;
-});
+speciesData.forEach(function(s) { speciesLookup[s.common_name] = s; });
 
-// Active species filter state
+// Active filter state
 let activeLightFilter = 'all';
 let activeMigrationFilter = 'all';
 
-// Show loading indicator
-document.getElementById('loading').style.display = 'block';
-
-// Store the GeoJSON layer reference for filtering
+// GeoJSON layer references
 let geojsonLayer = null;
 let geojsonData = null;
+let cityLayer = null;
 
-// Get land cover name from code
+// City → observation sites lookup (populated after both datasets load)
+const citySitesLookup = {};   // cityName → [cellData, ...]
+let citiesGeoData = null;
+
+// ── Helpers ──────────────────────────────────────────────
+
 function getLandCoverName(code) {
     return LANDCOVER_TYPES[code] ? LANDCOVER_TYPES[code].name : 'Unknown (' + code + ')';
 }
 
-// Get color for land cover type
 function getLandCoverColor(code) {
     return LANDCOVER_TYPES[code] ? LANDCOVER_TYPES[code].color : '#999999';
 }
 
-// Simple hash function for deterministic per-cell variation
 function hashCode(str) {
     var hash = 0;
     for (var i = 0; i < str.length; i++) {
@@ -377,30 +313,60 @@ function hashCode(str) {
     return hash;
 }
 
-// Get predicted richness for a feature (from data or estimated)
+// Ray-casting point-in-polygon (handles Polygon and MultiPolygon)
+function pointInPolygon(lat, lng, geometry) {
+    function pipRing(ring) {
+        var inside = false;
+        for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            var xi = ring[i][0], yi = ring[i][1];
+            var xj = ring[j][0], yj = ring[j][1];
+            var intersect = ((yi > lat) !== (yj > lat)) &&
+                (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+    if (geometry.type === 'Polygon') {
+        return pipRing(geometry.coordinates[0]);
+    }
+    if (geometry.type === 'MultiPolygon') {
+        for (var p = 0; p < geometry.coordinates.length; p++) {
+            if (pipRing(geometry.coordinates[p][0])) return true;
+        }
+    }
+    return false;
+}
+
+// Build citySitesLookup once both cities and cells data are available
+function buildCitySitesLookup() {
+    if (!citiesGeoData || !cellsData.length) return;
+    citiesGeoData.features.forEach(function(cityFeat) {
+        var name = cityFeat.properties.city_name;
+        citySitesLookup[name] = [];
+        cellsData.forEach(function(site) {
+            if (pointInPolygon(site.latitude, site.longitude, cityFeat.geometry)) {
+                citySitesLookup[name].push(site);
+            }
+        });
+    });
+}
+
+// Estimate richness for a land-cover feature
 function getPredictedRichness(properties) {
     var cellData = cellsLookup[properties.cell_id];
-    if (cellData) {
-        return cellData.predicted_richness;
-    }
-    // Estimate based on land cover type with deterministic variation per cell
-    var base = LANDCOVER_RICHNESS[properties.landcover] || 8;
+    if (cellData) return cellData.predicted_richness;
+    var base = LANDCOVER_RICHNESS[properties.land_cover] || 8;
     var seed = hashCode(properties.cell_id || (properties.latitude + '_' + properties.longitude));
-    var variation = ((Math.abs(seed) % 7) - 3); // range: -3 to +3
+    var variation = ((Math.abs(seed) % 7) - 3);
     return Math.max(1, Math.min(30, base + variation));
 }
 
-// Get richness filtered by active Light Tolerance and Migratory Status filters.
-// For cells with known species lists, counts only matching species.
-// For cells without species data, returns the full estimated richness.
 function getFilteredRichness(properties) {
     if (activeLightFilter === 'all' && activeMigrationFilter === 'all') {
         return getPredictedRichness(properties);
     }
     var cellData = cellsLookup[properties.cell_id];
-    if (!cellData || !cellData.species_list) {
-        return getPredictedRichness(properties);
-    }
+    if (!cellData || !cellData.species_list) return getPredictedRichness(properties);
     var count = 0;
     cellData.species_list.forEach(function(name) {
         var sp = speciesLookup[name];
@@ -409,58 +375,50 @@ function getFilteredRichness(properties) {
     return count;
 }
 
-// Returns true if a species object matches the currently active Light Tolerance
-// and Migratory Status filters.
 function speciesMatchesFilters(sp) {
     var lightMatch = activeLightFilter === 'all' ||
         (activeLightFilter === 'sensitive' && sp.light_tolerance === 'Sensitive') ||
-        (activeLightFilter === 'tolerant' && sp.light_tolerance === 'Tolerant');
+        (activeLightFilter === 'tolerant'  && sp.light_tolerance === 'Tolerant');
     var migMatch = activeMigrationFilter === 'all' ||
-        (activeMigrationFilter === 'resident' && sp.migration_status === 'Resident') ||
+        (activeMigrationFilter === 'resident'  && sp.migration_status === 'Resident') ||
         (activeMigrationFilter === 'migratory' && sp.migration_status === 'Migratory');
     return lightMatch && migMatch;
 }
 
-// Color scale for predicted richness (blue → green → yellow → red)
-// Uses a diverging spectral-like palette
 function getRichnessColor(value) {
     var stops = [
-        { val: 0,  r: 49,  g: 54,  b: 149 },  // deep blue
-        { val: 5,  r: 69,  g: 117, b: 180 },  // blue
-        { val: 10, r: 116, g: 173, b: 209 },  // light blue
-        { val: 15, r: 171, g: 217, b: 233 },  // pale blue
-        { val: 18, r: 254, g: 224, b: 144 },  // yellow
-        { val: 22, r: 253, g: 174, b: 97  },  // orange
-        { val: 26, r: 244, g: 109, b: 67  },  // red-orange
-        { val: 30, r: 165, g: 0,   b: 38  }   // dark red
+        { val: 0,  r: 49,  g: 54,  b: 149 },
+        { val: 5,  r: 69,  g: 117, b: 180 },
+        { val: 10, r: 116, g: 173, b: 209 },
+        { val: 15, r: 171, g: 217, b: 233 },
+        { val: 18, r: 254, g: 224, b: 144 },
+        { val: 22, r: 253, g: 174, b: 97  },
+        { val: 26, r: 244, g: 109, b: 67  },
+        { val: 30, r: 165, g: 0,   b: 38  }
     ];
     value = Math.max(0, Math.min(30, value));
     var lower = stops[0], upper = stops[stops.length - 1];
     for (var i = 0; i < stops.length - 1; i++) {
         if (value >= stops[i].val && value <= stops[i + 1].val) {
-            lower = stops[i];
-            upper = stops[i + 1];
-            break;
+            lower = stops[i]; upper = stops[i + 1]; break;
         }
     }
     var t = (upper.val === lower.val) ? 0 : (value - lower.val) / (upper.val - lower.val);
-    var r = Math.round(lower.r + t * (upper.r - lower.r));
-    var g = Math.round(lower.g + t * (upper.g - lower.g));
-    var b = Math.round(lower.b + t * (upper.b - lower.b));
-    return 'rgb(' + r + ',' + g + ',' + b + ')';
+    return 'rgb(' + Math.round(lower.r + t*(upper.r-lower.r)) + ',' +
+                    Math.round(lower.g + t*(upper.g-lower.g)) + ',' +
+                    Math.round(lower.b + t*(upper.b-lower.b)) + ')';
 }
 
-// Get currently selected land cover types
 function getSelectedLandCoverTypes() {
-    const checkboxes = document.querySelectorAll('.lc-filter');
     const selected = new Set();
-    checkboxes.forEach(function(cb) {
+    document.querySelectorAll('.lc-filter').forEach(function(cb) {
         if (cb.checked) selected.add(parseInt(cb.value));
     });
     return selected;
 }
 
-// Filter GeoJSON features to Metro Manila and selected land cover types
+// Filter land-cover features to Metro Manila bbox + selected types
+// Note: LandCover.geojson uses property 'land_cover' (not 'landcover')
 function filterToMetroManila(data) {
     const selected = getSelectedLandCoverTypes();
     return {
@@ -468,229 +426,182 @@ function filterToMetroManila(data) {
         features: data.features.filter(function(f) {
             var lat = f.properties.latitude;
             var lng = f.properties.longitude;
-            var lc = f.properties.landcover;
-            return lat >= 14.35 && lat <= 14.78 &&
-                   lng >= 120.90 && lng <= 121.15 &&
+            var lc = f.properties.land_cover;
+            return lat >= 14.35 && lat <= 14.79 &&
+                   lng >= 120.90 && lng <= 121.14 &&
                    selected.has(lc);
         })
     };
 }
 
-// Style function for GeoJSON features
-function style(feature) {
+// ── Style functions ───────────────────────────────────────
+
+function lcStyle(feature) {
     if (colorMode === 'predictions') {
-        var richness = getFilteredRichness(feature.properties);
         return {
-            fillColor: getRichnessColor(richness),
-            weight: 0.5,
-            opacity: 0.3,
-            color: '#ffffff',
-            fillOpacity: 0.8
+            fillColor: getRichnessColor(getFilteredRichness(feature.properties)),
+            weight: 0, fillOpacity: 0.85
         };
     }
     return {
-        fillColor: getLandCoverColor(feature.properties.landcover),
-        weight: 1,
-        opacity: 0.5,
-        color: 'white',
-        fillOpacity: 0.6
+        fillColor: getLandCoverColor(feature.properties.land_cover),
+        weight: 0, fillOpacity: 0.75
     };
 }
 
-// Set color mode and refresh map
+function cityStyle() {
+    return { fillColor: 'transparent', weight: 1.8, color: '#333', fillOpacity: 0, opacity: 0.7 };
+}
+
+function cityHoverStyle() {
+    return { fillColor: '#fff', weight: 2.5, color: '#0066cc', fillOpacity: 0.12, opacity: 1 };
+}
+
+// ── Map mode ──────────────────────────────────────────────
+
 function setColorMode(mode) {
     colorMode = mode;
-    // Update button styles
-    document.getElementById('btnPredictions').className = mode === 'predictions' ? 'btn btn-primary' : 'btn btn-secondary';
-    document.getElementById('btnLandCover').className = mode === 'landcover' ? 'btn btn-primary' : 'btn btn-secondary';
-    // Toggle legends
+    document.getElementById('btnPredictions').className = mode === 'predictions' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    document.getElementById('btnLandCover').className   = mode === 'landcover'   ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
     document.getElementById('legendPrediction').style.display = mode === 'predictions' ? 'block' : 'none';
-    document.getElementById('legendLandCover').style.display = mode === 'landcover' ? 'block' : 'none';
+    document.getElementById('legendLandCover').style.display  = mode === 'landcover'   ? 'block' : 'none';
     applyLandCoverFilter();
 }
 
-// Apply land cover filter
+// ── Land-cover layer ──────────────────────────────────────
+
 function applyLandCoverFilter() {
     if (!geojsonData) return;
-
-    if (geojsonLayer) {
-        map.removeLayer(geojsonLayer);
-    }
-
+    if (geojsonLayer) { map.removeLayer(geojsonLayer); geojsonLayer = null; }
     var filtered = filterToMetroManila(geojsonData);
-
     geojsonLayer = L.geoJSON(filtered, {
-        style: style,
-        onEachFeature: function(feature, layer) {
-            layer.on('click', function(e) {
-                showCellAnalysis(feature.properties);
-            });
-
-            var lat = feature.properties.latitude;
-            var lng = feature.properties.longitude;
-            var lcCode = feature.properties.landcover;
-            var richness = getFilteredRichness(feature.properties);
-            var totalRichness = getPredictedRichness(feature.properties);
-            var isFiltered = activeLightFilter !== 'all' || activeMigrationFilter !== 'all';
-            var richnessText = isFiltered ?
-                'Filtered Richness: ' + richness + ' (of ' + totalRichness + ' total)' :
-                'Predicted Richness: ' + richness + ' species';
-
-            if (lat != null && lng != null) {
-                var latDir = lat >= 0 ? 'N' : 'S';
-                var lngDir = lng >= 0 ? 'E' : 'W';
-                layer.bindTooltip(
-                    '<strong>' + getLandCoverName(lcCode) + '</strong><br>' +
-                    richnessText + '<br>' +
-                    '<em>' + Math.abs(lat).toFixed(4) + '°' + latDir + ', ' + Math.abs(lng).toFixed(4) + '°' + lngDir + '</em>',
-                    { sticky: true, className: 'map-tooltip' }
-                );
-            }
-
-            var popLatDir = feature.properties.latitude >= 0 ? 'N' : 'S';
-            var popLngDir = feature.properties.longitude >= 0 ? 'E' : 'W';
-            layer.bindPopup(
-                '<strong>' + getLandCoverName(feature.properties.landcover) + '</strong><br>' +
-                '<strong>Location:</strong> ' + Math.abs(feature.properties.latitude).toFixed(4) + '°' + popLatDir + ', ' + Math.abs(feature.properties.longitude).toFixed(4) + '°' + popLngDir + '<br>' +
-                '<strong>' + (isFiltered ? 'Filtered Richness:' : 'Predicted Richness:') + '</strong> ' + richness + (isFiltered ? ' (of ' + totalRichness + ' total)' : ' species') + '<br>' +
-                '<em>Click for full analysis</em>'
-            );
-        }
+        style: lcStyle,
+        interactive: false   // land-cover is visual only; city layer handles clicks
     }).addTo(map);
+    // Ensure city boundary layer stays on top
+    if (cityLayer) cityLayer.bringToFront();
 }
 
-// Select/Deselect all land cover types
 function selectAllLandCover(selectAll) {
-    document.querySelectorAll('.lc-filter').forEach(function(cb) {
-        cb.checked = selectAll;
-    });
+    document.querySelectorAll('.lc-filter').forEach(function(cb) { cb.checked = selectAll; });
     applyLandCoverFilter();
 }
 
-// Add event listeners to land cover filter checkboxes
 document.querySelectorAll('.lc-filter').forEach(function(cb) {
     cb.addEventListener('change', applyLandCoverFilter);
 });
 
-// Load and display GeoJSON
-fetch('AviLight_LandCover_GeoJSON.geojson')
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-        document.getElementById('loading').style.display = 'none';
+// ── City boundary layer (area-style clicking) ─────────────
 
-        geojsonData = data;
+function buildCityLayer() {
+    if (!citiesGeoData) return;
+    if (cityLayer) { map.removeLayer(cityLayer); cityLayer = null; }
 
-        applyLandCoverFilter();
-    })
-    .catch(function(error) {
-        document.getElementById('loading').style.display = 'none';
-        console.error('Error loading GeoJSON:', error);
-        alert('Error loading map data. Please check console for details.');
-    });
+    cityLayer = L.geoJSON(citiesGeoData, {
+        style: cityStyle,
+        onEachFeature: function(feature, layer) {
+            var cityName = feature.properties.city_name;
 
-// Month slider
-document.getElementById('monthSlider').addEventListener('input', function() {
-    var months = ['January', 'February', 'March', 'April', 'May', 'June',
-                    'July', 'August', 'September', 'October', 'November', 'December'];
-    document.getElementById('monthValue').textContent = months[this.value - 1];
-});
+            layer.bindTooltip('<strong>' + cityName + '</strong><br><em>Click to explore</em>',
+                { sticky: true, className: 'map-tooltip' });
 
-// Filter species by Light Tolerance
-function filterSpecies(type) {
-    activeLightFilter = type;
-    document.getElementById('btnFilterAll').className = type === 'all' ? 'btn btn-primary' : 'btn btn-secondary';
-    document.getElementById('btnFilterSensitive').className = type === 'sensitive' ? 'btn btn-warning' : 'btn btn-secondary';
-    document.getElementById('btnFilterTolerant').className = type === 'tolerant' ? 'btn btn-success' : 'btn btn-secondary';
-    applyLandCoverFilter();
+            layer.on('mouseover', function() { layer.setStyle(cityHoverStyle()); });
+            layer.on('mouseout',  function() { layer.setStyle(cityStyle()); });
+            layer.on('click',     function() { showCityAnalysis(cityName, feature); });
+        }
+    }).addTo(map);
 }
 
-// Filter species by Migratory Status
-function filterMigration(type) {
-    activeMigrationFilter = type;
-    document.getElementById('btnMigAll').className = type === 'all' ? 'btn btn-primary' : 'btn btn-secondary';
-    document.getElementById('btnMigResident').className = type === 'resident' ? 'btn btn-success' : 'btn btn-secondary';
-    document.getElementById('btnMigMigratory').className = type === 'migratory' ? 'btn btn-info' : 'btn btn-secondary';
-    applyLandCoverFilter();
-}
+// ── City analysis panel ───────────────────────────────────
 
-// Track the SHAP chart instance to prevent memory leaks
 let shapChartInstance = null;
 
-// Show cell analysis panel
-function showCellAnalysis(properties) {
-    var cellData = cellsLookup[properties.cell_id] || null;
+function showCityAnalysis(cityName, cityFeature) {
+    var sites = citySitesLookup[cityName] || [];
 
-    if (!cellData) {
-        var estimatedRichness = getPredictedRichness(properties);
-        cellData = {
-            cell_id: properties.cell_id,
-            latitude: properties.latitude,
-            longitude: properties.longitude,
-            predicted_richness: estimatedRichness,
-            actual_richness: Math.max(1, estimatedRichness + Math.round((Math.abs(hashCode(properties.cell_id)) % 5) - 2)),
-            species_list: ['No observed data — richness estimated from land cover type'],
-            shap_values: {
-                light: -2.0,
-                ndvi: 1.0,
-                temperature: 0.5,
-                elevation: 0.3
+    // Aggregate species across all sites in the city
+    var allSpeciesSet = new Set();
+    var totalTolerant = 0, totalSensitive = 0, totalResident = 0, totalMigrant = 0, totalCount = 0;
+    sites.forEach(function(s) {
+        totalTolerant  += s.total_tolerant  || 0;
+        totalSensitive += s.total_sensitive || 0;
+        totalResident  += s.total_resident  || 0;
+        totalMigrant   += s.total_migrant   || 0;
+        totalCount     += s.total_count     || 0;
+        (s.species_list || []).forEach(function(sp) { allSpeciesSet.add(sp); });
+    });
+
+    // Determine dominant land cover in this city from geojsonData (if loaded)
+    var lcCounts = {};
+    if (geojsonData) {
+        geojsonData.features.forEach(function(f) {
+            if (pointInPolygon(f.properties.latitude, f.properties.longitude, cityFeature.geometry)) {
+                var lc = f.properties.land_cover;
+                lcCounts[lc] = (lcCounts[lc] || 0) + 1;
             }
-        };
+        });
     }
+    var domLC = null, domCount = 0;
+    Object.keys(lcCounts).forEach(function(lc) {
+        if (lcCounts[lc] > domCount) { domCount = lcCounts[lc]; domLC = parseInt(lc); }
+    });
 
-    document.getElementById('cellId').textContent = cellData.site_name || cellData.cell_id;
-    document.getElementById('cellCoords').textContent =
-        cellData.latitude.toFixed(4) + ', ' + cellData.longitude.toFixed(4);
-    document.getElementById('predictedRichness').textContent = cellData.predicted_richness;
-    document.getElementById('actualRichness').textContent = cellData.actual_richness;
+    // Estimate city richness (sum of site richnesses, or land-cover estimate)
+    var totalRichness = sites.length > 0
+        ? sites.reduce(function(sum, s) { return sum + (s.predicted_richness || 0); }, 0)
+        : (domLC ? LANDCOVER_RICHNESS[domLC] || 8 : 8);
 
-    // Show observation breakdown if real data is available
+    // Apply species filter
+    var isFiltered = activeLightFilter !== 'all' || activeMigrationFilter !== 'all';
+    var displayedSpecies = Array.from(allSpeciesSet).filter(function(name) {
+        if (!isFiltered) return true;
+        var sp = speciesLookup[name];
+        return !sp || speciesMatchesFilters(sp);
+    });
+
+    // Populate panel
+    document.getElementById('cellId').textContent = cityName;
+    document.getElementById('cellCoords').textContent = domLC ? getLandCoverName(domLC) : '—';
+    document.getElementById('predictedRichness').textContent = totalRichness;
+    document.getElementById('actualRichness').textContent = sites.length;
+
     var breakdownEl = document.getElementById('obsBreakdown');
-    if (breakdownEl) {
-        if (cellData.total_tolerant !== undefined) {
-            var months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            var period = cellData.month ? months[cellData.month] + ' ' + cellData.year : '';
-            breakdownEl.style.display = 'block';
-            breakdownEl.innerHTML =
-                (period ? '<small style="color:#888;">Last observed: ' + period + '</small><br>' : '') +
-                '<small>🌅 Tolerant: <strong>' + cellData.total_tolerant + '</strong> &nbsp; ' +
-                '💡 Sensitive: <strong>' + cellData.total_sensitive + '</strong> &nbsp; ' +
-                '🏡 Resident: <strong>' + cellData.total_resident + '</strong> &nbsp; ' +
-                '✈️ Migrant: <strong>' + cellData.total_migrant + '</strong> &nbsp; ' +
-                '👁 Total birds: <strong>' + (cellData.total_count || '—') + '</strong></small>';
-        } else {
-            breakdownEl.style.display = 'none';
-        }
+    if (sites.length > 0) {
+        breakdownEl.style.display = 'block';
+        breakdownEl.innerHTML =
+            '<small>🌅 Tolerant: <strong>' + totalTolerant + '</strong> &nbsp; ' +
+            '💡 Sensitive: <strong>' + totalSensitive + '</strong> &nbsp; ' +
+            '🏡 Resident: <strong>' + totalResident  + '</strong> &nbsp; ' +
+            '✈️ Migrant: <strong>'  + totalMigrant   + '</strong> &nbsp; ' +
+            '👁 Total birds: <strong>' + totalCount + '</strong></small>';
+    } else {
+        breakdownEl.style.display = 'none';
     }
 
     var speciesList = document.getElementById('speciesList');
     speciesList.innerHTML = '';
-    var isFiltered = activeLightFilter !== 'all' || activeMigrationFilter !== 'all';
-    var matchCount = 0;
-    cellData.species_list.forEach(function(species) {
-        if (isFiltered) {
-            var sp = speciesLookup[species];
-            if (sp && !speciesMatchesFilters(sp)) return;
-        }
-        matchCount++;
+    if (displayedSpecies.length === 0) {
         var li = document.createElement('li');
-        li.textContent = species;
-        speciesList.appendChild(li);
-    });
-    if (isFiltered && matchCount === 0) {
-        var li = document.createElement('li');
-        li.textContent = 'No species match the active filter criteria.';
+        li.textContent = sites.length > 0
+            ? 'No species match the active filter.'
+            : 'No observation data for this city — richness estimated from land cover.';
         li.style.color = '#999';
         speciesList.appendChild(li);
+    } else {
+        displayedSpecies.forEach(function(name) {
+            var li = document.createElement('li');
+            li.textContent = name;
+            speciesList.appendChild(li);
+        });
     }
 
-    // Destroy previous chart instance to prevent memory leaks and slowdown
-    if (shapChartInstance) {
-        shapChartInstance.destroy();
-        shapChartInstance = null;
-    }
+    // SHAP chart — use aggregated values or defaults
+    var avgLight = sites.length ? sites.reduce(function(s,c){return s+(c.shap_values.light||0);},0)/sites.length : -2.0;
+    var avgNdvi  = sites.length ? sites.reduce(function(s,c){return s+(c.shap_values.ndvi||0);},0)/sites.length  :  1.0;
+    var avgTemp  = sites.length ? sites.reduce(function(s,c){return s+(c.shap_values.temperature||0);},0)/sites.length : 0.5;
+    var avgElev  = sites.length ? sites.reduce(function(s,c){return s+(c.shap_values.elevation||0);},0)/sites.length  : 0.3;
 
+    if (shapChartInstance) { shapChartInstance.destroy(); shapChartInstance = null; }
     var ctx = document.getElementById('shapChart').getContext('2d');
     shapChartInstance = new Chart(ctx, {
         type: 'bar',
@@ -698,72 +609,147 @@ function showCellAnalysis(properties) {
             labels: ['Light', 'NDVI', 'Temperature', 'Elevation'],
             datasets: [{
                 label: 'SHAP Value',
-                data: [
-                    cellData.shap_values.light,
-                    cellData.shap_values.ndvi,
-                    cellData.shap_values.temperature,
-                    cellData.shap_values.elevation
-                ],
-                backgroundColor: function(context) {
-                    return context.parsed.y < 0 ? '#dc3545' : '#28a745';
-                }
+                data: [avgLight, avgNdvi, avgTemp, avgElev],
+                backgroundColor: function(ctx) { return ctx.parsed.y < 0 ? '#dc3545' : '#28a745'; }
             }]
         },
         options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            }
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } }
         }
     });
 
-    var lightText = cellData.shap_values.light < 0 ?
-        'high light reduces richness by ' + Math.abs(cellData.shap_values.light).toFixed(1) + '%' :
-        'light has positive effect';
-    var ndviText = cellData.shap_values.ndvi > 0 ?
-        'increases it by ' + cellData.shap_values.ndvi.toFixed(1) + '%' :
-        'has negative effect';
-
+    var lightText = avgLight < 0
+        ? 'high light reduces richness by ' + Math.abs(avgLight).toFixed(1)
+        : 'light has a positive effect';
+    var ndviText = avgNdvi > 0
+        ? 'vegetation cover increases richness by ' + avgNdvi.toFixed(1)
+        : 'vegetation has a negative effect';
     document.getElementById('shapExplanation').innerHTML =
-        '<p style="margin-top: 10px; font-size: 0.9rem; color: #666;">' +
-        '<strong>Interpretation:</strong> In this area, ' + lightText +
-        ', while NDVI ' + ndviText + '.</p>';
+        '<p style="margin-top:10px;font-size:0.9rem;color:#666;">' +
+        '<strong>Interpretation:</strong> In <em>' + cityName + '</em>, ' + lightText +
+        '. ' + ndviText.charAt(0).toUpperCase() + ndviText.slice(1) + '.</p>';
 
     document.getElementById('cellPanel').style.display = 'block';
+    document.getElementById('mapHint').style.display = 'none';
 }
 
 function closeCellPanel() {
     document.getElementById('cellPanel').style.display = 'none';
+    document.getElementById('mapHint').style.display = 'block';
 }
 
-// Search cell function
+// ── Search ────────────────────────────────────────────────
+
 function searchCell() {
-    var cellId = document.getElementById('cellSearchInput').value.trim();
-    var cellData = cellsLookup[cellId] || null;
-
-    if (cellData) {
+    var query = document.getElementById('cellSearchInput').value.trim().toLowerCase();
+    var found = null;
+    if (citiesGeoData) {
+        citiesGeoData.features.forEach(function(f) {
+            if (f.properties.city_name.toLowerCase().indexOf(query) !== -1) found = f;
+        });
+    }
+    if (found) {
         document.getElementById('searchResult').innerHTML =
-            '<div class="alert alert-info" style="margin-top: 15px;">' +
-            '<strong>Site Found:</strong> ' + (cellData.site_name || cellId) + '<br>' +
-            '<strong>Unique Species:</strong> ' + cellData.predicted_richness + '<br>' +
-            '<strong>Total Birds Counted:</strong> ' + (cellData.total_count || '—') +
-            '</div>';
-
-        map.setView([cellData.latitude, cellData.longitude], 14);
-        showCellAnalysis(cellData);
+            '<div class="alert alert-info" style="margin-top:15px;">' +
+            '<strong>Found:</strong> ' + found.properties.city_name + '</div>';
+        // Compute centroid — handle both Polygon and MultiPolygon
+        var pts = (found.geometry.type === 'MultiPolygon')
+            ? found.geometry.coordinates[0][0]
+            : found.geometry.coordinates[0];
+        var lat = pts.reduce(function(s,p){return s+p[1];}, 0) / pts.length;
+        var lng = pts.reduce(function(s,p){return s+p[0];}, 0) / pts.length;
+        map.setView([lat, lng], 13);
+        showCityAnalysis(found.properties.city_name, found);
     } else {
         document.getElementById('searchResult').innerHTML =
-            '<div class="alert alert-danger" style="margin-top: 15px;">' +
-            'Site not found. Try site IDs like: site_Tanza, site_Las_Pinas_Paranaque_Wetland_Park' +
-            '</div>';
+            '<div class="alert alert-danger" style="margin-top:15px;">' +
+            'City not found. Try: Manila, Makati, Quezon City, Taguig…</div>';
     }
 }
 
-// Global SHAP chart
+// ── LC filter dropdown toggle ─────────────────────────────
+
+function toggleLCPanel() {
+    var panel = document.getElementById('lcDropdown');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('#btnLCToggle') && !e.target.closest('#lcDropdown')) {
+        var d = document.getElementById('lcDropdown');
+        if (d) d.style.display = 'none';
+    }
+});
+
+// ── Month slider ──────────────────────────────────────────
+
+document.getElementById('monthSlider').addEventListener('input', function() {
+    var months = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+    document.getElementById('monthValue').textContent = months[this.value - 1];
+});
+
+// ── Species filters ───────────────────────────────────────
+
+function filterSpecies(type) {
+    activeLightFilter = type;
+    document.getElementById('btnFilterAll').className       = type === 'all'       ? 'btn btn-primary btn-sm'  : 'btn btn-secondary btn-sm';
+    document.getElementById('btnFilterSensitive').className = type === 'sensitive' ? 'btn btn-warning btn-sm'  : 'btn btn-secondary btn-sm';
+    document.getElementById('btnFilterTolerant').className  = type === 'tolerant'  ? 'btn btn-success btn-sm'  : 'btn btn-secondary btn-sm';
+    applyLandCoverFilter();
+}
+
+function filterMigration(type) {
+    activeMigrationFilter = type;
+    document.getElementById('btnMigAll').className       = type === 'all'       ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    document.getElementById('btnMigResident').className  = type === 'resident'  ? 'btn btn-success btn-sm' : 'btn btn-secondary btn-sm';
+    document.getElementById('btnMigMigratory').className = type === 'migratory' ? 'btn btn-info btn-sm'    : 'btn btn-secondary btn-sm';
+    applyLandCoverFilter();
+}
+
+// ── Data loading ──────────────────────────────────────────
+
+document.getElementById('loading').style.display = 'block';
+
+// Load land cover + city boundaries in parallel
+Promise.all([
+    fetch('LandCover.geojson').then(function(r) { return r.json(); }),
+    fetch('MM_Cities_WGS84.geojson').then(function(r) { return r.json(); }),
+    fetch('MM_Mask.geojson').then(function(r) { return r.json(); })
+]).then(function(results) {
+    document.getElementById('loading').style.display = 'none';
+
+    geojsonData    = results[0];
+    citiesGeoData  = results[1];
+    var maskData   = results[2];
+
+    // Land-cover layer (background, non-interactive)
+    applyLandCoverFilter();
+
+    // Clipping mask — hides areas outside Metro Manila
+    L.geoJSON(maskData, {
+        style: {
+            fillColor: '#f0f0f0',
+            fillOpacity: 0.65,
+            weight: 0,
+            interactive: false
+        }
+    }).addTo(map);
+
+    // City boundary layer (area-style, clickable)
+    buildCityLayer();
+
+    // Build city-to-sites lookup
+    buildCitySitesLookup();
+
+}).catch(function(err) {
+    document.getElementById('loading').style.display = 'none';
+    console.error('Error loading map data:', err);
+});
+
+// ── Global SHAP chart ─────────────────────────────────────
+
 var ctxGlobal = document.getElementById('globalShapChart').getContext('2d');
 new Chart(ctxGlobal, {
     type: 'bar',
@@ -782,10 +768,7 @@ new Chart(ctxGlobal, {
             y: {
                 beginAtZero: true,
                 max: 0.5,
-                title: {
-                    display: true,
-                    text: 'Mean |SHAP Value|'
-                }
+                title: { display: true, text: 'Mean |SHAP Value|' }
             }
         }
     }

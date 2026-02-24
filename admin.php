@@ -223,8 +223,14 @@ require_once 'includes/header.php';
             </tbody>
         </table>
         
-        <h4 style="margin-top: 30px;">Spatial Integrity Checks</h4>
-        <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; margin-top: 10px;">
+    </div>
+</div>
+
+<!-- Spatial Integrity Checks -->
+<div class="card">
+    <h2 class="card-header">Spatial Integrity Checks</h2>
+    <div class="card-body">
+        <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px;">
             <strong>✓ All Checks Passed</strong>
             <ul style="margin-top: 10px;">
                 <li>Latitude range: 14.2° to 14.9° N ✓</li>
@@ -331,64 +337,116 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
         return;
     }
     
-    // Simulate upload
     statusDiv.innerHTML = '<div class="alert alert-info"><div class="loading"></div> Uploading and validating data...</div>';
     
-    setTimeout(() => {
-        statusDiv.innerHTML = `
-            <div class="alert alert-info">
-                <strong>✓ Upload Successful!</strong><br>
-                File: ${file.name}<br>
-                Size: ${(file.size / 1024).toFixed(2)} KB<br>
-                Status: Validation in progress...<br>
-                <em>In production, this would process the file via backend API</em>
-            </div>
-        `;
-    }, 2000);
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    fetch('/api/upload_data.php', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ ${data.message}</strong></div>`;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
+            }
+        })
+        .catch(() => {
+            statusDiv.innerHTML = '<div class="alert alert-danger">Upload request failed. Check server connection.</div>';
+        });
 });
 
 // Model upload form
 document.getElementById('modelUploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    alert('Model upload initiated. In production, this would upload to model repository and trigger validation tests.');
+    const file    = document.getElementById('modelFile').files[0];
+    const version = document.getElementById('versionName').value;
+    const desc    = document.getElementById('versionDesc').value;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('version', version);
+    formData.append('description', desc);
+    
+    fetch('/api/upload_model.php', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => alert(data.message || 'Model upload complete.'))
+        .catch(() => alert('Model upload request failed. Check server connection.'));
 });
 
 // API fetch functions
 function fetchVIIRS() {
     if (confirm('Fetch latest VIIRS data from NASA? This may take 5-10 minutes.')) {
-        alert('Initiating VIIRS data fetch... In production, this would call NASA API and process satellite imagery.');
+        fetch('/api/fetch_satellite.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'VIIRS' })
+        })
+            .then(r => r.json())
+            .then(data => alert(data.message || 'VIIRS fetch initiated.'))
+            .catch(() => alert('Request failed. Check server connection.'));
     }
 }
 
 function fetchMODIS() {
     if (confirm('Fetch latest MODIS NDVI data? This may take 5-10 minutes.')) {
-        alert('Initiating MODIS data fetch... In production, this would call NASA MODIS API.');
+        fetch('/api/fetch_satellite.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'MODIS' })
+        })
+            .then(r => r.json())
+            .then(data => alert(data.message || 'MODIS fetch initiated.'))
+            .catch(() => alert('Request failed. Check server connection.'));
     }
 }
 
 function fetchNOAA() {
     if (confirm('Fetch latest NOAA climate data?')) {
-        alert('Initiating NOAA data fetch... In production, this would call NOAA API.');
+        fetch('/api/fetch_satellite.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'NOAA' })
+        })
+            .then(r => r.json())
+            .then(data => alert(data.message || 'NOAA fetch initiated.'))
+            .catch(() => alert('Request failed. Check server connection.'));
     }
 }
 
 // Model switching
 function switchModel(version) {
     if (confirm(`Switch to model version ${version}? This will affect all predictions.`)) {
-        alert(`Switching to ${version}... In production, this would update the active model configuration.`);
+        fetch('/api/switch_model.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version: version })
+        })
+            .then(r => r.json())
+            .then(data => alert(data.message || `Switched to ${version}.`))
+            .catch(() => alert('Request failed. Check server connection.'));
     }
 }
 
 // Save thresholds
 function saveThresholds() {
-    const highRisk = document.getElementById('highRiskThreshold').value;
-    const modRisk = document.getElementById('modRiskThreshold').value;
-    const lowRisk = document.getElementById('lowRiskThreshold').value;
-    const criticalShap = document.getElementById('criticalShap').value;
-    const warningShap = document.getElementById('warningShap').value;
-    const positiveShap = document.getElementById('positiveShap').value;
+    const payload = {
+        high_risk:     document.getElementById('highRiskThreshold').value,
+        mod_risk:      document.getElementById('modRiskThreshold').value,
+        low_risk:      document.getElementById('lowRiskThreshold').value,
+        critical_shap: document.getElementById('criticalShap').value,
+        warning_shap:  document.getElementById('warningShap').value,
+        positive_shap: document.getElementById('positiveShap').value
+    };
     
-    alert(`Thresholds saved:\nHigh Risk: ${highRisk}\nMod Risk: ${modRisk}\nLow Risk: ${lowRisk}\nCritical SHAP: ${criticalShap}\nWarning SHAP: ${warningShap}\nPositive SHAP: ${positiveShap}\n\nIn production, these would be saved to configuration file.`);
+    fetch('/api/save_thresholds.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(r => r.json())
+        .then(data => alert(data.message || 'Thresholds saved.'))
+        .catch(() => alert('Request failed. Check server connection.'));
 }
 </script>
 EOD;
