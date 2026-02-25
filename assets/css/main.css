@@ -293,6 +293,12 @@ body {
     display: inline-block;
 }
 
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    border-radius: 5px;
+}
+
 .btn-primary {
     background: var(--accent-blue);
     color: white;
@@ -314,6 +320,16 @@ body {
 
 .btn-danger {
     background: var(--danger-color);
+    color: white;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-info {
+    background: #17a2b8;
     color: white;
 }
 
@@ -496,6 +512,31 @@ tr:hover {
 
 .badge-info {
     background: rgba(6, 182, 212, 0.2);
+    color: var(--info-color);
+}
+
+/* Data-source badges inside card headers */
+.data-source-badge {
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    vertical-align: middle;
+    margin-left: 8px;
+}
+
+.data-source-csv {
+    background: rgba(44, 95, 45, 0.15);
+    color: var(--accent-green);
+}
+
+.data-source-hardcoded {
+    background: rgba(234, 179, 8, 0.15);
+    color: var(--accent-yellow);
+}
+
+.data-source-sample {
+    background: rgba(6, 182, 212, 0.15);
     color: var(--info-color);
 }
 
