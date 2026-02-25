@@ -14,9 +14,33 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 <div class="dashboard-layout">
     <!-- Left column: Map -->
     <div class="dashboard-map-col">
-        <div style="position: relative; height: 100%;">
+        <div style="position: relative; display: flex; flex-direction: column; height: 100%;">
+            <!-- Map filter control bar -->
+            <div id="dashMapControls" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-card-alt); border-bottom:1px solid var(--border-color); flex-shrink:0;">
+                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">View:</span>
+                <button class="btn btn-primary btn-sm" id="btnRiskZones" onclick="setMapView('risk')">⚠️ Risk Zones</button>
+                <button class="btn btn-secondary btn-sm" id="btnHistorical" onclick="setMapView('historical')">📊 Historical Data</button>
+
+                <!-- Historical data filters (hidden by default) -->
+                <div id="historicalFilters" style="display:none; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <div style="width:1px; height:24px; background:var(--border-color);"></div>
+                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Year:</label>
+                    <select id="histYearSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                        <?php for ($y = 2014; $y <= 2024; $y++): ?>
+                        <option value="<?= $y ?>"><?= $y ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <div style="width:1px; height:24px; background:var(--border-color);"></div>
+                    <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Month: <strong id="histMonthDisplay">All</strong></span>
+                    <input type="range" id="histMonthSlider" class="slider" min="0" max="12" value="0" step="1" style="width:120px; margin:0;" oninput="onHistMonthChange(this.value)">
+                </div>
+            </div>
+
+            <div style="position: relative; flex: 1;">
             <div id="map"></div>
-            <div class="map-legend">
+
+            <!-- Risk Zones legend -->
+            <div class="map-legend" id="legendRiskZones">
                 <h4>Risk Zones</h4>
                 <div class="map-legend-item">
                     <span class="map-legend-dot" style="background: #22c55e;"></span>
@@ -30,6 +54,24 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                     <span class="map-legend-dot" style="background: #ef4444;"></span>
                     <span>High Risk</span>
                 </div>
+            </div>
+
+            <!-- Historical data legend (hidden by default) -->
+            <div class="map-legend" id="legendHistorical" style="display:none;">
+                <h4>Species Richness</h4>
+                <div style="display:flex; align-items:center; gap:4px; margin-top:6px;">
+                    <span style="font-size:0.72rem; color:var(--text-muted);">Low</span>
+                    <div style="flex:1; height:12px; border-radius:3px; background:linear-gradient(to right,#313695,#4575b4,#74add1,#fee090,#f46d43,#a50026);"></div>
+                    <span style="font-size:0.72rem; color:var(--text-muted);">High</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:2px;">
+                    <span style="font-size:0.7rem; color:var(--text-muted);">0</span>
+                    <span style="font-size:0.7rem; color:var(--text-muted);">10</span>
+                    <span style="font-size:0.7rem; color:var(--text-muted);">20</span>
+                    <span style="font-size:0.7rem; color:var(--text-muted);">30+</span>
+                </div>
+                <div id="histLoadingMsg" style="margin-top:6px; font-size:0.75rem; color:var(--text-muted); display:none;">Loading…</div>
+            </div>
             </div>
         </div>
     </div>
@@ -147,14 +189,19 @@ $extra_scripts = <<<SCRIPTS
 // Risk zone data
 var riskZones = {$risk_zones_json};
 
-// Initialize map centered on Philippines
-var map = L.map('map').setView([12.5, 121.5], 6);
-
-// Dark tile layer
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+// ── Tile layers (dark for Risk Zones, light for Historical Data) ───────────
+var darkTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
     maxZoom: 19
-}).addTo(map);
+});
+var lightTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19
+});
+
+// Initialize map centered on Philippines with dark tile layer
+var map = L.map('map').setView([12.5, 121.5], 6);
+darkTile.addTo(map);
 
 // Risk zone colors
 var riskColors = {
@@ -163,10 +210,13 @@ var riskColors = {
     high:   {color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.25, weight: 1.5}
 };
 
+// Track risk zone circles so they can be toggled
+var riskZoneLayers = [];
+
 // Add risk zone circles
 riskZones.forEach(function(zone) {
     var style = riskColors[zone.risk] || riskColors.low;
-    L.circle([zone.lat, zone.lng], {
+    var circle = L.circle([zone.lat, zone.lng], {
         radius: 25000,
         color: style.color,
         fillColor: style.fillColor,
@@ -175,11 +225,12 @@ riskZones.forEach(function(zone) {
     }).addTo(map).bindPopup(
         '<strong>' + zone.name + '</strong><br>Risk: ' + zone.risk.charAt(0).toUpperCase() + zone.risk.slice(1)
     );
+    riskZoneLayers.push(circle);
 });
 
 // Highlight Metro Manila with a bounding rectangle
 var metroManilaBounds = [[14.35, 120.90], [14.82, 121.22]];
-L.rectangle(metroManilaBounds, {
+var metroRect = L.rectangle(metroManilaBounds, {
     color: '#3b82f6',
     weight: 2.5,
     fillColor: '#3b82f6',
@@ -188,7 +239,7 @@ L.rectangle(metroManilaBounds, {
 }).addTo(map).bindPopup('<strong>Metro Manila</strong><br>Primary focus area of AVILIGHT monitoring');
 
 // Metro Manila label marker — positioned at the top-centre of the bounding box
-L.marker([14.82, 121.06], {
+var metroLabel = L.marker([14.82, 121.06], {
     icon: L.divIcon({
         className: '',
         html: '<div class="metro-manila-label">Metro Manila</div>',
@@ -197,6 +248,132 @@ L.marker([14.82, 121.06], {
         iconAnchor: [50, 26]
     })
 }).addTo(map);
+
+// ── Map view switching (Risk Zones / Historical Data) ─────────────────────
+
+var currentMapView = 'risk';
+var historicalLayers = [];
+
+function getRichnessColor(value) {
+    var stops = [
+        { val: 0,  r: 49,  g: 54,  b: 149 },
+        { val: 5,  r: 69,  g: 117, b: 180 },
+        { val: 10, r: 116, g: 173, b: 209 },
+        { val: 15, r: 171, g: 217, b: 233 },
+        { val: 18, r: 254, g: 224, b: 144 },
+        { val: 22, r: 253, g: 174, b: 97  },
+        { val: 26, r: 244, g: 109, b: 67  },
+        { val: 30, r: 165, g: 0,   b: 38  }
+    ];
+    value = Math.max(0, Math.min(30, value));
+    var lower = stops[0], upper = stops[stops.length - 1];
+    for (var i = 0; i < stops.length - 1; i++) {
+        if (value >= stops[i].val && value <= stops[i + 1].val) {
+            lower = stops[i]; upper = stops[i + 1]; break;
+        }
+    }
+    var t = (upper.val === lower.val) ? 0 : (value - lower.val) / (upper.val - lower.val);
+    return 'rgb(' + Math.round(lower.r + t*(upper.r-lower.r)) + ',' +
+                    Math.round(lower.g + t*(upper.g-lower.g)) + ',' +
+                    Math.round(lower.b + t*(upper.b-lower.b)) + ')';
+}
+
+function clearHistoricalLayers() {
+    historicalLayers.forEach(function(l) { map.removeLayer(l); });
+    historicalLayers = [];
+}
+
+function loadHistoricalData() {
+    var year  = document.getElementById('histYearSelect').value;
+    var month = document.getElementById('histMonthSlider').value;
+    document.getElementById('histLoadingMsg').style.display = 'block';
+    clearHistoricalLayers();
+
+    var url = 'api/get_historical_data.php?year=' + year + (month > 0 ? '&month=' + month : '');
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(resp) {
+            document.getElementById('histLoadingMsg').style.display = 'none';
+            if (!resp.success || !resp.data.length) return;
+            resp.data.forEach(function(site) {
+                var richness = parseInt(site.total_unique) || 0;
+                var color = getRichnessColor(richness);
+                // Use circleMarker (pixel radius) so markers pinpoint exact sites
+                // without covering the visible map
+                var marker = L.circleMarker([site.latitude, site.longitude], {
+                    radius: 9,
+                    color: '#fff',
+                    weight: 1.5,
+                    fillColor: color,
+                    fillOpacity: 0.9
+                }).bindPopup(
+                    '<strong>' + site.site_name + '</strong>' +
+                    '<br>Year: ' + site.year + '  Month: ' + site.month +
+                    '<br>Unique Species: <strong>' + richness + '</strong>' +
+                    '<br>Tolerant: ' + (site.total_tolerant || 0) +
+                    ' &nbsp; Sensitive: ' + (site.total_sensitive || 0) +
+                    '<br>Resident: ' + (site.total_resident || 0) +
+                    ' &nbsp; Migrant: ' + (site.total_migrant || 0) +
+                    '<br>Total Birds: ' + (site.total_count || 0)
+                );
+                marker.addTo(map);
+                historicalLayers.push(marker);
+            });
+        })
+        .catch(function() {
+            document.getElementById('histLoadingMsg').style.display = 'none';
+        });
+}
+
+function setMapView(view) {
+    currentMapView = view;
+    var isHist = (view === 'historical');
+
+    // Toggle button styles
+    document.getElementById('btnRiskZones').className  = isHist ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm';
+    document.getElementById('btnHistorical').className = isHist ? 'btn btn-primary btn-sm'   : 'btn btn-secondary btn-sm';
+
+    // Show/hide filter controls
+    var filters = document.getElementById('historicalFilters');
+    filters.style.display = isHist ? 'flex' : 'none';
+
+    // Show/hide legends
+    document.getElementById('legendRiskZones').style.display  = isHist ? 'none'  : 'block';
+    document.getElementById('legendHistorical').style.display = isHist ? 'block' : 'none';
+
+    // Swap tile layer (dark ↔ light)
+    if (isHist) {
+        map.removeLayer(darkTile);
+        lightTile.addTo(map);
+    } else {
+        map.removeLayer(lightTile);
+        darkTile.addTo(map);
+    }
+
+    // Show/hide risk zone layers
+    riskZoneLayers.forEach(function(l) { isHist ? map.removeLayer(l) : l.addTo(map); });
+    if (isHist) { map.removeLayer(metroRect); map.removeLayer(metroLabel); }
+    else        { metroRect.addTo(map);       metroLabel.addTo(map);       }
+
+    if (isHist) {
+        map.setView([14.5748, 121.0], 12);
+        loadHistoricalData();
+    } else {
+        clearHistoricalLayers();
+        map.setView([12.5, 121.5], 6);
+    }
+}
+
+function onHistMonthChange(val) {
+    var monthNames = ['All','January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+    document.getElementById('histMonthDisplay').textContent = monthNames[parseInt(val)];
+    if (currentMapView === 'historical') loadHistoricalData();
+}
+
+document.getElementById('histMonthSlider').addEventListener('input', function() {
+    onHistMonthChange(this.value);
+});
 
 // Bird Richness data per year (2014–2024), monthly values
 var birdRichnessData = {
