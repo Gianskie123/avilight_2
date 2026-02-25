@@ -974,6 +974,19 @@ tr:hover {
     color: var(--danger-color);
 }
 
+/* Species list inside side panel — keep text within bounds */
+.side-panel ul {
+    padding-left: 18px;
+    margin: 6px 0;
+}
+
+.side-panel ul li {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    margin-bottom: 3px;
+    color: var(--text-primary);
+}
+
 /* Progress indicators */
 .progress-bar {
     width: 100%;

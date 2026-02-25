@@ -177,7 +177,7 @@ $species_data = load_species_from_csv();
         <p><strong>Dominant Land Cover:</strong> <span id="cellCoords"></span></p>
         <p><strong>Total Unique Species:</strong> <span id="predictedRichness"></span></p>
         <p><strong>Observation Sites:</strong> <span id="actualRichness"></span></p>
-        <div id="obsBreakdown" style="display:none; background:#f8f9fa; border-radius:6px; padding:8px 10px; margin-bottom:8px;"></div>
+        <div id="obsBreakdown" style="display:none; background:var(--bg-card-alt); border-radius:6px; padding:8px 10px; margin-bottom:8px;"></div>
         <hr>
         <h4>Species Observed in this City:</h4>
         <ul id="speciesList"></ul>
@@ -194,7 +194,7 @@ $species_data = load_species_from_csv();
         <h2 class="card-header">Global Feature Importance (SHAP)</h2>
         <div class="card-body">
             <canvas id="globalShapChart"></canvas>
-            <p style="margin-top: 15px; color: #666;">
+            <p style="margin-top: 15px; color: var(--text-secondary);">
                 <strong>Interpretation:</strong> Light intensity and NDVI are the strongest predictors 
                 of bird species richness in Metro Manila. Higher light pollution consistently reduces 
                 species diversity, while vegetation cover (NDVI) has a positive effect.
@@ -585,7 +585,7 @@ function showCityAnalysis(cityName, cityFeature) {
         li.textContent = sites.length > 0
             ? 'No species match the active filter.'
             : 'No observation data for this city — richness estimated from land cover.';
-        li.style.color = '#999';
+        li.style.color = 'var(--text-muted)';
         speciesList.appendChild(li);
     } else {
         displayedSpecies.forEach(function(name) {
@@ -626,7 +626,7 @@ function showCityAnalysis(cityName, cityFeature) {
         ? 'vegetation cover increases richness by ' + avgNdvi.toFixed(1)
         : 'vegetation has a negative effect';
     document.getElementById('shapExplanation').innerHTML =
-        '<p style="margin-top:10px;font-size:0.9rem;color:#666;">' +
+        '<p style="margin-top:10px;font-size:0.9rem;color:var(--text-secondary);">' +
         '<strong>Interpretation:</strong> In <em>' + cityName + '</em>, ' + lightText +
         '. ' + ndviText.charAt(0).toUpperCase() + ndviText.slice(1) + '.</p>';
 
