@@ -2,6 +2,15 @@
 require_once __DIR__ . '/auth.php';
 require_login(); // Require login for all dashboard pages
 ?>
+<?php
+$current_page = basename($_SERVER['PHP_SELF']);
+$avp_pages = ['home.php', 'dashboard.php', 'geospatial.php', 'species.php', 'reports.php', 'admin.php'];
+$body_classes = [];
+if (in_array($current_page, $avp_pages, true)) {
+    $body_classes[] = 'avp-animated-page';
+    $body_classes[] = 'page-' . str_replace('.php', '', $current_page);
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,7 +40,7 @@ require_login(); // Require login for all dashboard pages
     
     <?php if (isset($extra_head)) echo $extra_head; ?>
 </head>
-<body>
+<body class="<?php echo htmlspecialchars(implode(' ', $body_classes)); ?>">
     <nav class="navbar">
         <div class="nav-container">
             <div class="nav-brand">
@@ -96,11 +105,8 @@ require_login(); // Require login for all dashboard pages
         btn.addEventListener('click', function() {
             var current = html.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
             var next    = current === 'dark' ? 'light' : 'dark';
-            // Enable transitions only for this toggle action
-            html.classList.add('theme-transitioning');
             localStorage.setItem('avilight-theme', next);
             applyTheme(next);
-            setTimeout(function() { html.classList.remove('theme-transitioning'); }, 300);
         });
     })();
     </script>
