@@ -200,6 +200,29 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
         </div>
 
         <div id="historicalSidebarPanels" style="display:none;">
+            <div class="dash-stat-card historical-site-card" id="histSiteDetailCard" style="display:none; margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
+                    <div>
+                        <div class="dash-stat-label" style="margin:0 0 4px 0;">Observation Site</div>
+                        <div id="histSiteName" style="font-size:1.45rem; line-height:1.15; font-weight:700; color:var(--text-primary);">—</div>
+                        <div id="histSiteLocation" style="margin-top:4px; font-size:0.82rem; color:var(--text-secondary);">📍 Metro Manila</div>
+                    </div>
+                    <button type="button" id="histSiteDetailClose" class="hist-site-close-btn" aria-label="Close site detail">×</button>
+                </div>
+
+                <div id="histSiteEnvWrap" style="display:none; margin-bottom:10px; background:rgba(2, 12, 42, 0.6); border:1px solid var(--border-color); border-radius:8px; padding:8px 10px;">
+                    <div id="histSiteEnvLabel" style="font-size:0.76rem; color:var(--text-secondary); margin-bottom:4px;">Environmental Value</div>
+                    <div id="histSiteEnvValue" style="font-size:1.45rem; line-height:1; font-weight:700; color:#86efac;">—</div>
+                </div>
+
+                <div class="dash-stat-label" style="margin:0 0 8px 0;">Observed Species by Category</div>
+                <div id="histSiteBars" style="display:flex; flex-direction:column; gap:7px;"></div>
+                <div id="histSiteTotal" style="margin-top:10px; font-size:0.86rem; color:var(--text-secondary); border-top:1px solid var(--border-color); padding-top:8px;">Total: 0 spp.</div>
+
+                <div class="dash-stat-label" style="margin:12px 0 8px 0;">Species Recorded</div>
+                <div id="histSiteSpeciesList" class="historical-site-species-list"></div>
+            </div>
+
             <div class="dash-stat-card" id="histObsCard" style="margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <div class="dash-stat-label" style="margin:0;">Observation Count Per Category</div>
@@ -567,6 +590,7 @@ var HISTORICAL_BAR_MIN_DURATION_MS = 120;
 var latestHistoricalRows = [];
 var lastHistoricalObservationKey = '';
 var latestHistoricalContext = null;
+var selectedHistoricalSite = null;
 var envRowsExpanded = false;
 var historicalClickStep = 0;
 var historicalBarsAnimated = false;
@@ -822,6 +846,144 @@ function getMonthName(month) {
 function toNumber(value) {
     var num = parseFloat(value);
     return isNaN(num) ? 0 : num;
+}
+
+function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function parseSpeciesList(rawValue) {
+    if (Array.isArray(rawValue)) {
+        return rawValue.filter(function(item) { return !!String(item || '').trim(); });
+    }
+
+    var raw = String(rawValue || '').trim();
+    if (!raw) return [];
+    if (raw.charAt(0) === '[' && raw.charAt(raw.length - 1) === ']') {
+        raw = raw.slice(1, -1);
+    }
+
+    raw = raw.trim();
+    if (!raw) return [];
+
+    return raw.split(/'\s*,\s*'|"\s*,\s*"|\s*,\s*/)
+        .map(function(item) {
+            return item.replace(/^['"]+|['"]+$/g, '').trim();
+        })
+        .filter(function(item) { return !!item; });
+}
+
+function getHistoricalSiteCity(site) {
+    if (!site) return 'Metro Manila';
+
+    var lat = toNumber(site.latitude);
+    var lng = toNumber(site.longitude);
+    if (!lat || !lng || !municipalityGeoData || !municipalityGeoData.features) {
+        return 'Metro Manila';
+    }
+
+    for (var i = 0; i < municipalityGeoData.features.length; i++) {
+        var feature = municipalityGeoData.features[i];
+        if (pointInPolygon(lat, lng, feature.geometry)) {
+            return getMunicipalityName(feature);
+        }
+    }
+
+    return 'Metro Manila';
+}
+
+function resetHistoricalSiteDetailPanel() {
+    selectedHistoricalSite = null;
+
+    var detailCard = document.getElementById('histSiteDetailCard');
+    var obsCard = document.getElementById('histObsCard');
+    if (detailCard) detailCard.style.display = 'none';
+    if (obsCard) obsCard.style.display = 'block';
+}
+
+function showHistoricalSiteDetail(site) {
+    if (!site) return;
+
+    selectedHistoricalSite = site;
+
+    var detailCard = document.getElementById('histSiteDetailCard');
+    var obsCard = document.getElementById('histObsCard');
+    var envCard = document.getElementById('histEnvCard');
+    if (!detailCard || !obsCard || !envCard) return;
+
+    var siteName = site.site_name || 'Unnamed Site';
+    var cityName = getHistoricalSiteCity(site);
+    var envWrapEl = document.getElementById('histSiteEnvWrap');
+    var envLabelEl = document.getElementById('histSiteEnvLabel');
+    var envValueEl = document.getElementById('histSiteEnvValue');
+    var resident = toNumber(site.total_resident);
+    var migrant = toNumber(site.total_migrant);
+    var tolerant = toNumber(site.total_tolerant);
+    var sensitive = toNumber(site.total_sensitive);
+    var total = toNumber(site.total_unique);
+    var maxCategory = Math.max(resident, migrant, tolerant, sensitive, 1);
+
+    var bars = [
+        { label: 'Resident', value: resident, color: '#34d399' },
+        { label: 'Migratory', value: migrant, color: '#f59e0b' },
+        { label: 'Light Tolerant', value: tolerant, color: '#60a5fa' },
+        { label: 'Light Sensitive', value: sensitive, color: '#f43f5e' }
+    ];
+
+    var barsHtml = bars.map(function(item) {
+        var widthPct = Math.max(4, Math.round((item.value / maxCategory) * 100));
+        return '<div>' +
+            '<div style="display:flex; justify-content:space-between; font-size:0.74rem; color:var(--text-secondary); margin-bottom:2px;">' +
+                '<span>' + escapeHtml(item.label) + '</span>' +
+                '<span style="color:' + item.color + '; font-weight:600;">' + item.value.toLocaleString() + ' spp.</span>' +
+            '</div>' +
+            '<div style="height:6px; border-radius:999px; background:var(--bg-input); overflow:hidden;">' +
+                '<div style="height:100%; width:' + widthPct + '%; background:' + item.color + ';"></div>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+
+    var species = parseSpeciesList(site.species_list);
+    var speciesHtml = species.length
+        ? ('<ul class="historical-site-species-items">' + species.map(function(name) {
+            return '<li>' + escapeHtml(name) + '</li>';
+        }).join('') + '</ul>')
+        : '<div class="historical-site-empty">No species list available for this site entry.</div>';
+
+    document.getElementById('histSiteName').textContent = siteName;
+    document.getElementById('histSiteLocation').textContent = '📍 ' + cityName + ', Metro Manila';
+
+    var envRows = (latestHistoricalContext && latestHistoricalContext.envRows) ? latestHistoricalContext.envRows : [];
+    var selections = (latestHistoricalContext && latestHistoricalContext.selections) ? latestHistoricalContext.selections : getHistoricalSelections();
+    var hasEnvSelection = !!(selections && selections.envType);
+    var municipalityEnv = null;
+
+    if (hasEnvSelection && envRows.length) {
+        municipalityEnv = envRows.find(function(item) {
+            return String(item.city || '').toLowerCase() === String(cityName || '').toLowerCase();
+        }) || null;
+    }
+
+    if (hasEnvSelection && municipalityEnv && envWrapEl && envLabelEl && envValueEl) {
+        envLabelEl.textContent = municipalityEnv.label + ' · ' + selections.year + ' · ' + getMonthName(selections.month);
+        envValueEl.textContent = municipalityEnv.valueText;
+        envWrapEl.style.display = 'block';
+    } else if (envWrapEl) {
+        envWrapEl.style.display = 'none';
+    }
+
+    document.getElementById('histSiteBars').innerHTML = barsHtml;
+    document.getElementById('histSiteTotal').textContent = 'Total: ' + total.toLocaleString() + ' spp.';
+    document.getElementById('histSiteSpeciesList').innerHTML = speciesHtml;
+
+    detailCard.style.display = 'block';
+    obsCard.style.display = 'none';
+    envCard.style.display = 'none';
 }
 
 function getHistoricalSelections() {
@@ -1116,6 +1278,10 @@ function renderHistoricalMap(rows, selections, options) {
                 '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive)
             );
 
+            marker.on('click', function() {
+                showHistoricalSiteDetail(site);
+            });
+
             marker.addTo(map);
             historicalObservationLayers.push(marker);
             if (marker && marker.bringToFront) {
@@ -1356,6 +1522,7 @@ function renderHistoricalRecentUpdates(selections) {
 
 function loadHistoricalData() {
     resetHistoricalClickSequence();
+    resetHistoricalSiteDetailPanel();
     var selections = getHistoricalSelections();
     var year = selections.year;
     var month = selections.month;
@@ -1459,9 +1626,11 @@ function setMapView(view) {
 
     if (isHist) {
         map.setView([14.5748, 121.0], 12);
+        resetHistoricalSiteDetailPanel();
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
     } else {
+        resetHistoricalSiteDetailPanel();
         clearHistoricalTypingTimers();
         clearHistoricalAutoSequenceTimers();
         clearHistoricalLayers();
@@ -1471,10 +1640,21 @@ function setMapView(view) {
     }
 }
 
-document.getElementById('histEnvToggle').addEventListener('click', function() {
-    envRowsExpanded = !envRowsExpanded;
-    renderEnvironmentalRows();
-});
+var histEnvToggleEl = document.getElementById('histEnvToggle');
+if (histEnvToggleEl) {
+    histEnvToggleEl.addEventListener('click', function() {
+        envRowsExpanded = !envRowsExpanded;
+        renderEnvironmentalRows();
+    });
+}
+
+var histSiteDetailCloseEl = document.getElementById('histSiteDetailClose');
+if (histSiteDetailCloseEl) {
+    histSiteDetailCloseEl.addEventListener('click', function() {
+        resetHistoricalSiteDetailPanel();
+        renderEnvironmentalSidebar(latestHistoricalRows || [], getHistoricalSelections());
+    });
+}
 
 // Bird Richness data per year (2014–2024), monthly values
 var birdRichnessData = {

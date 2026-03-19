@@ -944,13 +944,6 @@ createChartSafe('siteRichnessChart', {
         node.style.visibility = 'hidden';
         node.style.animation = 'none';
 
-        var targetTop = Math.max(0, window.pageYOffset + node.getBoundingClientRect().top - 92);
-        if (reducedMotion) {
-            window.scrollTo(0, targetTop);
-        } else {
-            window.scrollTo({ top: targetTop, behavior: 'smooth' });
-        }
-
         setTimeout(function() {
             node.style.visibility = 'visible';
             node.style.animation = isAlanNode
