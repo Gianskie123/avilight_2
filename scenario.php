@@ -15,6 +15,36 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 <div class="card">
     <h2 class="card-header">Policy Simulation Parameters</h2>
     <div class="card-body">
+        <!-- City Selector -->
+        <div class="slider-container">
+            <div class="slider-label">
+                <span>Target City:</span>
+            </div>
+            <select id="citySelect" class="form-control" style="max-width: 420px; margin-top: 8px;">
+                <option value="">Metro Manila (All Cities)</option>
+                <option value="Caloocan">Caloocan</option>
+                <option value="Las Piñas">Las Piñas</option>
+                <option value="Makati">Makati</option>
+                <option value="Malabon">Malabon</option>
+                <option value="Mandaluyong">Mandaluyong</option>
+                <option value="Manila">Manila</option>
+                <option value="Marikina">Marikina</option>
+                <option value="Muntinlupa">Muntinlupa</option>
+                <option value="Navotas">Navotas</option>
+                <option value="Parañaque">Parañaque</option>
+                <option value="Pasay">Pasay</option>
+                <option value="Pasig">Pasig</option>
+                <option value="Quezon City">Quezon City</option>
+                <option value="San Juan">San Juan</option>
+                <option value="Taguig">Taguig</option>
+                <option value="Valenzuela">Valenzuela</option>
+                <option value="Pateros">Pateros</option>
+            </select>
+            <p style="color: #666; font-size: 0.9rem;">
+                Baseline environmental inputs are computed from this city using aligned historical years.
+            </p>
+        </div>
+
         <!-- Light Reduction Slider -->
         <div class="slider-container">
             <div class="slider-label">
@@ -50,6 +80,18 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                 Account for climate change scenarios (RCP 4.5 to RCP 8.5)
             </p>
         </div>
+
+        <!-- Month Slider -->
+        <div class="slider-container">
+            <div class="slider-label">
+                <span>Scenario Month:</span>
+                <span id="monthValue">Jan</span>
+            </div>
+            <input type="range" min="1" max="12" value="1" step="1" class="slider" id="monthSlider">
+            <p style="color: #666; font-size: 0.9rem;">
+                Select month for seasonal baseline alignment and prediction.
+            </p>
+        </div>
         
         <!-- Run Scenario Button -->
         <button class="btn btn-primary" style="margin-top: 20px; padding: 15px 40px; font-size: 1.1rem;" onclick="runScenario()">
@@ -62,31 +104,58 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 <div id="resultsSection" style="display: none;">
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-label">Predicted Species Gain</div>
-            <div class="stat-value" id="speciesGain">+0</div>
-            <div class="stat-description">Additional species expected</div>
+            <div class="stat-label">Tolerant</div>
+            <div class="stat-value" id="tolerantOut">0</div>
+            <div class="stat-description">Model output</div>
         </div>
         
         <div class="stat-card info">
-            <div class="stat-label">Overall Richness Change</div>
-            <div class="stat-value" id="richnessChange">0%</div>
-            <div class="stat-description">Average across Metro Manila</div>
+            <div class="stat-label">Sensitive</div>
+            <div class="stat-value" id="sensitiveOut">0</div>
+            <div class="stat-description">Model output</div>
         </div>
         
         <div class="stat-card warning">
-            <div class="stat-label">Light-Sensitive Species</div>
-            <div class="stat-value" id="sensitiveGain">+0</div>
-            <div class="stat-description">Most benefited group</div>
+            <div class="stat-label">Resident</div>
+            <div class="stat-value" id="residentOut">0</div>
+            <div class="stat-description">Model output</div>
         </div>
         
         <div class="stat-card">
-            <div class="stat-label">Confidence Score</div>
-            <div class="stat-value" id="confidence">0%</div>
-            <div class="stat-description">Model prediction reliability</div>
+            <div class="stat-label">Migrant</div>
+            <div class="stat-value" id="migrantOut">0</div>
+            <div class="stat-description">Model output</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-header">Model SHAP Feature Importance</h2>
+        <div class="card-body">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <label for="shapOutputSelect" style="margin:0; font-weight:600;">Output:</label>
+                <select id="shapOutputSelect" class="form-control" style="max-width:220px;">
+                    <option value="all">All Outputs (Average)</option>
+                    <option value="sensitive">Sensitive</option>
+                    <option value="tolerant">Tolerant</option>
+                    <option value="resident">Resident</option>
+                    <option value="migrant">Migrant</option>
+                </select>
+            </div>
+            <canvas id="shapChart"></canvas>
+            <p style="margin-top: 10px; color: #666;">
+                SHAP values use local sensitivity attribution for this scenario run.
+            </p>
         </div>
     </div>
     
     <!-- Recovery Map Visualization -->
+    <div class="card">
+        <h2 class="card-header">Historical Baseline Inputs Used</h2>
+        <div class="card-body" id="historicalInputsBox">
+            <!-- Populated by JavaScript -->
+        </div>
+    </div>
+
     <div class="card">
         <h2 class="card-header">Predicted Recovery Heatmap</h2>
         <div class="card-body">
@@ -145,56 +214,210 @@ document.getElementById('tempSlider').addEventListener('input', function() {
     document.getElementById('tempValue').textContent = (val >= 0 ? '+' : '') + val + '°C';
 });
 
+document.getElementById('monthSlider').addEventListener('input', function() {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = parseInt(this.value, 10);
+    document.getElementById('monthValue').textContent = monthNames[month - 1];
+});
+
 // KBA data
 const kbaData = <?php echo json_encode($kba_data); ?>;
+let latestScenarioData = null;
+
+function currentShapOutput() {
+    const el = document.getElementById('shapOutputSelect');
+    return el ? el.value : 'all';
+}
 
 // Run scenario analysis
-function runScenario() {
+async function runScenario() {
     // Get slider values
     const lightReduction = parseInt(document.getElementById('lightSlider').value);
     const ndviIncrease = parseInt(document.getElementById('ndviSlider').value);
     const tempChange = parseFloat(document.getElementById('tempSlider').value);
+    const month = parseInt(document.getElementById('monthSlider').value, 10);
+    const city = document.getElementById('citySelect').value;
     
-    // Calculate impacts (simplified model for demonstration)
-    // In production, this would call the API with ML model
-    const lightImpact = lightReduction * 0.3; // Each 1% light reduction = 0.3% richness increase
-    const ndviImpact = ndviIncrease * 0.5; // Each 1% NDVI increase = 0.5% richness increase
-    const tempImpact = tempChange * -2; // Each 1°C increase = -2% richness
+    // Show loading state
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Analyzing...';
+    btn.disabled = true;
     
-    const totalImpact = lightImpact + ndviImpact + tempImpact;
-    const speciesGain = Math.round(totalImpact * 0.3); // Rough conversion to species count
-    const sensitiveGain = Math.round(speciesGain * 1.5); // Sensitive species benefit more
-    
-    // Calculate confidence based on how extreme the changes are
-    const extremeness = Math.abs(lightReduction/50) + Math.abs(ndviIncrease/20) + Math.abs(tempChange/2);
-    const confidence = Math.max(55, Math.min(95, 95 - extremeness * 15));
-    
-    // Update stats
-    document.getElementById('speciesGain').textContent = speciesGain >= 0 ? '+' + speciesGain : speciesGain;
-    document.getElementById('richnessChange').textContent = (totalImpact >= 0 ? '+' : '') + totalImpact.toFixed(1) + '%';
-    document.getElementById('sensitiveGain').textContent = '+' + sensitiveGain;
-    document.getElementById('confidence').textContent = confidence.toFixed(0) + '%';
-    
-    // Show results section
-    document.getElementById('resultsSection').style.display = 'block';
-    
-    // Update recovery chart
-    updateRecoveryChart(totalImpact);
-    
-    // Update affected areas table
-    updateAffectedAreas(totalImpact);
-    
-    // Generate recommendations
-    generateRecommendations(lightReduction, ndviIncrease, tempChange, totalImpact);
-    
-    // Scroll to results
-    document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+    try {
+        // Call the API endpoint with ML predictions
+        const response = await fetch('api/run_scenario.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                light_reduction: lightReduction,
+                ndvi_increase: ndviIncrease,
+                temp_change: tempChange,
+                precip_change: 0,
+                month: month,
+                city: city,
+                shap_output: currentShapOutput(),
+                attribution_mode: 'sensitivity'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Scenario analysis failed');
+        }
+        
+        // Extract results from ML backend
+        const results = data.results;
+        const affectedAreas = data.affected_areas || [];
+        const richness_change = results.richness_change_pct || 0;
+
+        // Direct model outputs (requested 4 classes)
+        document.getElementById('tolerantOut').textContent = results.tolerant ?? 0;
+        document.getElementById('sensitiveOut').textContent = results.sensitive ?? 0;
+        document.getElementById('residentOut').textContent = results.resident ?? 0;
+        document.getElementById('migrantOut').textContent = results.migrant ?? 0;
+        
+        // Show results section
+        document.getElementById('resultsSection').style.display = 'block';
+        latestScenarioData = data;
+        
+        // Update visualizations
+        updateRecoveryChart(richness_change, results);
+        updateShapChart(data);
+        updateAffectedAreas(affectedAreas);
+        updateHistoricalInputs(data.historical_inputs, data.parameters);
+        generateRecommendations(lightReduction, ndviIncrease, tempChange, richness_change);
+        
+        // Scroll to results
+        document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        
+    } catch (error) {
+        console.error('Scenario analysis error:', error);
+        
+        // Check if Python backend is running
+        if (error.message.includes('Failed to connect')) {
+            alert('❌ Error: Python ML backend is not running.\n\n' +
+                  'Start the backend with:\n' +
+                  'uvicorn model:app --reload --port 5000');
+        } else {
+            alert('❌ Scenario analysis failed: ' + error.message);
+        }
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
 }
 
-function updateRecoveryChart(impact) {
+function updateShapChart(data) {
+    const ctx = document.getElementById('shapChart');
+    if (!ctx) {
+        return;
+    }
+    if (window.shapChartInstance) {
+        window.shapChartInstance.destroy();
+    }
+
+    const selected = currentShapOutput();
+    const byOutput = data && data.shap_by_output ? data.shap_by_output : {};
+    const rows = selected === 'all'
+        ? (data && Array.isArray(data.shap_chart) ? data.shap_chart : [])
+        : (Array.isArray(byOutput[selected]) ? byOutput[selected] : []);
+
+    const sorted = rows.slice()
+        .sort((a, b) => (Number(b.importance) || 0) - (Number(a.importance) || 0));
+
+    const labels = sorted.map(x => x.feature);
+    const rawValues = sorted.map(x => Number(x.importance) || 0);
+    const rawTotal = rawValues.reduce((sum, v) => sum + v, 0);
+    const values = rawTotal > 0
+        ? rawValues.map(v => (v / rawTotal) * 100)
+        : rawValues.map(() => 0);
+
+    window.shapChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'SHAP Share (%) (' + selected + ')',
+                data: values,
+                backgroundColor: '#4a7c59',
+                rawValues: rawValues
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const pct = Number(context.parsed.x || 0).toFixed(2) + '%';
+                            const raw = Number(context.dataset.rawValues?.[context.dataIndex] || 0).toFixed(6);
+                            return 'Share: ' + pct + ' (raw: ' + raw + ')';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'SHAP share of selected output (%)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+document.getElementById('shapOutputSelect').addEventListener('change', function() {
+    if (latestScenarioData) {
+        updateShapChart(latestScenarioData);
+    }
+});
+
+function updateHistoricalInputs(historicalInputs, parameters) {
+    const box = document.getElementById('historicalInputsBox');
+    if (!historicalInputs) {
+        box.innerHTML = '<p style="color:#777;">No historical baseline details returned by API.</p>';
+        return;
+    }
+
+    const city = historicalInputs.city || (parameters?.city || 'Metro Manila (All Cities)');
+    const land = historicalInputs.dominant_land_cover || {};
+    const modelInputs = historicalInputs.model_inputs_used || {};
+    const years = (historicalInputs.common_years || []).join(', ');
+    const formulaNote = historicalInputs.formula_note || 'Baseline = value(last year) ± average annual change across aligned years';
+
+    box.innerHTML = `
+        <p><strong>City Scope:</strong> ${city}</p>
+        <p><strong>Aligned Common Years:</strong> ${years}</p>
+        <p><strong>Month:</strong> ${historicalInputs.month ?? (parameters?.month ?? 'N/A')}</p>
+        <p><strong>Latest Common Year:</strong> ${historicalInputs.latest_common_year} | <strong>Baseline Year Used:</strong> ${historicalInputs.baseline_reference_year}</p>
+        <p><strong>Formula:</strong> ${formulaNote}</p>
+        <hr>
+        <p><strong>Dominant Land Cover:</strong> ${land.label || 'Unknown'} (code: ${land.code ?? 'N/A'}, year: ${land.year ?? 'N/A'})</p>
+        <p><strong>Base NDVI:</strong> ${(modelInputs.base_ndvi ?? 0).toFixed(4)} | <strong>Base VIIRS:</strong> ${(modelInputs.base_viirs ?? 0).toFixed(4)}</p>
+        <p><strong>Base LST Day:</strong> ${(modelInputs.base_lst ?? 0).toFixed(4)} °C | <strong>Base Precip:</strong> ${(modelInputs.base_precip ?? 0).toFixed(4)} mm</p>
+        <p><strong>Cells Included:</strong> ${historicalInputs.cell_count ?? 0}</p>
+    `;
+}
+
+function updateRecoveryChart(impact, results) {
     const areas = ['Quezon City', 'Manila', 'Makati', 'Pasig', 'Taguig', 'Parañaque', 'Las Piñas', 'Muntinlupa'];
     const baseValues = [12, 8, 6, 10, 14, 9, 11, 13];
-    const recoveryValues = baseValues.map(v => v * (1 + impact/100));
+    const changePercent = impact / 100;
+    const recoveryValues = baseValues.map(v => v * (1 + changePercent));
     
     const ctx = document.getElementById('recoveryChart');
     
@@ -209,7 +432,7 @@ function updateRecoveryChart(impact) {
             labels: areas,
             datasets: [
                 {
-                    label: 'Current Richness',
+                    label: 'Baseline Richness',
                     data: baseValues,
                     backgroundColor: '#97bc62'
                 },
@@ -236,28 +459,31 @@ function updateRecoveryChart(impact) {
     });
 }
 
-function updateAffectedAreas(impact) {
+function updateAffectedAreas(affectedAreas) {
     const tbody = document.getElementById('affectedAreasTable');
     let html = '';
     
-    kbaData.forEach(area => {
-        const currentSpecies = area.species_count;
-        const predictedSpecies = Math.round(currentSpecies * (1 + impact/100));
-        const change = predictedSpecies - currentSpecies;
-        const impactLevel = Math.abs(change) > 10 ? 'High' : Math.abs(change) > 5 ? 'Medium' : 'Low';
-        
-        html += `
-            <tr>
-                <td>${area.name}</td>
-                <td>${currentSpecies}</td>
-                <td>${predictedSpecies}</td>
-                <td style="color: ${change >= 0 ? 'green' : 'red'}; font-weight: bold;">
-                    ${change >= 0 ? '+' : ''}${change}
-                </td>
-                <td><span class="badge ${impactLevel === 'High' ? 'badge-danger' : impactLevel === 'Medium' ? 'badge-warning' : 'badge-info'}">${impactLevel}</span></td>
-            </tr>
-        `;
-    });
+    if (affectedAreas && affectedAreas.length > 0) {
+        affectedAreas.forEach(area => {
+            const change = area.change || 0;
+            const impact = area.impact_level || 'Low';
+            
+            html += `
+                <tr>
+                    <td>${area.name}</td>
+                    <td>${area.current}</td>
+                    <td>${area.predicted}</td>
+                    <td style="color: ${change >= 0 ? 'green' : 'red'}; font-weight: bold;">
+                        ${change >= 0 ? '+' : ''}${change}
+                    </td>
+                    <td><span class="badge ${impact === 'High' ? 'badge-danger' : impact === 'Medium' ? 'badge-warning' : 'badge-info'}">${impact}</span></td>
+                </tr>
+            `;
+        });
+    } else {
+        html = '<tr><td colspan="5" style="text-align: center; color: #999;">No data available</td></tr>';
+    }
+    
     tbody.innerHTML = html;
 }
 
@@ -266,30 +492,30 @@ function generateRecommendations(light, ndvi, temp, totalImpact) {
     let recommendations = '';
     
     if (totalImpact > 5) {
-        recommendations += '<div class="alert alert-info"><strong>✓ Positive Scenario:</strong> This scenario predicts significant improvement in bird species richness.</div>';
+        recommendations += '<div class="alert alert-info"><strong>✓ Positive Scenario:</strong> ML models predict significant improvement in bird species richness. The combined effect of these interventions appears highly beneficial.</div>';
     } else if (totalImpact < -5) {
-        recommendations += '<div class="alert alert-danger"><strong>⚠ Negative Scenario:</strong> This scenario predicts decline in species diversity. Consider alternative approaches.</div>';
+        recommendations += '<div class="alert alert-danger"><strong>⚠ Negative Scenario:</strong> Models predict decline in species diversity. Temperature increases and vegetation loss appear detrimental. Consider alternative approaches.</div>';
     } else {
-        recommendations += '<div class="alert alert-warning"><strong>→ Neutral Scenario:</strong> Minimal predicted change. More aggressive interventions may be needed.</div>';
+        recommendations += '<div class="alert alert-warning"><strong>→ Neutral Scenario:</strong> Minimal predicted change from baseline. More aggressive or targeted interventions may be needed for significant impact.</div>';
     }
     
     if (light > 20) {
-        recommendations += '<p><strong>Light Reduction:</strong> A ' + light + '% reduction is ambitious but highly beneficial. Consider phased implementation starting with critical KBA/PA buffer zones.</p>';
+        recommendations += '<p><strong>Light Reduction:</strong> A ' + light + '% reduction is ambitious but highly beneficial per model analysis. Consider phased implementation starting with critical KBA/PA buffer zones (0-500m), then extending to broader zones.</p>';
     }
     
     if (ndvi > 10) {
-        recommendations += '<p><strong>Urban Greening:</strong> Increasing vegetation by ' + ndvi + '% requires significant urban forestry investment. Prioritize La Mesa Watershed and Marikina Watershed for maximum impact.</p>';
+        recommendations += '<p><strong>Urban Greening:</strong> Increasing vegetation by ' + ndvi + '% requires significant urban forestry investment. Models show strong positive correlation with sensitive species. Prioritize La Mesa Watershed and Marikina Watershed for maximum impact.</p>';
     }
     
     if (temp !== 0) {
-        recommendations += '<p><strong>Climate Consideration:</strong> Temperature changes of ' + temp + '°C are beyond policy control but important for long-term planning. Focus on climate adaptation strategies.</p>';
+        recommendations += '<p><strong>Climate Consideration:</strong> Temperature changes of ' + temp + '°C are largely beyond local policy control but critical for long-term planning. Models account for thermal sensitivities of different species groups. Focus on climate adaptation strategies including establishing thermal refugia in riparian zones.</p>';
     }
     
-    recommendations += '<hr><p><strong>Priority Actions:</strong></p><ul>';
-    recommendations += '<li>Implement strict lighting ordinances in protected area buffer zones (500m radius)</li>';
-    recommendations += '<li>Launch community-based urban tree planting programs in identified hotspots</li>';
-    recommendations += '<li>Monitor migratory bird populations during peak seasons (Sep-Nov)</li>';
-    recommendations += '<li>Conduct annual VIIRS-based light pollution audits</li>';
+    recommendations += '<hr><p><strong>Priority Actions (ML-Informed):</strong></p><ul>';
+    recommendations += '<li><strong>Immediate (0-6 months):</strong> Implement strict lighting ordinances in protected area buffer zones (500m radius)</li>';
+    recommendations += '<li><strong>Short-term (6-18 months):</strong> Launch community-based urban tree planting programs in identified biodiversity hotspots</li>';
+    recommendations += '<li><strong>Ongoing:</strong> Monitor migratory bird populations during peak seasons (Sep-Nov) to validate model predictions</li>';
+    recommendations += '<li><strong>Annual:</strong> Conduct VIIRS-based light pollution audits and update baseline environmental covariates for model refinement</li>';
     recommendations += '</ul>';
     
     recDiv.innerHTML = recommendations;

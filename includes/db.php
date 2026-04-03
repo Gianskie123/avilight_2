@@ -46,6 +46,113 @@ function get_db(): PDO {
     return $pdo;
 }
 
+/** Ensure analytics cache tables/indexes exist in SQLite. */
+function ensure_analytics_cache_tables(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS analytics_latest_sites (
+        source_observation_id INTEGER,
+        species_list          TEXT,
+        site_name             TEXT NOT NULL,
+        longitude             REAL,
+        latitude              REAL,
+        month                 INTEGER,
+        year                  INTEGER,
+        total_tolerant        INTEGER DEFAULT 0,
+        total_sensitive       INTEGER DEFAULT 0,
+        total_resident        INTEGER DEFAULT 0,
+        total_migrant         INTEGER DEFAULT 0,
+        total_unique          INTEGER DEFAULT 0,
+        total_count           INTEGER DEFAULT 0,
+        refreshed_at          TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_als_site ON analytics_latest_sites(site_name);
+    CREATE INDEX IF NOT EXISTS idx_als_unique ON analytics_latest_sites(total_unique);
+    CREATE INDEX IF NOT EXISTS idx_als_refreshed ON analytics_latest_sites(refreshed_at);');
+}
+
+/** Rebuild latest-per-site analytics cache from observations. */
+function refresh_analytics_latest_sites_cache(PDO $pdo): void {
+    ensure_analytics_cache_tables($pdo);
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->exec('DELETE FROM analytics_latest_sites');
+
+        $sql = '
+            INSERT INTO analytics_latest_sites (
+                source_observation_id, species_list, site_name, longitude, latitude, month, year,
+                total_tolerant, total_sensitive, total_resident, total_migrant,
+                total_unique, total_count, refreshed_at
+            )
+            SELECT
+                o1.id, o1.species_list, o1.site_name, o1.longitude, o1.latitude, o1.month, o1.year,
+                o1.total_tolerant, o1.total_sensitive, o1.total_resident, o1.total_migrant,
+                o1.total_unique, o1.total_count, datetime("now")
+            FROM observations o1
+            INNER JOIN (
+                SELECT site_name, MAX(year * 100 + month) AS max_ym
+                FROM observations
+                WHERE site_name != "" AND latitude != 0 AND longitude != 0
+                GROUP BY site_name
+            ) latest ON o1.site_name = latest.site_name
+                   AND (o1.year * 100 + o1.month) = latest.max_ym
+            WHERE o1.site_name != "" AND o1.latitude != 0 AND o1.longitude != 0
+        ';
+        $pdo->exec($sql);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * Return latest-per-site rows from cache, rebuilding when missing or stale.
+ */
+function get_analytics_latest_sites(PDO $pdo, int $limit = 200, int $maxAgeSeconds = 86400): array {
+    ensure_analytics_cache_tables($pdo);
+
+    $limit = max(1, $limit);
+    $maxAgeSeconds = max(60, $maxAgeSeconds);
+
+    $count = (int)$pdo->query('SELECT COUNT(*) FROM analytics_latest_sites')->fetchColumn();
+    $refreshedRaw = $pdo->query('SELECT MAX(refreshed_at) FROM analytics_latest_sites')->fetchColumn();
+
+    $stale = true;
+    if (!empty($refreshedRaw)) {
+        $refreshedTs = strtotime((string)$refreshedRaw . ' UTC');
+        if ($refreshedTs !== false) {
+            $stale = (time() - $refreshedTs) > $maxAgeSeconds;
+        }
+    }
+
+    if ($count === 0 || $stale) {
+        refresh_analytics_latest_sites_cache($pdo);
+    }
+
+    $stmt = $pdo->prepare('SELECT
+            source_observation_id AS id,
+            species_list,
+            site_name,
+            longitude,
+            latitude,
+            month,
+            year,
+            total_tolerant,
+            total_sensitive,
+            total_resident,
+            total_migrant,
+            total_unique,
+            total_count
+        FROM analytics_latest_sites
+        ORDER BY total_unique DESC
+        LIMIT :lim');
+    $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /** Normalise Light Tolerance values from CSV to internal values. */
 function _normalise_tolerance(string $raw): string {
     $v = trim($raw);
@@ -205,4 +312,148 @@ function get_mysql_db(): PDO {
     ]);
 
     return $mysql_pdo;
+}
+
+/** Ensure MySQL BAU baseline cache table/indexes exist. */
+function ensure_mysql_bau_baseline_cache_table(PDO $pdo): void {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS analytics_bau_baselines (
+        city_key              VARCHAR(150) NOT NULL,
+        city_label            VARCHAR(150) NOT NULL,
+        month                 TINYINT UNSIGNED NOT NULL,
+        base_ndvi             DOUBLE NOT NULL,
+        base_viirs            DOUBLE NOT NULL,
+        base_lst              DOUBLE NOT NULL,
+        base_precip           DOUBLE NOT NULL,
+        lc_dummy_1            DOUBLE NOT NULL,
+        lc_dummy_2            DOUBLE NOT NULL,
+        lc_dummy_3            DOUBLE NOT NULL,
+        lc_dummy_4            DOUBLE NOT NULL,
+        lc_dummy_5            DOUBLE NOT NULL,
+        cell_count            INT NOT NULL DEFAULT 0,
+        latest_common_year    INT NULL,
+        historical_inputs_json LONGTEXT NULL,
+        refreshed_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (city_key, month),
+        KEY idx_abb_refreshed (refreshed_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+/** Delete all cached BAU baselines. */
+function clear_mysql_bau_baseline_cache(PDO $pdo): void {
+    ensure_mysql_bau_baseline_cache_table($pdo);
+    $pdo->exec('DELETE FROM analytics_bau_baselines');
+}
+
+/** Fetch cached BAU baseline if not stale; returns null when missing/stale. */
+function get_mysql_bau_baseline_cache(PDO $pdo, string $cityKey, int $month, int $maxAgeSeconds = 86400): ?array {
+    ensure_mysql_bau_baseline_cache_table($pdo);
+
+    $stmt = $pdo->prepare('SELECT
+            city_key,
+            city_label,
+            month,
+            base_ndvi,
+            base_viirs,
+            base_lst,
+            base_precip,
+            lc_dummy_1,
+            lc_dummy_2,
+            lc_dummy_3,
+            lc_dummy_4,
+            lc_dummy_5,
+            cell_count,
+            latest_common_year,
+            historical_inputs_json,
+            refreshed_at
+        FROM analytics_bau_baselines
+        WHERE city_key = :city_key AND month = :month
+        LIMIT 1');
+    $stmt->execute([
+        ':city_key' => $cityKey,
+        ':month' => $month,
+    ]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return null;
+    }
+
+    $maxAgeSeconds = max(60, $maxAgeSeconds);
+    $refTs = strtotime((string)$row['refreshed_at'] . ' UTC');
+    if ($refTs !== false && (time() - $refTs) > $maxAgeSeconds) {
+        return null;
+    }
+    return $row;
+}
+
+/** Upsert one city-month BAU baseline cache row. */
+function upsert_mysql_bau_baseline_cache(PDO $pdo, array $payload): void {
+    ensure_mysql_bau_baseline_cache_table($pdo);
+
+    $stmt = $pdo->prepare('INSERT INTO analytics_bau_baselines (
+            city_key,
+            city_label,
+            month,
+            base_ndvi,
+            base_viirs,
+            base_lst,
+            base_precip,
+            lc_dummy_1,
+            lc_dummy_2,
+            lc_dummy_3,
+            lc_dummy_4,
+            lc_dummy_5,
+            cell_count,
+            latest_common_year,
+            historical_inputs_json,
+            refreshed_at
+        ) VALUES (
+            :city_key,
+            :city_label,
+            :month,
+            :base_ndvi,
+            :base_viirs,
+            :base_lst,
+            :base_precip,
+            :lc_dummy_1,
+            :lc_dummy_2,
+            :lc_dummy_3,
+            :lc_dummy_4,
+            :lc_dummy_5,
+            :cell_count,
+            :latest_common_year,
+            :historical_inputs_json,
+            CURRENT_TIMESTAMP
+        ) ON DUPLICATE KEY UPDATE
+            city_label = VALUES(city_label),
+            base_ndvi = VALUES(base_ndvi),
+            base_viirs = VALUES(base_viirs),
+            base_lst = VALUES(base_lst),
+            base_precip = VALUES(base_precip),
+            lc_dummy_1 = VALUES(lc_dummy_1),
+            lc_dummy_2 = VALUES(lc_dummy_2),
+            lc_dummy_3 = VALUES(lc_dummy_3),
+            lc_dummy_4 = VALUES(lc_dummy_4),
+            lc_dummy_5 = VALUES(lc_dummy_5),
+            cell_count = VALUES(cell_count),
+            latest_common_year = VALUES(latest_common_year),
+            historical_inputs_json = VALUES(historical_inputs_json),
+            refreshed_at = CURRENT_TIMESTAMP');
+
+    $stmt->execute([
+        ':city_key' => (string)$payload['city_key'],
+        ':city_label' => (string)$payload['city_label'],
+        ':month' => (int)$payload['month'],
+        ':base_ndvi' => (float)$payload['base_ndvi'],
+        ':base_viirs' => (float)$payload['base_viirs'],
+        ':base_lst' => (float)$payload['base_lst'],
+        ':base_precip' => (float)$payload['base_precip'],
+        ':lc_dummy_1' => (float)$payload['lc_dummy_1'],
+        ':lc_dummy_2' => (float)$payload['lc_dummy_2'],
+        ':lc_dummy_3' => (float)$payload['lc_dummy_3'],
+        ':lc_dummy_4' => (float)$payload['lc_dummy_4'],
+        ':lc_dummy_5' => (float)$payload['lc_dummy_5'],
+        ':cell_count' => (int)($payload['cell_count'] ?? 0),
+        ':latest_common_year' => isset($payload['latest_common_year']) ? (int)$payload['latest_common_year'] : null,
+        ':historical_inputs_json' => $payload['historical_inputs_json'] ?? null,
+    ]);
 }

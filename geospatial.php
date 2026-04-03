@@ -5,18 +5,7 @@ require_once 'includes/header.php';
 // Load real observation data from DB (most recent visit per site, top 200 richest)
 require_once 'includes/db.php';
 $pdo = get_db();
-$obs_rows = $pdo->query("
-    SELECT o1.* FROM observations o1
-    INNER JOIN (
-        SELECT site_name, MAX(year * 100 + month) AS max_ym
-        FROM observations
-        WHERE site_name != '' AND latitude != 0 AND longitude != 0
-        GROUP BY site_name
-    ) latest ON o1.site_name = latest.site_name
-           AND (o1.year * 100 + o1.month) = latest.max_ym
-    ORDER BY o1.total_unique DESC
-    LIMIT 200
-")->fetchAll(PDO::FETCH_ASSOC);
+$obs_rows = get_analytics_latest_sites($pdo, 200, 86400);
 
 $cells_data = array_map(function (array $r): array {
     // Parse Python-style list "'A', 'B'" → PHP array
@@ -169,6 +158,7 @@ $species_data = load_species_from_csv();
                     <div class="card" style="margin:0 0 10px 0; padding:12px;">
                         <div id="bauResultTitle" style="font-size:0.82rem; color:var(--text-secondary);">BAU TOTAL PREDICTED</div>
                         <div id="bauTotalPred" style="font-size:2.2rem; font-weight:800; line-height:1; text-align:right;">0</div>
+                        <div id="bauInputUsed" style="margin-top:8px; font-size:0.78rem; color:var(--text-secondary);"></div>
                     </div>
 
                     <div class="card" style="margin:0 0 10px 0; padding:12px;">
@@ -183,8 +173,21 @@ $species_data = load_species_from_csv();
                     <div class="card" style="margin:0; padding:12px;">
                         <div id="bauShapTitle" style="font-weight:700; margin-bottom:2px;">Feature Importance (SHAP) — —</div>
                         <div id="bauShapSubtitle" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px;">Local SHAP values for — · —</div>
+                        <div style="margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+                            <label for="bauShapOutputSelect" style="font-size:0.78rem; color:var(--text-secondary);">Output:</label>
+                            <select id="bauShapOutputSelect" class="form-control" style="max-width:200px;">
+                                <option value="all">All Outputs (Average)</option>
+                                <option value="sensitive">Sensitive</option>
+                                <option value="tolerant">Tolerant</option>
+                                <option value="resident">Resident</option>
+                                <option value="migrant">Migrant</option>
+                            </select>
+                        </div>
                         <canvas id="bauShapCanvas" height="170"></canvas>
                         <div id="bauShapText" style="margin-top:8px; font-size:0.83rem; color:var(--text-secondary);"></div>
+                        <div style="margin-top:10px; font-size:0.82rem; font-weight:700;">Output Waterfall (Baseline to Predicted)</div>
+                        <canvas id="bauWaterfallCanvas" height="150"></canvas>
+                        <div id="bauWaterfallText" style="margin-top:6px; font-size:0.76rem; color:var(--text-secondary);"></div>
                         <div id="bauAfterRunNote" style="margin-top:8px; font-size:0.78rem; color:var(--accent-green);">✅ BAU baseline locked. Now configure the <em>Mitigation Scenario</em> below.</div>
                     </div>
                 </div>
@@ -217,6 +220,20 @@ $species_data = load_species_from_csv();
                     <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-red);">← Drier conditions</span><span style="color:var(--accent-blue);">More rainfall →</span></div>
                 </div>
 
+                <div class="card" style="margin:0 0 10px 0; padding:10px; border:1px solid var(--border-color); background:var(--bg-card-alt);">
+                    <div style="font-size:0.9rem; font-weight:700; margin-bottom:4px;">Counterfactual Goal Finder</div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:8px;">Set a target gain and get an attribution-weighted mitigation slider plan.</div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                        <label for="goalGainInput" style="font-size:0.76rem; color:var(--text-secondary);">Target gain (species)</label>
+                        <input id="goalGainInput" type="number" class="form-control" min="1" max="50" step="1" value="3" style="max-width:96px;">
+                    </div>
+                    <div style="display:flex; gap:8px; margin-bottom:8px;">
+                        <button class="btn btn-primary" id="goalSuggestBtn" style="flex:1;">Suggest Plan</button>
+                        <button class="btn" id="goalApplyBtn" style="flex:1; background:var(--bg-elevated); border:1px solid var(--border-color); color:var(--text-primary);">Apply Sliders</button>
+                    </div>
+                    <div id="goalFinderText" style="font-size:0.76rem; color:var(--text-secondary);">Run BAU first to unlock recommendation.</div>
+                </div>
+
                 <button class="btn btn-success" style="width:100%;" id="runMitigationBtn">Run Mitigation Prediction</button>
             </div>
 
@@ -237,8 +254,21 @@ $species_data = load_species_from_csv();
                         <tbody id="cmpRows"></tbody>
                     </table>
                     <div id="cmpSummary" style="margin-top:10px; font-size:0.84rem; color:var(--text-secondary);"></div>
-                    <div style="margin-top:10px; font-size:0.78rem; color:var(--text-secondary); font-style:italic;">Prototype model — values are illustrative for presentation purposes.</div>
+                    <div id="cmpInputSummary" style="margin-top:8px; font-size:0.78rem; color:var(--text-secondary);"></div>
+                    <div style="margin-top:10px; font-size:0.82rem; font-weight:700;">Class Contribution Stacked Bars</div>
+                    <canvas id="cmpStackedCanvas" height="150"></canvas>
+                    <div style="margin-top:10px; font-size:0.78rem; color:var(--text-secondary); font-style:italic;">Predictions are generated from the connected ML backend using database-derived baselines.</div>
                 </div>
+
+                <div class="card" style="margin:10px 0 0 0; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <div style="font-size:0.9rem; font-weight:700;">Monthly Driver Heatmap</div>
+                        <button class="btn btn-primary" id="loadHeatmapBtn" style="padding:6px 10px; font-size:0.76rem;">Load 12-Month Heatmap</button>
+                    </div>
+                    <div id="heatmapMeta" style="margin-top:6px; font-size:0.76rem; color:var(--text-secondary);">Select city and run BAU first, then load monthly SHAP driver patterns.</div>
+                    <div id="monthlyHeatmapTable" style="margin-top:8px; overflow:auto;"></div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -326,6 +356,16 @@ $species_data = load_species_from_csv();
 
             <div class="geo-output-card">
                 <div class="geo-output-shap-title"><strong>Feature Importance (SHAP)</strong> — <span id="predShapCity">—</span></div>
+                <div style="margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+                    <label for="predShapOutputSelect" style="font-size:0.78rem; color:var(--text-secondary);">Output:</label>
+                    <select id="predShapOutputSelect" class="form-control" style="max-width:200px;">
+                        <option value="all">All Outputs (Average)</option>
+                        <option value="sensitive">Sensitive</option>
+                        <option value="tolerant">Tolerant</option>
+                        <option value="resident">Resident</option>
+                        <option value="migrant">Migrant</option>
+                    </select>
+                </div>
 
                 <div class="geo-output-row">
                     <div><strong>Light Intensity</strong></div>
@@ -489,12 +529,18 @@ let geojsonData = null;
 let cityLayer = null;
 let selectedCityBoundaryLayer = null;
 let bauShapChartInstance = null;
+let bauWaterfallChartInstance = null;
+let cmpStackedChartInstance = null;
 let lastBauPrediction = null;
+let lastMitigationResult = null;
 let hasCompletedBauRun = false;
 let hasCompletedMitigationRun = false;
 let cityPredictionValues = {};
 let cityPredictionDetails = {};
 let stackedBauPredictions = {};
+let baselineRequestVersion = 0;
+let lastGoalPlan = null;
+let monthlyHeatmapCache = {};
 
 // City → observation sites lookup (populated after both datasets load)
 const citySitesLookup = {};   // cityName → [cellData, ...]
@@ -519,6 +565,524 @@ const LANDCOVER_COVARIATES = {
 
 function clamp(num, min, max) {
     return Math.max(min, Math.min(max, num));
+}
+
+async function requestScenario(payload) {
+    const res = await fetch('api/run_scenario.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+        throw new Error((data && data.error) ? data.error : 'Scenario API request failed');
+    }
+    return data;
+}
+
+function normalizeShapChart(shapChart) {
+    const rows = Array.isArray(shapChart) ? shapChart.slice() : [];
+    rows.sort(function(a, b) {
+        return (Number(b.importance) || 0) - (Number(a.importance) || 0);
+    });
+    return rows;
+}
+
+function buildShapMap(shapChart) {
+    const out = {};
+    normalizeShapChart(shapChart).forEach(function(item) {
+        out[String(item.feature || '')] = Number(item.importance) || 0;
+    });
+    return out;
+}
+
+function selectedShapOutput(selectId) {
+    var el = document.getElementById(selectId);
+    var val = el ? String(el.value || 'all').toLowerCase() : 'all';
+    if (['all', 'sensitive', 'tolerant', 'resident', 'migrant'].indexOf(val) === -1) {
+        return 'all';
+    }
+    return val;
+}
+
+function shapShareMap(rows) {
+    var sorted = normalizeShapChart(rows || []);
+    var total = sorted.reduce(function(sum, item) { return sum + (Number(item.importance) || 0); }, 0);
+    var out = {};
+    sorted.forEach(function(item) {
+        var key = String(item.feature || '');
+        var raw = Number(item.importance) || 0;
+        out[key] = total > 0 ? (raw / total) : 0;
+    });
+    return out;
+}
+
+function estimateGoalPlan(targetGain) {
+    if (!lastBauPrediction || !lastBauPrediction.result) {
+        return null;
+    }
+
+    var bau = lastBauPrediction.result;
+    var shares = shapShareMap(bau.shapChart || []);
+    var total = Math.max(1, Number(bau.total || 1));
+    var gain = Number(targetGain || 0);
+    if (!isFinite(gain) || gain === 0) {
+        return null;
+    }
+
+    var direction = gain > 0 ? 1 : -1;
+    var gainAbs = Math.abs(gain);
+    var effort = clamp(gainAbs / Math.max(1, total * 0.35), 0.05, 1.2);
+
+    var alanW = Number(shares['Artificial Light'] || 0.25);
+    var ndviW = Number(shares['NDVI'] || 0.25);
+    var tempW = Number(shares['Temperature'] || 0.25);
+    var precipW = Number(shares['Precipitation'] || 0.10);
+
+    var alanSlider = Math.round(clamp(effort * 30 * (0.50 + alanW), 0, 30)) * direction;
+    var ndviSlider = Math.round(clamp(effort * 30 * (0.45 + ndviW), 0, 30)) * direction;
+    var tempSlider = -Math.round(clamp(effort * 20 * (0.40 + tempW), 0, 20)) * direction;
+    var precipSlider = Math.round(clamp(effort * 30 * (0.20 + precipW), 0, 30)) * direction;
+
+    return {
+        targetGain: gain,
+        effort: effort,
+        alan: alanSlider,
+        ndvi: ndviSlider,
+        temp: tempSlider,
+        precip: precipSlider,
+        shares: {
+            alan: alanW,
+            ndvi: ndviW,
+            temp: tempW,
+            precip: precipW
+        }
+    };
+}
+
+function scaledPlan(plan, factor) {
+    if (!plan) return null;
+    return {
+        targetGain: plan.targetGain,
+        effort: plan.effort,
+        shares: plan.shares,
+        alan: Math.round(clamp(plan.alan * factor, -30, 30)),
+        ndvi: Math.round(clamp(plan.ndvi * factor, -30, 30)),
+        temp: Math.round(clamp(plan.temp * factor, -20, 20)),
+        precip: Math.round(clamp(plan.precip * factor, -30, 30))
+    };
+}
+
+async function evaluateGoalPlan(plan) {
+    if (!plan || !lastBauPrediction || !lastBauPrediction.result) {
+        return null;
+    }
+
+    var cityName = lastBauPrediction.cityName;
+    var month = lastBauPrediction.month;
+    var bauTotal = Number(lastBauPrediction.result.total || 0);
+
+    var apiData = await requestScenario({
+        city: cityName,
+        month: month,
+        light_reduction: -Number(plan.alan || 0),
+        ndvi_increase: Number(plan.ndvi || 0),
+        temp_change: Number(plan.temp || 0) / 10,
+        precip_change: Number(plan.precip || 0),
+        attribution_mode: 'sensitivity'
+    });
+
+    var total = Number((apiData.results || {}).total || 0);
+    var achievedGain = total - bauTotal;
+    var target = Number(plan.targetGain || 0);
+    var absError = Math.abs(achievedGain - target);
+
+    return {
+        plan: plan,
+        achievedGain: achievedGain,
+        predictedTotal: total,
+        absError: absError
+    };
+}
+
+async function optimizeGoalPlan(targetGain) {
+    var seed = estimateGoalPlan(targetGain);
+    if (!seed) return null;
+
+    var candidates = [
+        seed,
+        scaledPlan(seed, 0.55),
+        scaledPlan(seed, 0.85),
+        scaledPlan(seed, 1.15),
+        scaledPlan(seed, 1.45),
+        {
+            targetGain: seed.targetGain,
+            effort: seed.effort,
+            shares: seed.shares,
+            alan: Math.round(clamp(seed.alan * 1.25, -30, 30)),
+            ndvi: Math.round(clamp(seed.ndvi * 1.10, -30, 30)),
+            temp: Math.round(clamp(seed.temp * 1.15, -20, 20)),
+            precip: Math.round(clamp(seed.precip * 0.85, -30, 30))
+        }
+    ].filter(function(c) { return !!c; });
+
+    var best = null;
+    for (var i = 0; i < candidates.length; i++) {
+        var evaluated = await evaluateGoalPlan(candidates[i]);
+        if (!evaluated) continue;
+        if (!best || evaluated.absError < best.absError || (evaluated.absError === best.absError && evaluated.predictedTotal > best.predictedTotal)) {
+            best = evaluated;
+        }
+        // Early stop if exact integer target hit.
+        if (Math.round(evaluated.achievedGain) === Math.round(targetGain)) {
+            best = evaluated;
+            break;
+        }
+    }
+
+    if (!best) return null;
+    var out = Object.assign({}, best.plan);
+    out.achievedGain = best.achievedGain;
+    out.predictedTotal = best.predictedTotal;
+    out.absError = best.absError;
+    return out;
+}
+
+function renderGoalPlan(plan) {
+    var el = document.getElementById('goalFinderText');
+    if (!el) return;
+    if (!plan) {
+        el.textContent = 'Run BAU first to unlock recommendation.';
+        return;
+    }
+
+    var targetText = (plan.targetGain >= 0 ? '+' : '') + plan.targetGain;
+    var effortPct = Math.round(plan.effort * 100);
+    var alanTxt = (plan.alan >= 0 ? '+' : '') + plan.alan + '%';
+    var ndviTxt = (plan.ndvi >= 0 ? '+' : '') + plan.ndvi + '%';
+    var tempTxt = (plan.temp >= 0 ? '+' : '') + (plan.temp / 10).toFixed(1) + '°C';
+    var precipTxt = (plan.precip >= 0 ? '+' : '') + plan.precip + '%';
+    var achievedText = typeof plan.achievedGain === 'number'
+        ? ((plan.achievedGain >= 0 ? '+' : '') + plan.achievedGain.toFixed(0))
+        : 'n/a';
+    var absError = typeof plan.absError === 'number' ? plan.absError : null;
+    var closestText = absError !== null
+        ? ('Closest achievable in search: ' + achievedText + ' species (off target by ' + absError.toFixed(0) + ').')
+        : 'Closest achievable in search: n/a.';
+
+    el.textContent =
+        'Target ' + targetText + ' species. Suggested sliders: ALAN ' + alanTxt +
+        ', NDVI ' + ndviTxt + ', Temp ' + tempTxt + ', Precip ' + precipTxt +
+        '. Estimated gain from model search: ' + achievedText + ' species. ' +
+        closestText + ' Effort baseline: ' + effortPct + '%. Apply then run Mitigation to confirm.';
+}
+
+function applyGoalPlan(plan) {
+    if (!plan) return;
+    var alan = document.getElementById('mitAlanSlider');
+    var ndvi = document.getElementById('mitNdviSlider');
+    var temp = document.getElementById('mitTempSlider');
+    var precip = document.getElementById('mitPrecipSlider');
+    if (!alan || !ndvi || !temp || !precip) return;
+
+    alan.value = String(clamp(plan.alan, -30, 30));
+    ndvi.value = String(clamp(plan.ndvi, -30, 30));
+    temp.value = String(clamp(plan.temp, -20, 20));
+    precip.value = String(clamp(plan.precip, -30, 30));
+    updateMitigationSliderBadges();
+}
+
+function destroyChartSafe(instanceRefName) {
+    var ref = null;
+    if (instanceRefName === 'bauWaterfall') ref = bauWaterfallChartInstance;
+    if (instanceRefName === 'cmpStacked') ref = cmpStackedChartInstance;
+    if (!ref) return;
+    ref.destroy();
+    if (instanceRefName === 'bauWaterfall') bauWaterfallChartInstance = null;
+    if (instanceRefName === 'cmpStacked') cmpStackedChartInstance = null;
+}
+
+function renderBauWaterfall(result) {
+    var canvas = document.getElementById('bauWaterfallCanvas');
+    var note = document.getElementById('bauWaterfallText');
+    if (!canvas) return;
+
+    destroyChartSafe('bauWaterfall');
+
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    var outputKey = selectedShapOutput('bauShapOutputSelect');
+    var baselineMap = result.baselineByOutput || {};
+    var baseline = Number(baselineMap[outputKey] || baselineMap.total || result.baselineTotal || 0);
+
+    var predictedMap = {
+        all: Number(result.total || 0),
+        tolerant: Number(result.lightTolerant || 0),
+        sensitive: Number(result.lightSensitive || 0),
+        resident: Number(result.resident || 0),
+        migrant: Number(result.migratory || 0)
+    };
+    var predicted = Number(predictedMap[outputKey] || result.total || 0);
+    var delta = predicted - baseline;
+    var shapRows = outputKey === 'all'
+        ? normalizeShapChart(result.shapChart || [])
+        : normalizeShapChart((result.shapByOutput && result.shapByOutput[outputKey]) ? result.shapByOutput[outputKey] : []);
+    var topRows = shapRows.slice(0, 4);
+    var shapSum = topRows.reduce(function(sum, row) { return sum + (Number(row.importance) || 0); }, 0);
+    if (shapSum <= 0) {
+        topRows = [
+            { feature: 'Artificial Light', importance: 1 },
+            { feature: 'NDVI', importance: 1 },
+            { feature: 'Temperature', importance: 1 },
+            { feature: 'Precipitation', importance: 1 }
+        ];
+        shapSum = 4;
+    }
+
+    var contribs = topRows.map(function(row) {
+        var share = (Number(row.importance) || 0) / shapSum;
+        return {
+            feature: row.feature,
+            value: delta * share
+        };
+    });
+
+    var labels = ['Baseline'].concat(contribs.map(function(c) { return c.feature; })).concat(['Predicted']);
+    var transparent = 'rgba(0,0,0,0)';
+    var baseData = [];
+    var deltaData = [];
+
+    baseData.push(0);
+    deltaData.push(baseline);
+    var running = baseline;
+
+    contribs.forEach(function(c) {
+        var next = running + c.value;
+        baseData.push(Math.min(running, next));
+        deltaData.push(Math.abs(c.value));
+        running = next;
+    });
+
+    baseData.push(0);
+    deltaData.push(predicted);
+
+    var colors = [
+        'rgba(59,130,246,0.75)'
+    ].concat(contribs.map(function(c) {
+        return c.value >= 0 ? 'rgba(34,197,94,0.78)' : 'rgba(239,68,68,0.78)';
+    })).concat(['rgba(168,85,247,0.80)']);
+
+    bauWaterfallChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'offset',
+                    data: baseData,
+                    backgroundColor: transparent,
+                    borderWidth: 0,
+                    stack: 'waterfall'
+                },
+                {
+                    label: 'value',
+                    data: deltaData,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                    stack: 'waterfall'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            var idx = context.dataIndex;
+                            if (idx === 0) return 'Baseline total: ' + baseline.toFixed(0);
+                            if (idx === labels.length - 1) return 'Predicted total: ' + predicted.toFixed(0);
+                            var c = contribs[idx - 1];
+                            var sign = c.value >= 0 ? '+' : '';
+                            return c.feature + ': ' + sign + c.value.toFixed(2) + ' (allocated from total delta)';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { stacked: true, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }
+            }
+        }
+    });
+
+    if (note) {
+        note.textContent =
+            'Heuristic waterfall (' + outputKey + '): baseline-to-predicted delta is proportionally allocated to top SHAP drivers for interpretability.';
+    }
+}
+
+function renderClassStackedChart(bau, mit) {
+    var canvas = document.getElementById('cmpStackedCanvas');
+    if (!canvas || !bau || !mit) return;
+    destroyChartSafe('cmpStacked');
+
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    cmpStackedChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['BAU', 'Mitigation'],
+            datasets: [
+                { label: 'Sensitive', data: [bau.lightSensitive || 0, mit.lightSensitive || 0], backgroundColor: 'rgba(239,68,68,0.78)' },
+                { label: 'Tolerant', data: [bau.lightTolerant || 0, mit.lightTolerant || 0], backgroundColor: 'rgba(59,130,246,0.78)' },
+                { label: 'Resident', data: [bau.resident || 0, mit.resident || 0], backgroundColor: 'rgba(34,197,94,0.78)' },
+                { label: 'Migratory', data: [bau.migratory || 0, mit.migratory || 0], backgroundColor: 'rgba(245,158,11,0.82)' }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 } } } },
+            scales: {
+                x: { stacked: true, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }
+            }
+        }
+    });
+}
+
+function heatColor(value, maxValue) {
+    var ratio = maxValue > 0 ? clamp(value / maxValue, 0, 1) : 0;
+    var r = Math.round(28 + (220 - 28) * ratio);
+    var g = Math.round(45 + (170 - 45) * ratio);
+    var b = Math.round(95 + (60 - 95) * ratio);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
+
+function renderMonthlyHeatmap(cityName, outputKey, matrix) {
+    var root = document.getElementById('monthlyHeatmapTable');
+    var meta = document.getElementById('heatmapMeta');
+    if (!root || !matrix) return;
+
+    var features = ['Artificial Light', 'NDVI', 'Temperature', 'Precipitation', 'Seasonality', 'Land Cover', 'Historical Species'];
+    var months = MONTH_NAMES;
+
+    var maxValue = 0;
+    features.forEach(function(f) {
+        for (var m = 1; m <= 12; m++) {
+            maxValue = Math.max(maxValue, Number((matrix[m] && matrix[m][f]) || 0));
+        }
+    });
+
+    var html = '<table style="width:100%; border-collapse:collapse; font-size:0.72rem;">';
+    html += '<thead><tr><th style="text-align:left; padding:6px; border-bottom:1px solid var(--border-color);">Feature</th>';
+    for (var i = 0; i < months.length; i++) {
+        html += '<th style="padding:6px; border-bottom:1px solid var(--border-color);">' + months[i].slice(0,3) + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+
+    features.forEach(function(f) {
+        html += '<tr>';
+        html += '<td style="padding:6px; border-bottom:1px solid rgba(255,255,255,0.06); color:var(--text-secondary);">' + f + '</td>';
+        for (var m = 1; m <= 12; m++) {
+            var val = Number((matrix[m] && matrix[m][f]) || 0);
+            var bg = heatColor(val, maxValue);
+            html += '<td title="' + f + ' / ' + months[m - 1] + ': ' + val.toFixed(4) + '" style="padding:6px; text-align:center; background:' + bg + '; color:#fff; border-bottom:1px solid rgba(255,255,255,0.06);">' + val.toFixed(2) + '</td>';
+        }
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    root.innerHTML = html;
+    if (meta) {
+        meta.textContent = 'Monthly SHAP heatmap for ' + cityName + ' (' + outputKey + '). Darker cells = stronger local contribution.';
+    }
+}
+
+async function loadMonthlyDriverHeatmap() {
+    if (!lastBauPrediction || !lastBauPrediction.cityName) {
+        var meta = document.getElementById('heatmapMeta');
+        if (meta) meta.textContent = 'Run BAU first to determine city baseline context.';
+        return;
+    }
+
+    var cityName = lastBauPrediction.cityName;
+    var outputKey = selectedShapOutput('bauShapOutputSelect');
+    var cacheKey = cityName + '|' + outputKey;
+    if (monthlyHeatmapCache[cacheKey]) {
+        renderMonthlyHeatmap(cityName, outputKey, monthlyHeatmapCache[cacheKey]);
+        return;
+    }
+
+    var meta = document.getElementById('heatmapMeta');
+    if (meta) meta.textContent = 'Loading monthly SHAP rows (12 API calls)...';
+
+    var matrix = {};
+    for (var m = 1; m <= 12; m++) {
+        var apiData = await requestScenario({
+            city: cityName,
+            month: m,
+            light_reduction: 0,
+            ndvi_increase: 0,
+            temp_change: 0,
+            precip_change: 0,
+            shap_output: outputKey,
+            attribution_mode: 'sensitivity'
+        });
+        var rows = resolveShapRowsFromApi(apiData, outputKey);
+        var map = buildShapMap(rows);
+        matrix[m] = {
+            'Artificial Light': Number(map['Artificial Light'] || 0),
+            'NDVI': Number(map['NDVI'] || 0),
+            'Temperature': Number(map['Temperature'] || 0),
+            'Precipitation': Number(map['Precipitation'] || 0),
+            'Seasonality': Number(map['Seasonality'] || 0),
+            'Land Cover': Number(map['Land Cover'] || 0),
+            'Historical Species': Number(map['Historical Species'] || 0)
+        };
+    }
+
+    monthlyHeatmapCache[cacheKey] = matrix;
+    renderMonthlyHeatmap(cityName, outputKey, matrix);
+}
+
+
+function resolveShapRowsFromApi(data, outputKey) {
+    var key = outputKey || 'all';
+    if (key === 'all') {
+        return normalizeShapChart(data && data.shap_chart ? data.shap_chart : []);
+    }
+    var byOutput = data && data.shap_by_output ? data.shap_by_output : {};
+    return normalizeShapChart(Array.isArray(byOutput[key]) ? byOutput[key] : []);
+}
+
+function landCoverDummiesForCode(code) {
+    const c = Number(code);
+    if ([1, 2, 3, 4, 5, 8, 9, 10].includes(c)) return [0, 1, 0, 0, 0];
+    if ([0, 11, 17].includes(c)) return [0, 0, 1, 0, 0];
+    if ([12, 14].includes(c)) return [0, 0, 0, 1, 0];
+    if ([15, 16].includes(c)) return [0, 0, 0, 0, 1];
+    return [1, 0, 0, 0, 0];
+}
+
+function setBauBaselineLoading(cityName, month) {
+    document.getElementById('bauLandcoverName').textContent = cityName || 'Loading...';
+    document.getElementById('bauLandcoverShare').textContent = 'loading';
+    document.getElementById('bauAlanVal').textContent = '...';
+    document.getElementById('bauNdviVal').textContent = '...';
+    document.getElementById('bauTempVal').textContent = '...';
+    document.getElementById('bauPrecipVal').textContent = '...';
+    document.getElementById('bauAlanNote').textContent = 'Loading month-specific baseline...';
+    document.getElementById('bauNdviNote').textContent = 'Loading month-specific baseline...';
+    document.getElementById('bauTempNote').textContent = 'Loading month-specific baseline...';
+    document.getElementById('bauPrecipNote').textContent = 'Loading month-specific baseline...';
+    document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[(month || 1) - 1];
 }
 
 function getAvpBarAnimation(stepMs) {
@@ -837,162 +1401,192 @@ function animateValue(id, target, decimals, durationMs) {
     valueAnimHandles[id] = requestAnimationFrame(step);
 }
 
-function runRichnessPrediction() {
+async function runRichnessPrediction() {
     var cityName = document.getElementById('predCitySelect').value;
     var cityFeature = getCityFeatureByName(cityName);
     var dom = getDominantLandCoverForCity(cityFeature);
-    var citySeed = Math.abs(hashCode(cityName || 'city'));
-    var citySites = citySitesLookup[cityName] || [];
 
     var temp = parseFloat(document.getElementById('predTempInput').value) || 31;
     var alan = parseFloat(document.getElementById('predAlanInput').value) || 55;
     var precip = parseFloat(document.getElementById('predPrecipInput').value) || 150;
-    var ndvi = parseFloat(document.getElementById('predNdviInput').value) || 41;
-    var monthIdx = (parseInt(document.getElementById('predMonthSlider').value, 10) || 1) - 1;
+    var ndviPct = parseFloat(document.getElementById('predNdviInput').value) || 41;
+    var month = parseInt(document.getElementById('predMonthSlider').value, 10) || 1;
 
     temp = clamp(temp, 10, 45);
-    alan = clamp(alan, 0, 100);
-    precip = clamp(precip, 0, 500);
-    ndvi = clamp(ndvi, 0, 100);
+    alan = clamp(alan, 0, 2000);
+    precip = clamp(precip, 0, 5000);
+    ndviPct = clamp(ndviPct, 0, 100);
 
-    var base = LANDCOVER_RICHNESS[dom.code] || 8;
-    var tempFactor = clamp(1 - Math.abs(temp - 28) / 22, 0.58, 1.08);
-    var alanFactor = clamp((75 - alan) / 75, 0.22, 1.08);
-    var precipFactor = clamp(0.72 + precip / 420, 0.72, 1.22);
-    var ndviFactor = 0.72 + (ndvi / 100) * 0.86;
-    var monthFactor = MONTH_FACTORS[monthIdx] || 1;
-    var cityFactor = 0.88 + ((citySeed % 17) / 100);
-    var siteDensityFactor = clamp(0.92 + Math.min(citySites.length, 12) * 0.015, 0.92, 1.1);
+    try {
+        var dummies = landCoverDummiesForCode(dom.code);
+        var shapOutput = selectedShapOutput('predShapOutputSelect');
+        var data = await requestScenario({
+            manual_mode: true,
+            city: cityName,
+            month: month,
+            light_reduction: 0,
+            ndvi_increase: 0,
+            temp_change: 0,
+            precip_change: 0,
+            shap_output: shapOutput,
+            attribution_mode: 'sensitivity',
+            base_ndvi: ndviPct / 100,
+            base_viirs: alan,
+            base_lst: temp,
+            base_precip: precip,
+            lc_dummy_1: dummies[0],
+            lc_dummy_2: dummies[1],
+            lc_dummy_3: dummies[2],
+            lc_dummy_4: dummies[3],
+            lc_dummy_5: dummies[4]
+        });
 
-    var predicted = clamp(Math.round(base * tempFactor * alanFactor * precipFactor * ndviFactor * monthFactor * cityFactor * siteDensityFactor * 2.05), 2, 45);
+        var outputs = data.model_outputs || {};
+        var total = Number((data.results || {}).total || 0);
+        var sensitive = Number(outputs.sensitive || 0);
+        var tolerant = Number(outputs.tolerant || 0);
+        var resident = Number(outputs.resident || 0);
+        var migratory = Number(outputs.migrant || 0);
 
-    var sensitiveShare = clamp(0.52 - alan / 185 + ndvi / 240, 0.08, 0.65);
-    var lightSensitive = Math.round(predicted * sensitiveShare);
-    var lightTolerant = Math.max(0, predicted - lightSensitive);
+        animateValue('predTotalValue', total, 0, 360);
+        document.getElementById('predTotalContext').textContent = getLandCoverName(dom.code) + ' · ALAN ' + alan.toFixed(1) + ' nW · ' + MONTH_NAMES[month - 1];
 
-    var residentShare = clamp(0.48 + precip / 900 - alan / 320, 0.2, 0.82);
-    var resident = Math.round(predicted * residentShare);
-    var migratory = Math.max(0, predicted - resident);
+        animateValue('predSensitiveValue', sensitive, 0, 320);
+        animateValue('predTolerantValue', tolerant, 0, 320);
+        animateValue('predResidentValue', resident, 0, 320);
+        animateValue('predMigratoryValue', migratory, 0, 320);
 
-    var shapLight = clamp(alan / 100 * 0.62, 0.04, 0.62);
-    var shapNdvi = clamp(ndvi / 100 * 0.34, 0.03, 0.34);
-    var shapTemp = clamp((1 - Math.abs(temp - 28) / 18) * 0.24, 0.02, 0.24);
-    var shapElev = clamp((dom.code === 13 ? 0.08 : 0.11), 0.04, 0.16);
-    var shapWater = clamp((precip / 500) * 0.12, 0.02, 0.12);
-    var shapTotal = shapLight + shapNdvi + shapTemp + shapElev + shapWater;
+        var totalSafe = Math.max(1, total);
+        setBarWidth('predSensitiveBar', (sensitive / totalSafe) * 100);
+        setBarWidth('predTolerantBar', (tolerant / totalSafe) * 100);
+        setBarWidth('predResidentBar', (resident / totalSafe) * 100);
+        setBarWidth('predMigratoryBar', (migratory / totalSafe) * 100);
 
-    animateValue('predTotalValue', predicted, 0, 360);
-    document.getElementById('predTotalContext').textContent = getLandCoverName(dom.code) + ' · ALAN ' + alan.toFixed(0) + ' nW · ' + MONTH_NAMES[monthIdx];
+        var shapRows = resolveShapRowsFromApi(data, shapOutput);
+        var shapMap = buildShapMap(shapRows);
+        var shapLight = Number(shapMap['Artificial Light'] || 0);
+        var shapNdvi = Number(shapMap['NDVI'] || 0);
+        var shapTemp = Number(shapMap['Temperature'] || 0);
+        var shapElev = Number(shapMap['Land Cover'] || 0);
+        var shapWater = Number(shapMap['Precipitation'] || 0);
+        var shapTotal = Math.max(1e-6, shapLight + shapNdvi + shapTemp + shapElev + shapWater);
 
-    animateValue('predSensitiveValue', lightSensitive, 0, 320);
-    animateValue('predTolerantValue', lightTolerant, 0, 320);
-    animateValue('predResidentValue', resident, 0, 320);
-    animateValue('predMigratoryValue', migratory, 0, 320);
+        var shapLightPct = (shapLight / shapTotal) * 100;
+        var shapNdviPct = (shapNdvi / shapTotal) * 100;
+        var shapTempPct = (shapTemp / shapTotal) * 100;
+        var shapElevPct = (shapElev / shapTotal) * 100;
+        var shapWaterPct = (shapWater / shapTotal) * 100;
 
-    setBarWidth('predSensitiveBar', (lightSensitive / predicted) * 100);
-    setBarWidth('predTolerantBar', (lightTolerant / predicted) * 100);
-    setBarWidth('predResidentBar', (resident / predicted) * 100);
-    setBarWidth('predMigratoryBar', (migratory / predicted) * 100);
+        document.getElementById('predShapLightVal').textContent = shapLightPct.toFixed(1) + '%';
+        document.getElementById('predShapNdviVal').textContent = shapNdviPct.toFixed(1) + '%';
+        document.getElementById('predShapTempVal').textContent = shapTempPct.toFixed(1) + '%';
+        document.getElementById('predShapElevVal').textContent = shapElevPct.toFixed(1) + '%';
+        document.getElementById('predShapWaterVal').textContent = shapWaterPct.toFixed(1) + '%';
 
-    animateValue('predShapLightVal', shapLight, 2, 300);
-    animateValue('predShapNdviVal', shapNdvi, 2, 300);
-    animateValue('predShapTempVal', shapTemp, 2, 300);
-    animateValue('predShapElevVal', shapElev, 2, 300);
-    animateValue('predShapWaterVal', shapWater, 2, 300);
+        setBarWidth('predShapLightBar', shapLightPct);
+        setBarWidth('predShapNdviBar', shapNdviPct);
+        setBarWidth('predShapTempBar', shapTempPct);
+        setBarWidth('predShapElevBar', shapElevPct);
+        setBarWidth('predShapWaterBar', shapWaterPct);
 
-    setBarWidth('predShapLightBar', (shapLight / shapTotal) * 100);
-    setBarWidth('predShapNdviBar', (shapNdvi / shapTotal) * 100);
-    setBarWidth('predShapTempBar', (shapTemp / shapTotal) * 100);
-    setBarWidth('predShapElevBar', (shapElev / shapTotal) * 100);
-    setBarWidth('predShapWaterBar', (shapWater / shapTotal) * 100);
-
-    document.getElementById('predDriverText').textContent =
-        'Key driver: Light Intensity (' + shapLight.toFixed(2) + ') has the strongest influence on predicted richness for ' + cityName +
-        '. High ALAN suppresses light-sensitive species while vegetation support (NDVI) helps retain refugia.';
+        var ranked = shapRows;
+        var top = ranked[0] || { feature: 'n/a', importance: 0 };
+        var topPct = shapTotal > 0 ? ((Number(top.importance || 0) / shapTotal) * 100) : 0;
+        document.getElementById('predDriverText').textContent =
+            'Key driver (' + shapOutput + ', local grouped SHAP): ' + top.feature + ' (' + topPct.toFixed(1) + '% share) for ' + cityName + ' in ' + MONTH_NAMES[month - 1] + '.';
+    } catch (err) {
+        console.error('Richness prediction failed:', err);
+        document.getElementById('predDriverText').textContent = 'Prediction unavailable: ' + err.message;
+    }
 }
 
-function getBaselineForCity(cityName) {
+async function getBaselineForCity(cityName, month) {
+    var requestVersion = ++baselineRequestVersion;
+    var response = await requestScenario({
+        city: cityName,
+        month: month,
+        light_reduction: 0,
+        ndvi_increase: 0,
+        temp_change: 0,
+        precip_change: 0,
+        attribution_mode: 'sensitivity'
+    });
+
+    if (requestVersion !== baselineRequestVersion) {
+        return null;
+    }
+
+    var hist = response.historical_inputs || null;
+    var modelInputs = hist && hist.model_inputs_used ? hist.model_inputs_used : {};
+    var lc = hist && hist.dominant_land_cover ? hist.dominant_land_cover : {};
+
     var feature = getCityFeatureByName(cityName);
     var dominant = getDominantLandCoverForCity(feature);
-    var defaults = LANDCOVER_COVARIATES[dominant.code] || LANDCOVER_COVARIATES[13];
-    var citySeed = Math.abs(hashCode(cityName || 'city'));
 
     return {
         cityName: cityName,
-        dominantName: getLandCoverName(dominant.code),
+        month: month,
+        dominantName: (lc && lc.label) ? lc.label : getLandCoverName(dominant.code),
         coveragePct: dominant.total > 0 ? Math.round((dominant.count / dominant.total) * 100) : 0,
-        alan: clamp(defaults.alan + ((citySeed % 21) - 10), 0, 100),
-        ndvi: clamp(defaults.ndvi + ((citySeed % 15) - 7), 0, 100),
-        temp: clamp(defaults.temp + (((citySeed % 7) - 3) * 0.35), 10, 45),
-        precip: clamp(defaults.precip + ((citySeed % 81) - 40), 0, 500)
+        alan: Number(modelInputs.base_viirs || 0),
+        ndvi: Number(modelInputs.base_ndvi || 0) * 100,
+        temp: Number(modelInputs.base_lst || 0),
+        precip: Number(modelInputs.base_precip || 0),
+        ndviStats: hist ? hist.ndvi : null,
+        viirsStats: hist ? hist.viirs : null,
+        lstStats: hist ? (hist.lst_combined || hist.lst_day) : null,
+        lstDayStats: hist ? hist.lst_day : null,
+        lstNightStats: hist ? hist.lst_night : null,
+        precipStats: hist ? hist.precip_mm : null,
+        response: response
     };
 }
 
-function computeScenarioPrediction(cityName, inputs, monthIndex) {
-    var cityFeature = getCityFeatureByName(cityName);
-    var dom = getDominantLandCoverForCity(cityFeature);
-    var citySeed = Math.abs(hashCode(cityName || 'city'));
-    var citySites = citySitesLookup[cityName] || [];
-
-    var temp = clamp(inputs.temp, 10, 45);
-    var alan = clamp(inputs.alan, 0, 100);
-    var precip = clamp(inputs.precip, 0, 500);
-    var ndvi = clamp(inputs.ndvi, 0, 100);
-
-    var base = LANDCOVER_RICHNESS[dom.code] || 8;
-    var tempFactor = clamp(1 - Math.abs(temp - 28) / 22, 0.58, 1.08);
-    var alanFactor = clamp((75 - alan) / 75, 0.22, 1.08);
-    var precipFactor = clamp(0.72 + precip / 420, 0.72, 1.22);
-    var ndviFactor = 0.72 + (ndvi / 100) * 0.86;
-    var monthFactor = MONTH_FACTORS[monthIndex] || 1;
-    var cityFactor = 0.88 + ((citySeed % 17) / 100);
-    var siteDensityFactor = clamp(0.92 + Math.min(citySites.length, 12) * 0.015, 0.92, 1.1);
-
-    var predicted = clamp(Math.round(base * tempFactor * alanFactor * precipFactor * ndviFactor * monthFactor * cityFactor * siteDensityFactor * 2.05), 2, 45);
-
-    var sensitiveShare = clamp(0.52 - alan / 185 + ndvi / 240, 0.08, 0.65);
-    var lightSensitive = Math.round(predicted * sensitiveShare);
-    var lightTolerant = Math.max(0, predicted - lightSensitive);
-
-    var residentShare = clamp(0.48 + precip / 900 - alan / 320, 0.2, 0.82);
-    var resident = Math.round(predicted * residentShare);
-    var migratory = Math.max(0, predicted - resident);
-
-    var shapLight = clamp(alan / 100 * 0.62, 0.04, 0.62);
-    var shapNdvi = clamp(ndvi / 100 * 0.34, 0.03, 0.34);
-    var shapTemp = clamp((1 - Math.abs(temp - 28) / 18) * 0.24, 0.02, 0.24);
-    var shapElev = clamp((dom.code === 13 ? 0.08 : 0.11), 0.04, 0.16);
-    var shapWater = clamp((precip / 500) * 0.12, 0.02, 0.12);
-
-    return {
-        total: predicted,
-        lightSensitive: lightSensitive,
-        lightTolerant: lightTolerant,
-        resident: resident,
-        migratory: migratory,
-        shap: { light: shapLight, ndvi: shapNdvi, temp: shapTemp, elev: shapElev, water: shapWater },
-        monthName: MONTH_NAMES[monthIndex]
-    };
+function formatTrendNote(stats, unit, multiplier, decimals) {
+    if (!stats) return 'No aligned historical record found.';
+    var m = Number(multiplier || 1);
+    var d = Number(decimals || 1);
+    var baseYear = Number(stats.baseline_year || 0);
+    var baseRaw = Number(stats.base_raw || 0) * m;
+    var trend = Number(stats.avg_yearly_change || 0) * m;
+    var sign = trend >= 0 ? '+' : '';
+    return baseYear + ' baseline: ' + baseRaw.toFixed(d) + ' ' + unit + ' · ' + sign + trend.toFixed(d) + ' ' + unit + '/yr';
 }
 
 function updateBauInputsPanel(base) {
+    if (!base) return;
     document.getElementById('bauLandcoverName').textContent = base.dominantName;
     document.getElementById('bauLandcoverShare').textContent = base.coveragePct + '% cover';
     document.getElementById('bauAlanVal').textContent = Math.round(base.alan) + ' nW/cm²/sr';
     document.getElementById('bauNdviVal').textContent = Math.round(base.ndvi) + '%';
     document.getElementById('bauTempVal').textContent = base.temp.toFixed(1) + '°C';
     document.getElementById('bauPrecipVal').textContent = Math.round(base.precip) + ' mm';
+    document.getElementById('bauAlanNote').textContent = formatTrendNote(base.viirsStats, 'nW', 1, 2);
+    document.getElementById('bauNdviNote').textContent = formatTrendNote(base.ndviStats, '%', 100, 2);
+    var lstCombinedNote = formatTrendNote(base.lstStats, '°C', 1, 2);
+    var lstDayNote = base.lstDayStats ? ('Day: ' + Number(base.lstDayStats.adjusted_baseline || 0).toFixed(2) + '°C') : '';
+    var lstNightNote = base.lstNightStats ? ('Night: ' + Number(base.lstNightStats.adjusted_baseline || 0).toFixed(2) + '°C') : '';
+    document.getElementById('bauTempNote').textContent = lstCombinedNote + (lstDayNote && lstNightNote ? (' · ' + lstDayNote + ' · ' + lstNightNote) : '');
+    document.getElementById('bauPrecipNote').textContent = formatTrendNote(base.precipStats, 'mm', 1, 2);
     document.getElementById('mitAlanBaseline').textContent = 'Baseline: ' + Math.round(base.alan) + ' nW';
     document.getElementById('mitNdviBaseline').textContent = 'Baseline: ' + Math.round(base.ndvi) + '%';
     document.getElementById('mitTempBaseline').textContent = 'Baseline: ' + base.temp.toFixed(1) + '°C';
     document.getElementById('mitPrecipBaseline').textContent = 'Baseline: ' + Math.round(base.precip) + ' mm';
+
+    if (lastBauPrediction && lastBauPrediction.cityName === base.cityName && lastBauPrediction.month === base.month) {
+        lastBauPrediction.baseline = base;
+    }
+    updateMitigationSliderBadges();
 }
 
 function resetBauScenarioState() {
+    lastBauPrediction = null;
     hasCompletedBauRun = false;
     hasCompletedMitigationRun = false;
     cityPredictionValues = {};
     cityPredictionDetails = {};
+    lastGoalPlan = null;
+    lastMitigationResult = null;
 
     var bauResultHeading = document.getElementById('bauResultHeading');
     var bauResultEmpty = document.getElementById('bauResultEmpty');
@@ -1010,6 +1604,17 @@ function resetBauScenarioState() {
     var cmpContent = document.getElementById('cmpContent');
     if (cmpEmpty) cmpEmpty.style.display = 'block';
     if (cmpContent) cmpContent.style.display = 'none';
+    var bauInputUsed = document.getElementById('bauInputUsed');
+    if (bauInputUsed) bauInputUsed.textContent = '';
+    var cmpInputSummary = document.getElementById('cmpInputSummary');
+    if (cmpInputSummary) cmpInputSummary.textContent = '';
+    var monthlyHeatmapTable = document.getElementById('monthlyHeatmapTable');
+    if (monthlyHeatmapTable) monthlyHeatmapTable.innerHTML = '';
+    var heatmapMeta = document.getElementById('heatmapMeta');
+    if (heatmapMeta) heatmapMeta.textContent = 'Select city and run BAU first, then load monthly SHAP driver patterns.';
+    destroyChartSafe('bauWaterfall');
+    destroyChartSafe('cmpStacked');
+    renderGoalPlan(null);
     refreshCityLayerStyles();
     syncMitigationPanelHeight();
 }
@@ -1019,7 +1624,7 @@ function updateBauResultUI(cityName, result) {
     document.getElementById('bauResultContent').style.display = 'block';
     document.getElementById('bauResultHeading').textContent = 'BAU Prediction Result — ' + cityName + ' · ' + result.monthName;
     document.getElementById('bauResultTitle').textContent = 'BAU TOTAL PREDICTED — ' + cityName + ' · ' + result.monthName;
-    document.getElementById('bauTotalPred').textContent = result.total;
+    animateValue('bauTotalPred', result.total, 0, 360);
     document.getElementById('bauShapTitle').textContent = 'Feature Importance (SHAP) — ' + cityName;
     document.getElementById('bauShapSubtitle').textContent = 'Local SHAP values for ' + cityName + ' · ' + document.getElementById('bauLandcoverName').textContent;
 
@@ -1027,6 +1632,18 @@ function updateBauResultUI(cityName, result) {
     document.getElementById('bauTolerantVal').textContent = result.lightTolerant;
     document.getElementById('bauResidentVal').textContent = result.resident;
     document.getElementById('bauMigratoryVal').textContent = result.migratory;
+
+    var bauInputs = result.inputValues && result.inputValues.scenario ? result.inputValues.scenario : null;
+    var inputUsedText = '';
+    if (bauInputs) {
+        inputUsedText =
+            'Inputs used: NDVI ' + (Number(bauInputs.ndvi || 0) * 100).toFixed(2) + '% · ' +
+            'ALAN ' + Number(bauInputs.viirs || 0).toFixed(2) + ' nW · ' +
+            'LST ' + Number(bauInputs.lst || 0).toFixed(2) + '°C · ' +
+            'Precip ' + Number(bauInputs.precip || 0).toFixed(2) + ' mm · ' +
+            'Month ' + result.monthName;
+    }
+    document.getElementById('bauInputUsed').textContent = inputUsedText;
 
     animateBauResultBars(result);
 
@@ -1046,23 +1663,49 @@ function updateBauResultUI(cityName, result) {
     var shapCtx = newCanvas.getContext('2d');
     if (!shapCtx) return;
 
-    var shapValues = [result.shap.light, result.shap.ndvi, result.shap.temp, result.shap.elev, result.shap.water];
-    var shapAxisMax = Math.max.apply(null, shapValues);
-    if (!isFinite(shapAxisMax) || shapAxisMax <= 0) {
-        shapAxisMax = 0.1;
+    var shapOutput = selectedShapOutput('bauShapOutputSelect');
+    var sortedShap = shapOutput === 'all'
+        ? normalizeShapChart(result.shapChart || [])
+        : normalizeShapChart((result.shapByOutput && result.shapByOutput[shapOutput]) ? result.shapByOutput[shapOutput] : []);
+    var shapLabels = sortedShap.map(function(item) { return item.feature; });
+    var shapRawValues = sortedShap.map(function(item) { return Number(item.importance) || 0; });
+    var rawTotal = shapRawValues.reduce(function(sum, v) { return sum + v; }, 0);
+    var shapValues = rawTotal > 0
+        ? shapRawValues.map(function(v) { return (v / rawTotal) * 100; })
+        : shapRawValues.map(function() { return 0; });
+    if (!shapLabels.length) {
+        shapLabels = ['No SHAP data'];
+        shapValues = [0];
+        shapRawValues = [0];
     }
+    var shapAxisMax = 100;
 
     bauShapChartInstance = new Chart(shapCtx, {
         type: 'bar',
         data: {
-            labels: ['Light Intensity', 'NDVI', 'Temperature', 'Elevation', 'Distance to Water'],
-            datasets: [{ data: shapValues, backgroundColor: ['#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4'] }]
+            labels: shapLabels,
+            datasets: [{
+                data: shapValues,
+                rawValues: shapRawValues,
+                backgroundColor: ['#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4', '#06b6d4', '#94a3b8']
+            }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: true,
             animation: getAvpBarAnimation(90),
-            plugins: { legend: { display: false } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            var pct = Number(context.parsed.y || 0).toFixed(2) + '%';
+                            var raw = Number(context.dataset.rawValues?.[context.dataIndex] || 0).toFixed(6);
+                            return 'Share: ' + pct + ' (raw: ' + raw + ')';
+                        }
+                    }
+                }
+            },
             scales: {
                 y: { beginAtZero: true, max: shapAxisMax, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } },
                 x: { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false } }
@@ -1070,8 +1713,12 @@ function updateBauResultUI(cityName, result) {
         }
     });
 
+    var topA = sortedShap[0] || { feature: 'n/a', importance: 0 };
+    var topB = sortedShap[1] || { feature: 'n/a', importance: 0 };
+    var topAPct = rawTotal > 0 ? (Number(topA.importance || 0) / rawTotal) * 100 : 0;
+    var topBPct = rawTotal > 0 ? (Number(topB.importance || 0) / rawTotal) * 100 : 0;
     document.getElementById('bauShapText').textContent =
-        'Interpretation: In ' + cityName + ', light intensity (' + result.shap.light.toFixed(2) + ') and ndvi (' + result.shap.ndvi.toFixed(2) + ') are the strongest drivers of bird species richness.';
+        'Interpretation (' + shapOutput + ', local grouped SHAP): Top drivers in ' + cityName + ' are ' + topA.feature + ' (' + topAPct.toFixed(1) + '%) and ' + topB.feature + ' (' + topBPct.toFixed(1) + '%).';
 
     syncBauResultPanelHeight();
 }
@@ -1115,38 +1762,92 @@ function syncMitigationPanelHeight() {
     right.style.maxHeight = targetHeight + 'px';
 }
 
-function runBauPrediction() {
+async function runBauPrediction() {
     var cityName = document.getElementById('bauCitySelect').value;
     if (!cityName) return;
 
-    var monthIndex = (parseInt(document.getElementById('bauMonthSlider').value, 10) || 1) - 1;
-    document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[monthIndex];
+    var month = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
+    document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[month - 1];
 
-    var base = getBaselineForCity(cityName);
-    updateBauInputsPanel(base);
-    updateMitigationSliderBadges();
+    var runBtn = document.getElementById('runBauBtn');
+    if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = 'Running BAU...';
+    }
 
-    var result = computeScenarioPrediction(cityName, {
-        alan: base.alan,
-        ndvi: base.ndvi,
-        temp: base.temp,
-        precip: base.precip
-    }, monthIndex);
+    try {
+        var selectedOutput = selectedShapOutput('bauShapOutputSelect');
+        var base = await getBaselineForCity(cityName, month);
+        if (!base) {
+            if (runBtn) {
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run BAU Prediction';
+            }
+            return;
+        }
+        updateBauInputsPanel(base);
+        updateMitigationSliderBadges();
 
-    var cityFeature = getCityFeatureByName(cityName);
-    var dominant = getDominantLandCoverForCity(cityFeature);
-    stackedBauPredictions[cityName] = {
-        total: result.total,
-        lightSensitive: result.lightSensitive,
-        lightTolerant: result.lightTolerant,
-        resident: result.resident,
-        migratory: result.migratory,
-        monthName: result.monthName,
-        dominantName: getLandCoverName(dominant.code)
-    };
+        var apiData = await requestScenario({
+            city: cityName,
+            month: month,
+            light_reduction: 0,
+            ndvi_increase: 0,
+            temp_change: 0,
+            precip_change: 0,
+            shap_output: selectedOutput,
+            attribution_mode: 'sensitivity'
+        });
+        var outputs = apiData.model_outputs || {};
+        var result = {
+            total: Number((apiData.results || {}).total || 0),
+            baselineTotal: Number((apiData.results || {}).baseline_total || 0),
+            baselineByOutput: (apiData.results && apiData.results.baseline_by_output) ? apiData.results.baseline_by_output : {},
+            lightSensitive: Number(outputs.sensitive || 0),
+            lightTolerant: Number(outputs.tolerant || 0),
+            resident: Number(outputs.resident || 0),
+            migratory: Number(outputs.migrant || 0),
+            monthName: MONTH_NAMES[month - 1],
+            shapChart: normalizeShapChart(apiData.shap_chart || []),
+            shapByOutput: apiData.shap_by_output || {},
+            inputValues: apiData.input_values || {}
+        };
 
-    lastBauPrediction = { cityName: cityName, monthIndex: monthIndex, baseline: base, result: result };
-    updateBauResultUI(cityName, result);
+        stackedBauPredictions[cityName] = {
+            total: result.total,
+            lightSensitive: result.lightSensitive,
+            lightTolerant: result.lightTolerant,
+            resident: result.resident,
+            migratory: result.migratory,
+            monthName: result.monthName,
+            dominantName: base.dominantName
+        };
+
+        lastBauPrediction = { cityName: cityName, month: month, baseline: base, result: result };
+        updateBauResultUI(cityName, result);
+        renderBauWaterfall(result);
+        renderGlobalShapChart(result.shapChart || []);
+    } catch (err) {
+        console.error('BAU prediction failed:', err);
+        var bauResultEmpty = document.getElementById('bauResultEmpty');
+        var bauResultContent = document.getElementById('bauResultContent');
+        if (bauResultContent) bauResultContent.style.display = 'none';
+        if (bauResultEmpty) {
+            bauResultEmpty.style.display = 'block';
+            bauResultEmpty.innerHTML = 'Failed to run BAU prediction.<br>' + err.message;
+        }
+        if (runBtn) {
+            runBtn.disabled = false;
+            runBtn.textContent = 'Run BAU Prediction';
+        }
+        return;
+    }
+
+    if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run BAU Prediction';
+    }
+
     hasCompletedBauRun = true;
     hasCompletedMitigationRun = false;
     cityPredictionValues = {};
@@ -1162,8 +1863,10 @@ function runBauPrediction() {
 }
 
 function updateMitigationSliderBadges() {
-    var cityName = document.getElementById('bauCitySelect').value;
-    var base = (lastBauPrediction && lastBauPrediction.baseline) ? lastBauPrediction.baseline : getBaselineForCity(cityName);
+    var base = (lastBauPrediction && lastBauPrediction.baseline) ? lastBauPrediction.baseline : null;
+    if (!base) {
+        return;
+    }
     var alanDeltaPct = (parseInt(document.getElementById('mitAlanSlider').value, 10) || 0) / 100;
     var ndviDeltaPct = (parseInt(document.getElementById('mitNdviSlider').value, 10) || 0) / 100;
     var tempDelta = (parseInt(document.getElementById('mitTempSlider').value, 10) || 0) / 10;
@@ -1215,58 +1918,86 @@ function updateScenarioComparison(mitigationResult) {
 
     document.getElementById('cmpSummary').textContent =
         '🧾 Summary: The mitigation scenario projects a ' + (delta >= 0 ? 'gain' : 'loss') + ' of ' + Math.abs(delta) + ' species (' + pctText + ') over BAU. Light-sensitive species ' + (lightDelta >= 0 ? 'increase' : 'decrease') + ' by ' + Math.abs(lightDelta) + ', indicating that vegetation improvements partially offset light pollution effects.';
+
+    var cmpInputSummary = document.getElementById('cmpInputSummary');
+    var bauInputs = bau.inputValues && bau.inputValues.scenario ? bau.inputValues.scenario : null;
+    var mitInputs = mit.inputValues && mit.inputValues.scenario ? mit.inputValues.scenario : null;
+    if (!cmpInputSummary) return;
+    if (!bauInputs || !mitInputs) {
+        cmpInputSummary.textContent = '';
+        return;
+    }
+
+    var ndviDelta = (Number(mitInputs.ndvi || 0) - Number(bauInputs.ndvi || 0)) * 100;
+    var viirsDelta = Number(mitInputs.viirs || 0) - Number(bauInputs.viirs || 0);
+    var lstDelta = Number(mitInputs.lst || 0) - Number(bauInputs.lst || 0);
+    var precipDelta = Number(mitInputs.precip || 0) - Number(bauInputs.precip || 0);
+
+    cmpInputSummary.textContent =
+        'Input deltas vs BAU: NDVI ' + (ndviDelta >= 0 ? '+' : '') + ndviDelta.toFixed(2) + '%, ' +
+        'ALAN ' + (viirsDelta >= 0 ? '+' : '') + viirsDelta.toFixed(2) + ' nW, ' +
+        'LST ' + (lstDelta >= 0 ? '+' : '') + lstDelta.toFixed(2) + '°C, ' +
+        'Precip ' + (precipDelta >= 0 ? '+' : '') + precipDelta.toFixed(2) + ' mm.';
+
+    renderClassStackedChart(bau, mit);
 }
 
-function runMitigationPrediction() {
+async function runMitigationPrediction() {
     if (!lastBauPrediction || !hasCompletedBauRun) return;
 
     var base = lastBauPrediction.baseline;
     var cityName = lastBauPrediction.cityName;
-    var monthIndex = lastBauPrediction.monthIndex;
+    var month = lastBauPrediction.month;
 
     var alanDeltaPct = parseInt(document.getElementById('mitAlanSlider').value, 10) / 100;
     var ndviDeltaPct = parseInt(document.getElementById('mitNdviSlider').value, 10) / 100;
     var tempDelta = parseInt(document.getElementById('mitTempSlider').value, 10) / 10;
     var precipDeltaPct = parseInt(document.getElementById('mitPrecipSlider').value, 10) / 100;
 
-    var mitInputs = {
-        alan: clamp(base.alan * (1 + alanDeltaPct), 0, 100),
-        ndvi: clamp(base.ndvi * (1 + ndviDeltaPct), 0, 100),
-        temp: clamp(base.temp + tempDelta, 10, 45),
-        precip: clamp(base.precip * (1 + precipDeltaPct), 0, 500)
-    };
+    var runBtn = document.getElementById('runMitigationBtn');
+    if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = 'Running Mitigation...';
+    }
 
-    var mitResult = computeScenarioPrediction(cityName, mitInputs, monthIndex);
-
-    var hasSliderChange = alanDeltaPct !== 0 || ndviDeltaPct !== 0 || tempDelta !== 0 || precipDeltaPct !== 0;
-    if (hasSliderChange) {
-        var mitigationSignal = (-alanDeltaPct * 0.9) + (ndviDeltaPct * 0.8) + (-tempDelta * 0.05) + (precipDeltaPct * 0.4);
-        if (Math.abs(mitigationSignal) > 0.001) {
-            var adjustedTotal = clamp(Math.round(mitResult.total + (mitigationSignal * 7)), 2, 50);
-            if (adjustedTotal === lastBauPrediction.result.total) {
-                adjustedTotal = clamp(adjustedTotal + (mitigationSignal > 0 ? 1 : -1), 2, 50);
-            }
-            if (adjustedTotal !== mitResult.total) {
-                var sShare = mitResult.total > 0 ? mitResult.lightSensitive / mitResult.total : 0.32;
-                var rShare = mitResult.total > 0 ? mitResult.resident / mitResult.total : 0.5;
-                var adjSensitive = Math.round(adjustedTotal * sShare);
-                var adjTolerant = Math.max(0, adjustedTotal - adjSensitive);
-                var adjResident = Math.round(adjustedTotal * rShare);
-                var adjMigratory = Math.max(0, adjustedTotal - adjResident);
-                mitResult = {
-                    total: adjustedTotal,
-                    lightSensitive: adjSensitive,
-                    lightTolerant: adjTolerant,
-                    resident: adjResident,
-                    migratory: adjMigratory,
-                    shap: mitResult.shap,
-                    monthName: mitResult.monthName
-                };
-            }
+    var mitResult;
+    try {
+        var apiData = await requestScenario({
+            city: cityName,
+            month: month,
+            light_reduction: -(alanDeltaPct * 100),
+            ndvi_increase: ndviDeltaPct * 100,
+            temp_change: tempDelta,
+            precip_change: precipDeltaPct * 100,
+            attribution_mode: 'sensitivity'
+        });
+        var outputs = apiData.model_outputs || {};
+        mitResult = {
+            total: Number((apiData.results || {}).total || 0),
+            lightSensitive: Number(outputs.sensitive || 0),
+            lightTolerant: Number(outputs.tolerant || 0),
+            resident: Number(outputs.resident || 0),
+            migratory: Number(outputs.migrant || 0),
+            monthName: MONTH_NAMES[month - 1],
+            shapChart: normalizeShapChart(apiData.shap_chart || []),
+            inputValues: apiData.input_values || {}
+        };
+    } catch (err) {
+        console.error('Mitigation prediction failed:', err);
+        if (runBtn) {
+            runBtn.disabled = false;
+            runBtn.textContent = 'Run Mitigation Prediction';
         }
+        return;
+    }
+
+    if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run Mitigation Prediction';
     }
 
     hasCompletedMitigationRun = true;
+    lastMitigationResult = mitResult;
     var cmpEmpty = document.getElementById('cmpEmpty');
     var cmpContent = document.getElementById('cmpContent');
     if (cmpEmpty) cmpEmpty.style.display = 'none';
@@ -1289,33 +2020,126 @@ function initAnalyticsScenarioUI() {
         citySelect.appendChild(opt);
     });
 
-    citySelect.addEventListener('change', function() {
-        updateBauInputsPanel(getBaselineForCity(this.value));
-        updateMitigationSliderBadges();
+    citySelect.addEventListener('change', async function() {
         resetBauScenarioState();
         focusMapOnCity(this.value);
+        try {
+            var month = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
+            setBauBaselineLoading(this.value, month);
+            var base = await getBaselineForCity(this.value, month);
+            if (!base) return;
+            updateBauInputsPanel(base);
+        } catch (err) {
+            console.error('Failed to refresh city baseline:', err);
+        }
     });
 
-    document.getElementById('bauMonthSlider').addEventListener('input', function() {
+    document.getElementById('bauMonthSlider').addEventListener('input', async function() {
         document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[(parseInt(this.value, 10) || 1) - 1];
         resetBauScenarioState();
+        var cityName = citySelect.value;
+        if (!cityName) return;
+        try {
+            var month = parseInt(this.value, 10) || 1;
+            setBauBaselineLoading(cityName, month);
+            var base = await getBaselineForCity(cityName, month);
+            if (!base) return;
+            updateBauInputsPanel(base);
+        } catch (err) {
+            console.error('Failed to refresh month baseline:', err);
+        }
     });
 
     document.getElementById('runBauBtn').addEventListener('click', runBauPrediction);
     document.getElementById('runMitigationBtn').addEventListener('click', runMitigationPrediction);
+    document.getElementById('loadHeatmapBtn').addEventListener('click', async function() {
+        var btn = document.getElementById('loadHeatmapBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+        }
+        try {
+            await loadMonthlyDriverHeatmap();
+        } catch (err) {
+            console.error('Heatmap load failed:', err);
+            var meta = document.getElementById('heatmapMeta');
+            if (meta) meta.textContent = 'Heatmap load failed: ' + err.message;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Load 12-Month Heatmap';
+            }
+        }
+    });
+
+    document.getElementById('goalSuggestBtn').addEventListener('click', async function() {
+        if (!lastBauPrediction || !lastBauPrediction.result) {
+            renderGoalPlan(null);
+            return;
+        }
+        var suggestBtn = document.getElementById('goalSuggestBtn');
+        var applyBtn = document.getElementById('goalApplyBtn');
+        var hint = document.getElementById('goalFinderText');
+        if (suggestBtn) {
+            suggestBtn.disabled = true;
+            suggestBtn.textContent = 'Finding...';
+        }
+        if (applyBtn) applyBtn.disabled = true;
+        if (hint) hint.textContent = 'Searching for a closer plan to your target using live model calls...';
+
+        var targetEl = document.getElementById('goalGainInput');
+        var target = parseInt(targetEl ? targetEl.value : '3', 10);
+        if (!isFinite(target) || target === 0) target = 3;
+        target = clamp(target, -50, 50);
+        try {
+            lastGoalPlan = await optimizeGoalPlan(target);
+            renderGoalPlan(lastGoalPlan);
+        } catch (err) {
+            console.error('Goal finder optimization failed:', err);
+            if (hint) hint.textContent = 'Goal search failed: ' + err.message;
+        } finally {
+            if (suggestBtn) {
+                suggestBtn.disabled = false;
+                suggestBtn.textContent = 'Suggest Plan';
+            }
+            if (applyBtn) applyBtn.disabled = false;
+        }
+    });
+
+    document.getElementById('goalApplyBtn').addEventListener('click', async function() {
+        if (!lastGoalPlan) {
+            var targetEl = document.getElementById('goalGainInput');
+            var target = parseInt(targetEl ? targetEl.value : '3', 10);
+            if (!isFinite(target) || target === 0) target = 3;
+            target = clamp(target, -50, 50);
+            lastGoalPlan = await optimizeGoalPlan(target);
+        }
+        applyGoalPlan(lastGoalPlan);
+        renderGoalPlan(lastGoalPlan);
+    });
 
     ['mitAlanSlider', 'mitNdviSlider', 'mitTempSlider', 'mitPrecipSlider'].forEach(function(id) {
         document.getElementById(id).addEventListener('input', updateMitigationSliderBadges);
     });
 
-    updateMitigationSliderBadges();
+    document.getElementById('bauShapOutputSelect').addEventListener('change', function() {
+        if (lastBauPrediction && lastBauPrediction.result) {
+            updateBauResultUI(lastBauPrediction.cityName, lastBauPrediction.result);
+            renderBauWaterfall(lastBauPrediction.result);
+        }
+    });
+
     resetBauScenarioState();
     syncBauResultPanelHeight();
     syncMitigationPanelHeight();
 
     if (names.length) {
         citySelect.value = names[0];
-        updateBauInputsPanel(getBaselineForCity(names[0]));
+        var firstMonth = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
+        setBauBaselineLoading(names[0], firstMonth);
+        getBaselineForCity(names[0], firstMonth)
+            .then(function(base) { if (base) updateBauInputsPanel(base); })
+            .catch(function(err) { console.error('Initial baseline load failed:', err); });
         highlightSelectedCityBoundary(names[0]);
         focusMapOnCity(names[0]);
     }
@@ -1438,32 +2262,7 @@ function getCityPredictionValue(cityName) {
 }
 
 function buildCityPredictionDetailsForMap(monthIndex, mitigationDeltas) {
-    var out = {};
-    if (!citiesGeoData || !citiesGeoData.features) return out;
-
-    citiesGeoData.features.forEach(function(feature) {
-        var cityName = feature.properties.city_name;
-        var dominant = getDominantLandCoverForCity(feature);
-        var base = getBaselineForCity(cityName);
-        var mitInputs = {
-            alan: clamp(base.alan * (1 + mitigationDeltas.alanDeltaPct), 0, 100),
-            ndvi: clamp(base.ndvi * (1 + mitigationDeltas.ndviDeltaPct), 0, 100),
-            temp: clamp(base.temp + mitigationDeltas.tempDelta, 10, 45),
-            precip: clamp(base.precip * (1 + mitigationDeltas.precipDeltaPct), 0, 500)
-        };
-        var result = computeScenarioPrediction(cityName, mitInputs, monthIndex);
-        out[cityName] = {
-            total: result.total,
-            lightSensitive: result.lightSensitive,
-            lightTolerant: result.lightTolerant,
-            resident: result.resident,
-            migratory: result.migratory,
-            monthName: result.monthName,
-            dominantName: getLandCoverName(dominant.code)
-        };
-    });
-
-    return out;
+    return {};
 }
 
 function buildCityHoverTooltipHtml(cityName, feature) {
@@ -1790,6 +2589,10 @@ document.getElementById('predCitySelect').addEventListener('change', function() 
     runRichnessPrediction();
 });
 
+document.getElementById('predShapOutputSelect').addEventListener('change', function() {
+    runRichnessPrediction();
+});
+
 var predictionUpdateTimer = null;
 function schedulePredictionUpdate() {
     if (predictionUpdateTimer) clearTimeout(predictionUpdateTimer);
@@ -1863,30 +2666,68 @@ Promise.all([
 
 // ── Global SHAP chart ─────────────────────────────────────
 
-var ctxGlobal = document.getElementById('globalShapChart').getContext('2d');
-new Chart(ctxGlobal, {
-    type: 'bar',
-    data: {
-        labels: ['Light Intensity', 'NDVI', 'Temperature', 'Elevation', 'Distance to Water'],
-        datasets: [{
-            label: 'Feature Importance',
-            data: [0.45, 0.30, 0.15, 0.07, 0.03],
-            backgroundColor: '#2c5f2d'
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        animation: getAvpBarAnimation(95),
-        scales: {
-            y: {
-                beginAtZero: true,
-                max: 0.5,
-                title: { display: true, text: 'Mean |SHAP Value|' }
+var globalShapChart = null;
+
+function renderGlobalShapChart(shapRows) {
+    var rows = normalizeShapChart(shapRows || []);
+    var labels = rows.map(function(item) { return item.feature; });
+    var rawValues = rows.map(function(item) { return Number(item.importance) || 0; });
+    var rawTotal = rawValues.reduce(function(sum, v) { return sum + v; }, 0);
+    var values = rawTotal > 0
+        ? rawValues.map(function(v) { return (v / rawTotal) * 100; })
+        : rawValues.map(function() { return 0; });
+    if (!labels.length) {
+        labels = ['No data'];
+        values = [0];
+        rawValues = [0];
+    }
+
+    var ctxGlobal = document.getElementById('globalShapChart').getContext('2d');
+    if (globalShapChart) {
+        globalShapChart.destroy();
+        globalShapChart = null;
+    }
+
+    var axisMax = 100;
+
+    globalShapChart = new Chart(ctxGlobal, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Feature Importance',
+                data: values,
+                rawValues: rawValues,
+                backgroundColor: '#2c5f2d'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            animation: getAvpBarAnimation(95),
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            var pct = Number(context.parsed.y || 0).toFixed(2) + '%';
+                            var raw = Number(context.dataset.rawValues?.[context.dataIndex] || 0).toFixed(6);
+                            return 'Share: ' + pct + ' (raw: ' + raw + ')';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: axisMax,
+                    title: { display: true, text: 'SHAP share (%)' }
+                }
             }
         }
-    }
-});
+    });
+}
+
+renderGlobalShapChart([]);
 </script>
 EOD;
 
