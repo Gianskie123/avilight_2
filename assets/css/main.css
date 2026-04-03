@@ -179,6 +179,38 @@ body {
     min-height: calc(100vh - var(--navbar-height));
 }
 
+/* AVP entry animations (Home, Dashboard, Analytics, Species, Reports, Settings) */
+body.avp-animated-page .main-content > * {
+    opacity: 0;
+    transform: translateY(16px);
+    animation: avpPageEnter 0.58s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+body.avp-animated-page .main-content > *:nth-child(1) { animation-delay: 0.04s; }
+body.avp-animated-page .main-content > *:nth-child(2) { animation-delay: 0.10s; }
+body.avp-animated-page .main-content > *:nth-child(3) { animation-delay: 0.16s; }
+body.avp-animated-page .main-content > *:nth-child(4) { animation-delay: 0.22s; }
+body.avp-animated-page .main-content > *:nth-child(5) { animation-delay: 0.28s; }
+body.avp-animated-page .main-content > *:nth-child(6) { animation-delay: 0.34s; }
+body.avp-animated-page .main-content > *:nth-child(7) { animation-delay: 0.40s; }
+body.avp-animated-page .main-content > *:nth-child(8) { animation-delay: 0.46s; }
+body.avp-animated-page .main-content > *:nth-child(n+9) { animation-delay: 0.52s; }
+
+@keyframes avpPageEnter {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.avp-animated-page .main-content > * {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+}
+
 /* Page Header */
 .page-header {
     margin-bottom: 24px;
@@ -431,6 +463,10 @@ tr:hover {
     border-radius: 10px;
 }
 
+#map.leaflet-container {
+    overflow: hidden !important;
+}
+
 .map-container {
     position: relative;
 }
@@ -471,6 +507,10 @@ tr:hover {
 .alert-info {
     background: rgba(6, 182, 212, 0.15);
     border: 1px solid rgba(6, 182, 212, 0.3);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .alert-info {
     color: #67e8f9;
 }
 
@@ -682,6 +722,21 @@ tr:hover {
     padding-right: 4px;
 }
 
+#riskSidebarPanels {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 0 8px;
+}
+
+#riskSidebarPanels .dash-stats {
+    margin-bottom: 2px;
+}
+
+#riskSidebarPanels .activity-feed {
+    gap: 12px;
+}
+
 /* Dashboard stat cards (compact) */
 .dash-stats {
     display: grid;
@@ -694,6 +749,50 @@ tr:hover {
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 20px;
+}
+
+.historical-site-card {
+    max-height: 540px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.hist-site-close-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.25rem;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.hist-site-close-btn:hover {
+    color: var(--text-primary);
+}
+
+.historical-site-species-list {
+    max-height: 165px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border-color);
+    padding-right: 6px;
+}
+
+.historical-site-species-items {
+    margin: 0;
+    padding-left: 15px;
+}
+
+.historical-site-species-items li {
+    color: var(--accent-blue);
+    font-style: italic;
+    margin: 0 0 3px;
+    font-size: 0.95rem;
+}
+
+.historical-site-empty {
+    font-size: 0.8rem;
+    color: var(--text-muted);
 }
 
 .dash-stat-label {
@@ -877,6 +976,10 @@ tr:hover {
 }
 
 /* Map hover tooltip */
+.leaflet-tooltip-pane {
+    z-index: 650 !important;
+}
+
 .map-tooltip {
     background: var(--bg-card) !important;
     color: var(--text-primary) !important;
@@ -885,6 +988,8 @@ tr:hover {
     box-shadow: var(--shadow) !important;
     padding: 6px 10px !important;
     font-size: 0.85rem !important;
+    z-index: 651 !important;
+    pointer-events: none !important;
 }
 
 .map-tooltip::before {
@@ -1034,6 +1139,177 @@ tr:hover {
     color: var(--text-secondary);
 }
 
+/* Analytics richness prediction panel */
+.geo-prediction-layout {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 18px;
+}
+
+.geo-prediction-form,
+.geo-prediction-output {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.geo-prediction-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.geo-prediction-subtitle {
+    margin-top: 4px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.geo-city-group {
+    margin-top: 12px;
+    margin-bottom: 0;
+}
+
+.geo-covariates-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.geo-covariate-item {
+    margin-bottom: 0;
+}
+
+.geo-auto-landtype {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    font-size: 0.9rem;
+}
+
+.geo-month-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.geo-month-group {
+    margin-top: 14px;
+    margin-bottom: 0;
+}
+
+#predMonthBadge {
+    min-width: 84px;
+    text-align: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.2);
+    color: #c4b5fd;
+}
+
+.geo-output-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #6d28d9;
+    border-radius: 10px;
+    padding: 12px;
+    background: rgba(109, 40, 217, 0.12);
+    margin-bottom: 12px;
+}
+
+.geo-output-total small {
+    font-size: 0.7rem;
+    color: #c4b5fd;
+    letter-spacing: 0.25px;
+}
+
+.geo-output-context {
+    margin-top: 2px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.geo-output-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #a855f7;
+    line-height: 1;
+}
+
+.geo-output-card {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--bg-card);
+    margin-bottom: 12px;
+}
+
+.geo-output-row {
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+}
+
+.geo-row-value {
+    font-weight: 700;
+}
+
+.geo-bar-track {
+    margin-top: 5px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--bg-input);
+    overflow: hidden;
+}
+
+.geo-bar-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    transition: width 0.35s ease;
+}
+
+.geo-bar-red { background: #ef4444; }
+.geo-bar-blue { background: #3b82f6; }
+.geo-bar-green { background: #10b981; }
+.geo-bar-yellow { background: #f59e0b; }
+.geo-bar-purple { background: #8b5cf6; }
+.geo-bar-teal { background: #14b8a6; }
+
+.geo-output-shap-title {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.geo-driver-text {
+    margin-top: 12px;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+}
+
+@media (max-width: 1200px) {
+    .geo-prediction-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .geo-covariates-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Home page styles */
 .home-stats-grid {
     grid-template-columns: repeat(4, 1fr);
@@ -1107,6 +1383,95 @@ tr:hover {
     line-height: 1.5;
 }
 
+.screenshot-announcements {
+    gap: 14px;
+}
+
+.announcement-featured {
+    border: 1px solid rgba(37, 99, 235, 0.35);
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.10);
+    padding: 14px 16px;
+}
+
+.announcement-featured-chip {
+    display: inline-block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+    background: rgba(37, 99, 235, 0.18);
+    border-radius: 7px;
+    padding: 2px 10px;
+    margin-bottom: 8px;
+}
+
+.announcement-featured-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 5px;
+}
+
+.announcement-featured-summary {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.announcement-featured-link {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.announcement-featured-link:hover {
+    text-decoration: underline;
+}
+
+.announcement-row {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-card-alt);
+    padding: 12px 14px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.announcement-row-icon {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.announcement-row-content {
+    flex: 1;
+}
+
+.announcement-row-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+}
+
+.announcement-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.announcement-row-badge {
+    font-size: 0.78rem;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+
 .announcement-title a {
     color: var(--text-primary);
     text-decoration: none;
@@ -1129,6 +1494,39 @@ tr:hover {
 .bmb-view-all:hover {
     opacity: 1;
     text-decoration: underline;
+}
+
+/* Home page demo entry animation */
+.home-entry-ready .home-demo-entry .home-enter {
+    opacity: 0;
+    transform: translateY(16px) scale(0.99);
+    animation: homeEnterFadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.home-entry-ready .home-demo-entry .home-enter-1  { animation-delay: 0.05s; }
+.home-entry-ready .home-demo-entry .home-enter-2  { animation-delay: 0.12s; }
+.home-entry-ready .home-demo-entry .home-enter-3  { animation-delay: 0.20s; }
+.home-entry-ready .home-demo-entry .home-enter-4  { animation-delay: 0.26s; }
+.home-entry-ready .home-demo-entry .home-enter-5  { animation-delay: 0.33s; }
+.home-entry-ready .home-demo-entry .home-enter-6  { animation-delay: 0.40s; }
+.home-entry-ready .home-demo-entry .home-enter-7  { animation-delay: 0.47s; }
+.home-entry-ready .home-demo-entry .home-enter-8  { animation-delay: 0.55s; }
+.home-entry-ready .home-demo-entry .home-enter-9  { animation-delay: 0.62s; }
+.home-entry-ready .home-demo-entry .home-enter-10 { animation-delay: 0.70s; }
+
+@keyframes homeEnterFadeUp {
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-entry-ready .home-demo-entry .home-enter {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
 }
 
 /* ── Theme toggle button ────────────────────────────────── */

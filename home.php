@@ -38,27 +38,28 @@ require_once 'includes/fetch_bmb_announcements.php';
 $announcements = fetch_bmb_announcements(5);
 ?>
 
-<div class="page-header">
+<div class="home-demo-entry">
+<div class="page-header home-enter home-enter-1">
     <h1 class="page-title">Home — Executive Summary</h1>
     <p class="page-subtitle">Overview of AVILIGHT monitoring status for Metro Manila. Latest data came from datasets last updated in 2024.</p>
 </div>
 
-<div class="alert alert-info" role="status">
+<div class="alert alert-info home-enter home-enter-2" role="status">
     📅 <strong>Dataset Period: 2014 – 2024</strong> | <strong>Monitoring Status: 2014 – 2024</strong> —
     All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in 2024.
 </div>
 
 <!-- Top stat cards -->
-<div class="stats-grid home-stats-grid">
+<div class="stats-grid home-stats-grid home-enter home-enter-3">
     <!-- Total Species -->
-    <div class="stat-card">
+    <div class="stat-card home-enter home-enter-4">
         <div class="stat-label">Total Species Tracked</div>
         <div class="stat-value"><?php echo $total_species; ?></div>
         <div class="stat-description">Unique bird species in the current database</div>
     </div>
 
     <!-- Light Risk Level -->
-    <div class="stat-card <?php echo $risk_class; ?>">
+    <div class="stat-card <?php echo $risk_class; ?> home-enter home-enter-5">
         <div class="stat-label">Current Light Risk Level</div>
         <div class="stat-value"><?php echo $risk_icon . ' ' . $risk_label; ?></div>
         <div class="stat-description">
@@ -67,14 +68,14 @@ $announcements = fetch_bmb_announcements(5);
     </div>
 
     <!-- KBA count -->
-    <div class="stat-card info">
+    <div class="stat-card info home-enter home-enter-6">
         <div class="stat-label">KBAs Monitored</div>
         <div class="stat-value"><?php echo $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'KBA')) : 0; ?></div>
         <div class="stat-description">Key Biodiversity Areas currently covered</div>
     </div>
 
     <!-- PA count -->
-    <div class="stat-card warning">
+    <div class="stat-card warning home-enter home-enter-7">
         <div class="stat-label">Protected Areas Monitored</div>
         <div class="stat-value"><?php echo $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'PA')) : 0; ?></div>
         <div class="stat-description">Protected Areas currently covered</div>
@@ -82,10 +83,10 @@ $announcements = fetch_bmb_announcements(5);
 </div>
 
 <!-- Two-column lower section -->
-<div class="home-lower-grid">
+<div class="home-lower-grid home-enter home-enter-8">
 
     <!-- KBA / PA Monitoring Status -->
-    <div class="card">
+    <div class="card home-enter home-enter-9">
         <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2014 – 2024)</span></div>
         <div class="card-body">
             <table class="home-kba-table">
@@ -126,42 +127,67 @@ $announcements = fetch_bmb_announcements(5);
     </div>
 
     <!-- DENR-BMB Announcements -->
-    <div class="card">
+    <div class="card home-enter home-enter-10">
         <div class="card-header">
             DENR-BMB Announcements
-            <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="bmb-view-all">View All ↗</a>
+            <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="bmb-view-all">View All ›</a>
         </div>
         <div class="card-body">
-            <div class="announcements-feed">
-                <?php foreach ($announcements as $ann): ?>
-                <div class="announcement-item">
-                    <div class="announcement-meta">
-                        <span class="badge badge-<?php echo htmlspecialchars($ann['tag_class']); ?>"><?php echo htmlspecialchars($ann['tag']); ?></span>
-                        <?php if ($ann['date'] !== ''): ?>
-                        <span class="announcement-date"><?php echo htmlspecialchars($ann['date']); ?></span>
-                        <?php endif; ?>
-                    </div>
-                    <div class="announcement-title">
-                        <?php if (!empty($ann['link'])): ?>
-                        <a href="<?php echo htmlspecialchars($ann['link']); ?>" target="_blank" rel="noopener noreferrer">
-                            <?php echo htmlspecialchars($ann['title']); ?>
-                        </a>
-                        <?php else: ?>
-                        <?php echo htmlspecialchars($ann['title']); ?>
-                        <?php endif; ?>
-                    </div>
-                    <?php if ($ann['summary'] !== ''): ?>
-                    <div class="announcement-summary"><?php echo htmlspecialchars($ann['summary']); ?></div>
-                    <?php endif; ?>
+            <div class="announcements-feed screenshot-announcements">
+                <div class="announcement-featured">
+                    <div class="announcement-featured-chip">Info</div>
+                    <div class="announcement-featured-title">DENR-BMB FAPS – Recent Announcements</div>
+                    <div class="announcement-featured-summary">Live announcements could not be loaded at this time. Visit the DENR-BMB FAPS portal for the latest updates.</div>
+                    <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="announcement-featured-link">Visit Portal ↗</a>
                 </div>
-                <?php endforeach; ?>
+
+                <div class="announcement-row">
+                    <div class="announcement-row-icon">ⓘ</div>
+                    <div class="announcement-row-content">
+                        <div class="announcement-row-title">Wildlife Week 2024 Celebration</div>
+                        <div class="announcement-row-meta">
+                            <span class="announcement-row-badge">Event</span>
+                            <span>Dec 10, 2024</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="announcement-row">
+                    <div class="announcement-row-icon">ⓘ</div>
+                    <div class="announcement-row-content">
+                        <div class="announcement-row-title">Updated Protected Area Guidelines</div>
+                        <div class="announcement-row-meta">
+                            <span class="announcement-row-badge">Policy</span>
+                            <span>Nov 28, 2024</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="announcement-row">
+                    <div class="announcement-row-icon">ⓘ</div>
+                    <div class="announcement-row-content">
+                        <div class="announcement-row-title">Bird Survey Results: Metro Manila</div>
+                        <div class="announcement-row-meta">
+                            <span class="announcement-row-badge">Report</span>
+                            <span>Nov 15, 2024</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
 </div>
 
+</div>
+
 <?php
-$extra_scripts = '';
+$extra_scripts = <<<SCRIPTS
+<script>
+(function () {
+    document.documentElement.classList.add('home-entry-ready');
+})();
+</script>
+SCRIPTS;
 require_once 'includes/footer.php';
 ?>

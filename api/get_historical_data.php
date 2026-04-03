@@ -26,7 +26,7 @@ try {
 
     if ($month >= 1 && $month <= 12) {
         $stmt = $pdo->prepare(
-            'SELECT site_name, latitude, longitude, month, year,
+                'SELECT species_list, site_name, latitude, longitude, month, year,
                     total_unique, total_tolerant, total_sensitive,
                     total_resident, total_migrant, total_count
              FROM observations
@@ -38,7 +38,7 @@ try {
         $stmt->execute([':yr' => $year, ':mo' => $month]);
     } else {
         $stmt = $pdo->prepare(
-            'SELECT site_name, latitude, longitude, month, year,
+                'SELECT species_list, site_name, latitude, longitude, month, year,
                     total_unique, total_tolerant, total_sensitive,
                     total_resident, total_migrant, total_count
              FROM observations

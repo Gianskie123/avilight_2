@@ -112,7 +112,7 @@ require_once 'includes/header.php';
             </div>
         </div>
         
-        <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+        <div style="margin-top: 20px; padding: 15px; background: var(--bg-card-alt); border-radius: 8px; border: 1px solid var(--border-color); border-left: 4px solid var(--accent-yellow); color: var(--text-primary);">
             <strong>⚠️ Data Access:</strong> eBird data accessed via API with appropriate research permissions. 
             NASA satellite products are publicly available. DENR data obtained through institutional collaboration.
         </div>

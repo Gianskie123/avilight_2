@@ -95,7 +95,7 @@ $migratory_count  = (int) $pdo->query("SELECT COUNT(*) FROM species WHERE migrat
 </div>
 
 <!-- Results Count -->
-<div style="margin: 20px 0; color: #666;">
+<div style="margin: 20px 0; color: var(--text-secondary);">
     Showing <strong><?php echo number_format($offset + 1); ?>–<?php echo number_format(min($offset + $per_page, $total_filtered)); ?></strong>
     of <strong><?php echo number_format($total_filtered); ?></strong> species
     <?php if ($total_filtered !== $total_species): ?>
@@ -114,7 +114,7 @@ $migratory_count  = (int) $pdo->query("SELECT COUNT(*) FROM species WHERE migrat
     <div class="species-card">
         <div class="species-image">
             <div style="font-size: 3rem;">🦜</div>
-            <small style="color: #999;">Photo not available</small>
+            <small style="color: var(--text-muted);">Photo not available</small>
         </div>
         <div class="species-info">
             <div class="species-name"><?php echo htmlspecialchars($species['common_name']); ?></div>
@@ -181,11 +181,11 @@ $page_url = function(int $p) use ($base_query): string {
 
 <!-- Species Details Modal -->
 <div id="speciesModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
-     background: rgba(0,0,0,0.5); z-index: 2000; overflow-y: auto;">
-    <div style="max-width: 700px; margin: 50px auto; background: white; border-radius: 8px; padding: 30px;">
+     background: var(--bg-overlay); z-index: 2000; overflow-y: auto;">
+    <div style="max-width: 700px; margin: 50px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 30px; color: var(--text-primary); box-shadow: var(--shadow-lg);">
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
             <h2 id="modalTitle" style="margin: 0;"></h2>
-            <span onclick="closeModal()" style="cursor: pointer; font-size: 2rem; color: #999;">&times;</span>
+            <span onclick="closeModal()" style="cursor: pointer; font-size: 2rem; color: var(--text-muted);">&times;</span>
         </div>
         <div id="modalContent"></div>
     </div>
@@ -236,27 +236,27 @@ function showSpeciesDetails(speciesId) {
     document.getElementById('modalContent').innerHTML = `
         <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
             <div style="flex:0 0 100px;text-align:center;">
-                <div style="background:#f8f9fa;padding:30px 10px;border-radius:8px;font-size:4rem;">🦜</div>
-                <small style="color:#999;">Photo not available</small>
+                <div style="background:var(--bg-card-alt);border:1px solid var(--border-color);padding:30px 10px;border-radius:8px;font-size:4rem;">🦜</div>
+                <small style="color:var(--text-muted);">Photo not available</small>
             </div>
             <div style="flex:1;min-width:200px;">
-                <h3 style="margin:0 0 16px;">\${species.common_name}</h3>
+                <h3 style="margin:0 0 16px;color:var(--text-primary);">\${species.common_name}</h3>
 
                 <div style="margin-bottom:16px;">
-                    <strong>Light Tolerance:</strong><br>
+                    <strong style="color:var(--text-primary);">Light Tolerance:</strong><br>
                     <span class="badge \${tolClass}" style="font-size:.9rem;margin-top:4px;">\${species.light_tolerance}</span>
-                    <p style="margin:8px 0 0;color:#666;font-size:.9rem;">\${tolDesc}</p>
+                    <p style="margin:8px 0 0;color:var(--text-secondary);font-size:.9rem;">\${tolDesc}</p>
                 </div>
 
                 <div style="margin-bottom:16px;">
-                    <strong>Migratory Status:</strong><br>
+                    <strong style="color:var(--text-primary);">Migratory Status:</strong><br>
                     <span class="badge \${migClass}" style="font-size:.9rem;margin-top:4px;">\${species.migration_status}</span>
-                    <p style="margin:8px 0 0;color:#666;font-size:.9rem;">\${migDesc}</p>
+                    <p style="margin:8px 0 0;color:var(--text-secondary);font-size:.9rem;">\${migDesc}</p>
                 </div>
 
-                <div style="padding:12px;background:#f8f9fa;border-radius:8px;">
-                    <strong>Monitoring Priority:</strong>
-                    <p style="margin:6px 0 0;color:#666;font-size:.9rem;">
+                <div style="padding:12px;background:var(--bg-card-alt);border:1px solid var(--border-color);border-radius:8px;">
+                    <strong style="color:var(--text-primary);">Monitoring Priority:</strong>
+                    <p style="margin:6px 0 0;color:var(--text-secondary);font-size:.9rem;">
                         \${species.light_tolerance === 'Sensitive' ?
                           '⚠️ High – Indicator species for light pollution impacts' :
                           'Standard monitoring protocol'}

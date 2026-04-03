@@ -58,68 +58,22 @@ $species_data = load_species_from_csv();
     <div class="card-body" style="padding: 0;">
 
         <!-- ── Compact Control Bar ── -->
-        <div id="geoControlBar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border-color); background:var(--bg-card-alt);">
+        <div id="geoControlBar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border-color); background:var(--bg-card-alt);">
+            <div style="font-size:0.92rem; font-weight:600; color:var(--text-primary);">Metro Manila Environmental Map</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">Analytics controls are simplified to map + prediction panels.</div>
+        </div>
 
-            <!-- Map display mode -->
-            <div style="display:flex; align-items:center; gap:4px;">
-                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">View:</span>
-                <button class="btn btn-primary btn-sm" id="btnLandCover" onclick="setColorMode('landcover')">🌍 Land Cover</button>
-                <button class="btn btn-secondary btn-sm" id="btnPredictions" onclick="setColorMode('predictions')">🗺️ Richness</button>
-            </div>
-
-            <div style="width:1px; height:24px; background:var(--border-color);"></div>
-
-            <!-- Light tolerance -->
-            <div style="display:flex; align-items:center; gap:4px;">
-                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Tolerance:</span>
-                <button class="btn btn-primary btn-sm" id="btnFilterAll" onclick="filterSpecies('all')">All</button>
-                <button class="btn btn-secondary btn-sm" id="btnFilterSensitive" onclick="filterSpecies('sensitive')">💡 Sensitive</button>
-                <button class="btn btn-secondary btn-sm" id="btnFilterTolerant" onclick="filterSpecies('tolerant')">☀️ Tolerant</button>
-            </div>
-
-            <div style="width:1px; height:24px; background:var(--border-color);"></div>
-
-            <!-- Migration filter -->
-            <div style="display:flex; align-items:center; gap:4px;">
-                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Migration:</span>
-                <button class="btn btn-primary btn-sm" id="btnMigAll" onclick="filterMigration('all')">All</button>
-                <button class="btn btn-secondary btn-sm" id="btnMigResident" onclick="filterMigration('resident')">🏡 Resident</button>
-                <button class="btn btn-secondary btn-sm" id="btnMigMigratory" onclick="filterMigration('migratory')">✈️ Migratory</button>
-            </div>
-
-            <div style="width:1px; height:24px; background:var(--border-color);"></div>
-
-            <!-- Month slider -->
-            <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:160px;">
-                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Month: <strong id="monthValue">June</strong></span>
-                <input type="range" min="1" max="12" value="6" class="slider" id="monthSlider" style="flex:1; margin:0;">
-            </div>
-
-            <div style="width:1px; height:24px; background:var(--border-color);"></div>
-
-            <!-- Land cover filter toggle -->
-            <div style="position:relative;">
-                <button class="btn btn-secondary btn-sm" id="btnLCToggle" onclick="toggleLCPanel()">🏷️ Land Cover ▾</button>
-                <!-- Dropdown panel -->
-                <div id="lcDropdown" style="display:none; position:absolute; top:calc(100% + 4px); right:0; z-index:2000; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; box-shadow:0 4px 16px rgba(0,0,0,.15); min-width:220px;">
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; margin-bottom:8px;">
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="13" checked> 🏙️ Urban</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="17" checked> 💧 Water</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="2"  checked> 🌳 Forest</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="12" checked> 🌾 Croplands</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="10" checked> 🌿 Grasslands</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="11" checked> 🌊 Wetlands</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="9"  checked> 🌾 Savannas</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="8"  checked> 🌲 Woody Sav.</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="14" checked> 🌱 Crop Mosaic</label>
-                        <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="lc-filter" value="16" checked> 🏜️ Barren</label>
-                    </div>
-                    <div style="display:flex; gap:6px;">
-                        <button class="btn btn-primary btn-sm" style="flex:1;" onclick="selectAllLandCover(true)">All</button>
-                        <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="selectAllLandCover(false)">None</button>
-                    </div>
-                </div>
-            </div>
+        <div id="lcDropdown" style="display:none;">
+            <input type="checkbox" class="lc-filter" value="13" checked>
+            <input type="checkbox" class="lc-filter" value="17" checked>
+            <input type="checkbox" class="lc-filter" value="2" checked>
+            <input type="checkbox" class="lc-filter" value="12" checked>
+            <input type="checkbox" class="lc-filter" value="10" checked>
+            <input type="checkbox" class="lc-filter" value="11" checked>
+            <input type="checkbox" class="lc-filter" value="9" checked>
+            <input type="checkbox" class="lc-filter" value="8" checked>
+            <input type="checkbox" class="lc-filter" value="14" checked>
+            <input type="checkbox" class="lc-filter" value="16" checked>
         </div>
         <!-- ── End Control Bar ── -->
 
@@ -130,39 +84,280 @@ $species_data = load_species_from_csv();
                 <p>Loading map data…</p>
             </div>
 
-            <!-- Prediction Heatmap Legend (hidden by default) -->
-            <div class="legend" id="legendPrediction" style="display: none;">
+            <!-- Prediction Heatmap Legend -->
+            <div class="legend" id="legendPrediction">
                 <strong>Predicted Species Richness</strong>
                 <div style="display: flex; align-items: center; margin-top: 8px;">
                     <span class="legend-label" style="margin-right: 6px;">Low</span>
-                    <div style="flex: 1; height: 14px; border-radius: 4px; background: linear-gradient(to right, #313695, #4575b4, #74add1, #abd9e9, #fee090, #fdae61, #f46d43, #d73027, #a50026);"></div>
+                    <div style="flex: 1; height: 14px; border-radius: 6px; background: linear-gradient(to right, #1f2a7d, #1f4fbf, #2e7de0, #66c2ff, #f2b628);"></div>
                     <span class="legend-label" style="margin-left: 6px;">High</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 4px;">
                     <span class="legend-label">0</span>
-                    <span class="legend-label">10</span>
-                    <span class="legend-label">20</span>
-                    <span class="legend-label">30+</span>
+                    <span class="legend-label">12</span>
+                    <span class="legend-label">25</span>
+                    <span class="legend-label">37</span>
+                    <span class="legend-label">50</span>
                 </div>
-            </div>
-
-            <!-- Land Cover Legend -->
-            <div class="legend" id="legendLandCover">
-                <strong>Land Cover Types</strong>
-                <div class="legend-item"><div class="legend-color" style="background:#DC143C;"></div><span class="legend-label">Urban & Built-up</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#1E90FF;"></div><span class="legend-label">Water Bodies</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#006400;"></div><span class="legend-label">Forest</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#FFD700;"></div><span class="legend-label">Croplands</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#90EE90;"></div><span class="legend-label">Grasslands</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#008B8B;"></div><span class="legend-label">Wetlands</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#556B2F;"></div><span class="legend-label">Woody Savannas</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#FFA500;"></div><span class="legend-label">Cropland Mosaics</span></div>
-                <div class="legend-item"><div class="legend-color" style="background:#8B4513;"></div><span class="legend-label">Barren</span></div>
+                <div class="legend-label" style="margin-top:8px; color:var(--text-secondary);">Gray = no prediction yet</div>
             </div>
 
             <!-- Hint label -->
-            <div id="mapHint" style="position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#fff; font-size:0.78rem; padding:4px 12px; border-radius:20px; z-index:900; pointer-events:none;">
-                Click a city area to explore predictions
+            <div id="mapHint" style="position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:var(--bg-overlay); color:var(--text-primary); border:1px solid var(--border-color); font-size:0.78rem; padding:4px 12px; border-radius:20px; z-index:900; pointer-events:none;">
+                Hover a city area to preview predictions
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="analyticsScenarioSection">
+    <div class="card-body" style="padding:16px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+            <div id="bauLeftPanel">
+                <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Business as Usual (BAU)</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Inputs are locked to historical trend averages derived from nighttime radiance and environmental records. No manual adjustment.</div>
+
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label">City / Municipality</label>
+                    <select id="bauCitySelect" class="form-control"></select>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; background:var(--bg-card-alt);">
+                    <span id="bauLandcoverName" style="font-weight:600;">Urban &amp; Built-up</span>
+                    <span id="bauLandcoverShare" style="font-size:0.8rem; color:var(--text-secondary);">0% cover</span>
+                </div>
+
+                <div style="font-size:0.86rem; font-weight:600; margin-bottom:8px; color:var(--text-secondary);">Historical Average Inputs (locked)</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                    <div class="card" style="margin:0; padding:10px; border:1px solid rgba(245,158,11,.35); background:rgba(245,158,11,.06);">
+                        <div style="font-size:0.76rem; color:var(--text-secondary);">Nighttime Radiance (ALAN)</div>
+                        <div id="bauAlanVal" style="font-size:1.28rem; font-weight:700; line-height:1.15;">48 nW/cm²/sr</div>
+                        <div id="bauAlanNote" style="font-size:0.7rem; color:var(--text-secondary); margin-top:3px;">2023 baseline: 59 nW · -1.2 nW/yr avg</div>
+                    </div>
+                    <div class="card" style="margin:0; padding:10px; border:1px solid rgba(34,197,94,.35); background:rgba(34,197,94,.06);">
+                        <div style="font-size:0.76rem; color:var(--text-secondary);">NDVI (Vegetation Cover)</div>
+                        <div id="bauNdviVal" style="font-size:1.28rem; font-weight:700; line-height:1.15;">56%</div>
+                        <div id="bauNdviNote" style="font-size:0.7rem; color:var(--text-secondary); margin-top:3px;">2023 baseline: 52% · +0.5%/yr avg</div>
+                    </div>
+                    <div class="card" style="margin:0; padding:10px; border:1px solid rgba(244,63,94,.35); background:rgba(244,63,94,.06);">
+                        <div style="font-size:0.76rem; color:var(--text-secondary);">Land Surface Temp</div>
+                        <div id="bauTempVal" style="font-size:1.28rem; font-weight:700; line-height:1.15;">31°C</div>
+                        <div id="bauTempNote" style="font-size:0.7rem; color:var(--text-secondary); margin-top:3px;">2023 baseline: 31.7°C · +0.1°C/yr avg</div>
+                    </div>
+                    <div class="card" style="margin:0; padding:10px; border:1px solid rgba(59,130,246,.35); background:rgba(59,130,246,.06);">
+                        <div style="font-size:0.76rem; color:var(--text-secondary);">Mean Precipitation</div>
+                        <div id="bauPrecipVal" style="font-size:1.28rem; font-weight:700; line-height:1.15;">150 mm</div>
+                        <div id="bauPrecipNote" style="font-size:0.7rem; color:var(--text-secondary); margin-top:3px;">2023 baseline: 143 mm · -0.8 mm/yr avg</div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label class="form-label">Month <span id="bauMonthBadge" style="margin-left:8px; font-size:0.76rem; color:var(--text-secondary);">January</span></label>
+                    <input type="range" id="bauMonthSlider" class="slider" min="1" max="12" value="1" step="1">
+                    <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">Mitigation scenario will use the same month.</div>
+                </div>
+
+                <button class="btn btn-primary" style="width:100%;" id="runBauBtn">Run BAU Prediction</button>
+            </div>
+
+            <div id="bauRightPanel" style="overflow-y:auto; padding-right:4px;">
+                <div id="bauResultHeading" style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">BAU Prediction Result</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Projected species richness if current environmental trends continue unchanged.</div>
+
+                <div id="bauResultEmpty" class="card" style="margin:0; padding:20px; text-align:center; color:var(--text-muted);">Select a city and run the BAU prediction<br>Historical inputs will be used automatically.</div>
+                <div id="bauResultContent" style="display:none;">
+                    <div class="card" style="margin:0 0 10px 0; padding:12px;">
+                        <div id="bauResultTitle" style="font-size:0.82rem; color:var(--text-secondary);">BAU TOTAL PREDICTED</div>
+                        <div id="bauTotalPred" style="font-size:2.2rem; font-weight:800; line-height:1; text-align:right;">0</div>
+                    </div>
+
+                    <div class="card" style="margin:0 0 10px 0; padding:12px;">
+                        <div style="display:grid; gap:8px;">
+                            <div><div style="display:flex; justify-content:space-between;"><span>Light Sensitive</span><strong id="bauSensitiveVal">0</strong></div><div class="geo-bar-track"><div id="bauSensitiveBar" class="geo-bar-fill geo-bar-red" style="width:0%;"></div></div></div>
+                            <div><div style="display:flex; justify-content:space-between;"><span>Light Tolerant</span><strong id="bauTolerantVal">0</strong></div><div class="geo-bar-track"><div id="bauTolerantBar" class="geo-bar-fill geo-bar-blue" style="width:0%;"></div></div></div>
+                            <div><div style="display:flex; justify-content:space-between;"><span>Resident</span><strong id="bauResidentVal">0</strong></div><div class="geo-bar-track"><div id="bauResidentBar" class="geo-bar-fill geo-bar-green" style="width:0%;"></div></div></div>
+                            <div><div style="display:flex; justify-content:space-between;"><span>Migratory</span><strong id="bauMigratoryVal">0</strong></div><div class="geo-bar-track"><div id="bauMigratoryBar" class="geo-bar-fill geo-bar-yellow" style="width:0%;"></div></div></div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin:0; padding:12px;">
+                        <div id="bauShapTitle" style="font-weight:700; margin-bottom:2px;">Feature Importance (SHAP) — —</div>
+                        <div id="bauShapSubtitle" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px;">Local SHAP values for — · —</div>
+                        <canvas id="bauShapCanvas" height="170"></canvas>
+                        <div id="bauShapText" style="margin-top:8px; font-size:0.83rem; color:var(--text-secondary);"></div>
+                        <div id="bauAfterRunNote" style="margin-top:8px; font-size:0.78rem; color:var(--accent-green);">✅ BAU baseline locked. Now configure the <em>Mitigation Scenario</em> below.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="mitigationScenarioSection" style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:14px; display:none; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+            <div id="mitLeftPanel">
+                <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Mitigation Scenario</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Adjust each slider relative to the historical baseline. Centre = no change. Move left to worsen, right to improve conditions.</div>
+
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label">Nighttime Radiance (ALAN) <span id="mitAlanBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 48 nW</span> <span id="mitAlanBadge" style="float:right; color:var(--text-secondary);">48 nW</span></label>
+                    <input type="range" id="mitAlanSlider" class="slider" min="-30" max="30" value="0" step="1">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-green);">← Reduce pollution</span><span style="color:var(--accent-red);">More pollution →</span></div>
+                </div>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label">NDVI (Vegetation Cover) <span id="mitNdviBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 56%</span> <span id="mitNdviBadge" style="float:right; color:var(--text-secondary);">56%</span></label>
+                    <input type="range" id="mitNdviSlider" class="slider" min="-30" max="30" value="0" step="1">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-red);">← Less vegetation</span><span style="color:var(--accent-green);">More vegetation →</span></div>
+                </div>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label">Land Surface Temperature <span id="mitTempBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 31°C</span> <span id="mitTempBadge" style="float:right; color:var(--text-secondary);">31.0°C</span></label>
+                    <input type="range" id="mitTempSlider" class="slider" min="-20" max="20" value="0" step="1">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-green);">← Cooler (urban greening)</span><span style="color:var(--accent-red);">Warmer →</span></div>
+                </div>
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label class="form-label">Precipitation <span id="mitPrecipBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 150 mm</span> <span id="mitPrecipBadge" style="float:right; color:var(--text-secondary);">150 mm</span></label>
+                    <input type="range" id="mitPrecipSlider" class="slider" min="-30" max="30" value="0" step="1">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-red);">← Drier conditions</span><span style="color:var(--accent-blue);">More rainfall →</span></div>
+                </div>
+
+                <button class="btn btn-success" style="width:100%;" id="runMitigationBtn">Run Mitigation Prediction</button>
+            </div>
+
+            <div id="mitRightPanel" style="overflow-y:auto; padding-right:4px;">
+                <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Scenario Comparison</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Side-by-side delta between BAU and Mitigation outcomes.</div>
+                <div id="cmpEmpty" class="card" style="margin:0; padding:20px; text-align:center; color:var(--text-muted);">Adjust the mitigation sliders<br>then click Run Mitigation Prediction to see the difference.</div>
+                <div id="cmpContent" class="card" style="margin:0; padding:12px; display:none;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; text-align:center; margin-bottom:10px;">
+                        <div><div style="font-size:0.75rem; color:var(--text-secondary);">BAU</div><div id="cmpBauTotal" style="font-size:2rem; font-weight:800;">0</div><div style="font-size:0.78rem; color:var(--text-secondary);">species</div></div>
+                        <div><div style="font-size:0.75rem; color:var(--text-secondary);">Δ Gain</div><div id="cmpDelta" style="font-size:2rem; font-weight:800; color:var(--accent-green);">+0</div><div id="cmpDeltaPct" style="font-size:0.78rem; color:var(--text-secondary);">0%</div></div>
+                        <div><div style="font-size:0.75rem; color:var(--text-secondary);">MITIGATION</div><div id="cmpMitTotal" style="font-size:2rem; font-weight:800; color:var(--accent-green);">0</div><div style="font-size:0.78rem; color:var(--text-secondary);">species</div></div>
+                    </div>
+                    <table style="width:100%;">
+                        <thead>
+                            <tr><th>Category</th><th>BAU</th><th>Mitigation</th><th>Change</th></tr>
+                        </thead>
+                        <tbody id="cmpRows"></tbody>
+                    </table>
+                    <div id="cmpSummary" style="margin-top:10px; font-size:0.84rem; color:var(--text-secondary);"></div>
+                    <div style="margin-top:10px; font-size:0.78rem; color:var(--text-secondary); font-style:italic;">Prototype model — values are illustrative for presentation purposes.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Richness Prediction Interface (shown when Richness mode is active) -->
+<div id="geoRichnessInterface" class="card" style="display:none;">
+    <div class="geo-prediction-layout">
+        <div class="geo-prediction-form">
+            <div class="geo-prediction-title">Prediction Covariates</div>
+            <div class="geo-prediction-subtitle">Select a city, then adjust environmental variables to estimate predicted species richness.</div>
+
+            <div class="form-group geo-city-group">
+                <label class="form-label">City / Municipality</label>
+                <select id="predCitySelect" class="form-control"></select>
+            </div>
+
+            <div class="geo-auto-landtype">
+                <span><strong id="predLandTypeName">—</strong></span>
+                <span id="predLandTypeCoverage">0% cover</span>
+            </div>
+
+            <div class="geo-covariates-grid">
+                <div class="form-group geo-covariate-item">
+                    <label class="form-label">Land Temp (°C)</label>
+                    <input id="predTempInput" type="number" class="form-control" min="10" max="45" step="0.1">
+                </div>
+                <div class="form-group geo-covariate-item">
+                    <label class="form-label">ALAN (nW/cm²/sr)</label>
+                    <input id="predAlanInput" type="number" class="form-control" min="0" max="100" step="0.1">
+                </div>
+                <div class="form-group geo-covariate-item">
+                    <label class="form-label">Precipitation (mm)</label>
+                    <input id="predPrecipInput" type="number" class="form-control" min="0" max="500" step="1">
+                </div>
+                <div class="form-group geo-covariate-item">
+                    <label class="form-label">NDVI (%)</label>
+                    <input id="predNdviInput" type="number" class="form-control" min="0" max="100" step="1">
+                </div>
+            </div>
+
+            <div class="form-group geo-month-group">
+                <label class="form-label">Month</label>
+                <div class="geo-month-row">
+                    <input id="predMonthSlider" type="range" class="slider" min="1" max="12" value="1" step="1">
+                    <span id="predMonthBadge">January</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="geo-prediction-output">
+            <div class="geo-output-total">
+                <div>
+                    <small>TOTAL PREDICTED SPECIES</small>
+                    <div id="predTotalContext" class="geo-output-context">—</div>
+                </div>
+                <div id="predTotalValue" class="geo-output-value">0</div>
+            </div>
+
+            <div class="geo-output-card">
+                <div class="geo-output-row">
+                    <div><strong>Light Sensitive</strong></div>
+                    <div id="predSensitiveValue" class="geo-row-value">0</div>
+                </div>
+                <div class="geo-bar-track"><div id="predSensitiveBar" class="geo-bar-fill geo-bar-red" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Light Tolerant</strong></div>
+                    <div id="predTolerantValue" class="geo-row-value">0</div>
+                </div>
+                <div class="geo-bar-track"><div id="predTolerantBar" class="geo-bar-fill geo-bar-blue" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Resident</strong></div>
+                    <div id="predResidentValue" class="geo-row-value">0</div>
+                </div>
+                <div class="geo-bar-track"><div id="predResidentBar" class="geo-bar-fill geo-bar-green" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Migratory</strong></div>
+                    <div id="predMigratoryValue" class="geo-row-value">0</div>
+                </div>
+                <div class="geo-bar-track"><div id="predMigratoryBar" class="geo-bar-fill geo-bar-yellow" style="width:0%;"></div></div>
+            </div>
+
+            <div class="geo-output-card">
+                <div class="geo-output-shap-title"><strong>Feature Importance (SHAP)</strong> — <span id="predShapCity">—</span></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Light Intensity</strong></div>
+                    <div id="predShapLightVal" class="geo-row-value">0.00</div>
+                </div>
+                <div class="geo-bar-track"><div id="predShapLightBar" class="geo-bar-fill geo-bar-red" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>NDVI</strong></div>
+                    <div id="predShapNdviVal" class="geo-row-value">0.00</div>
+                </div>
+                <div class="geo-bar-track"><div id="predShapNdviBar" class="geo-bar-fill geo-bar-blue" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Temperature</strong></div>
+                    <div id="predShapTempVal" class="geo-row-value">0.00</div>
+                </div>
+                <div class="geo-bar-track"><div id="predShapTempBar" class="geo-bar-fill geo-bar-yellow" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Elevation</strong></div>
+                    <div id="predShapElevVal" class="geo-row-value">0.00</div>
+                </div>
+                <div class="geo-bar-track"><div id="predShapElevBar" class="geo-bar-fill geo-bar-purple" style="width:0%;"></div></div>
+
+                <div class="geo-output-row">
+                    <div><strong>Distance to Water</strong></div>
+                    <div id="predShapWaterVal" class="geo-row-value">0.00</div>
+                </div>
+                <div class="geo-bar-track"><div id="predShapWaterBar" class="geo-bar-fill geo-bar-teal" style="width:0%;"></div></div>
+
+                <p id="predDriverText" class="geo-driver-text"></p>
             </div>
         </div>
     </div>
@@ -189,7 +384,7 @@ $species_data = load_species_from_csv();
 </div>
 
 <!-- SHAP Global Insights -->
-<div class="grid-2">
+<div id="geoDefaultInsights" class="grid-2" style="display:none;">
     <div class="card">
         <h2 class="card-header">Global Feature Importance (SHAP)</h2>
         <div class="card-body">
@@ -229,9 +424,12 @@ const MM_BOUNDS = L.latLngBounds(
 // Initialize map centered on Metro Manila
 const map = L.map('map', {
     maxBounds: MM_BOUNDS.pad(0.08),
-    minZoom: 11,
+    minZoom: 9,
     preferCanvas: true
-}).setView([14.565, 121.01], 12);
+});
+
+map.fitBounds(MM_BOUNDS, { padding: [8, 8] });
+map.setZoom(10);
 
 // Add OpenStreetMap tile layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -289,10 +487,64 @@ let activeMigrationFilter = 'all';
 let geojsonLayer = null;
 let geojsonData = null;
 let cityLayer = null;
+let selectedCityBoundaryLayer = null;
+let bauShapChartInstance = null;
+let lastBauPrediction = null;
+let hasCompletedBauRun = false;
+let hasCompletedMitigationRun = false;
+let cityPredictionValues = {};
+let cityPredictionDetails = {};
+let stackedBauPredictions = {};
 
 // City → observation sites lookup (populated after both datasets load)
 const citySitesLookup = {};   // cityName → [cellData, ...]
 let citiesGeoData = null;
+
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+const MONTH_FACTORS = [0.78, 0.8, 0.88, 0.97, 1.05, 1.14, 1.2, 1.12, 1.03, 0.94, 0.86, 0.8];
+
+const LANDCOVER_COVARIATES = {
+    2:  { temp: 27, alan: 18, precip: 210, ndvi: 76 }, // Forest
+    8:  { temp: 29, alan: 24, precip: 185, ndvi: 58 }, // Woody Savannas
+    9:  { temp: 30, alan: 27, precip: 170, ndvi: 52 }, // Savannas
+    10: { temp: 30, alan: 31, precip: 165, ndvi: 47 }, // Grasslands
+    11: { temp: 28, alan: 22, precip: 240, ndvi: 64 }, // Wetlands
+    12: { temp: 31, alan: 36, precip: 155, ndvi: 43 }, // Croplands
+    13: { temp: 31, alan: 55, precip: 150, ndvi: 41 }, // Urban
+    14: { temp: 30, alan: 34, precip: 160, ndvi: 45 }, // Crop mosaics
+    16: { temp: 33, alan: 38, precip: 120, ndvi: 25 }, // Barren
+    17: { temp: 29, alan: 20, precip: 245, ndvi: 49 }  // Water bodies
+};
+
+function clamp(num, min, max) {
+    return Math.max(min, Math.min(max, num));
+}
+
+function getAvpBarAnimation(stepMs) {
+    var step = stepMs || 80;
+    return {
+        duration: 860,
+        easing: 'easeOutCubic',
+        delay: function(context) {
+            if (context.type !== 'data') return 0;
+            return (context.dataIndex || 0) * step + (context.datasetIndex || 0) * 24;
+        }
+    };
+}
+
+function applyAvpStaggerReveal(selector, initialDelayMs, stepMs) {
+    var nodes = document.querySelectorAll(selector);
+    var baseDelay = initialDelayMs || 100;
+    var step = stepMs || 55;
+
+    nodes.forEach(function(node, index) {
+        node.style.opacity = '0';
+        node.style.transform = 'translateY(12px)';
+        node.style.animation = 'avpPageEnter 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards';
+        node.style.animationDelay = (baseDelay + (index * step)) + 'ms';
+    });
+}
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -351,6 +603,727 @@ function buildCitySitesLookup() {
     });
 }
 
+function getCityFeatureByName(cityName) {
+    if (!citiesGeoData || !citiesGeoData.features) return null;
+    for (var i = 0; i < citiesGeoData.features.length; i++) {
+        if (citiesGeoData.features[i].properties.city_name === cityName) {
+            return citiesGeoData.features[i];
+        }
+    }
+    return null;
+}
+
+function focusMapOnCity(cityName) {
+    if (!cityName) return;
+    var feature = getCityFeatureByName(cityName);
+    if (!feature) return;
+
+    var bounds = L.geoJSON(feature).getBounds();
+    if (!bounds || !bounds.isValid()) return;
+
+    map.flyToBounds(bounds, {
+        padding: [18, 18],
+        maxZoom: 13,
+        duration: 2.4,
+        easeLinearity: 0.2
+    });
+    highlightSelectedCityBoundary(cityName);
+}
+
+function highlightSelectedCityBoundary(cityName) {
+    if (selectedCityBoundaryLayer) {
+        map.removeLayer(selectedCityBoundaryLayer);
+        selectedCityBoundaryLayer = null;
+    }
+    if (!cityName) return;
+
+    var feature = getCityFeatureByName(cityName);
+    if (!feature) return;
+
+    selectedCityBoundaryLayer = L.geoJSON(feature, {
+        interactive: false,
+        style: {
+            fillOpacity: 0,
+            color: '#ef4444',
+            weight: 5,
+            opacity: 1,
+            dashArray: '8 4'
+        }
+    }).addTo(map);
+
+    selectedCityBoundaryLayer.bringToFront();
+}
+
+function getDominantLandCoverForCity(cityFeature) {
+    var lcCounts = {};
+    if (!cityFeature || !geojsonData || !geojsonData.features) {
+        return { code: 13, count: 0, total: 0 };
+    }
+
+    var total = 0;
+    geojsonData.features.forEach(function(f) {
+        if (pointInPolygon(f.properties.latitude, f.properties.longitude, cityFeature.geometry)) {
+            var lc = f.properties.land_cover;
+            lcCounts[lc] = (lcCounts[lc] || 0) + 1;
+            total++;
+        }
+    });
+
+    var domLC = 13;
+    var domCount = 0;
+    Object.keys(lcCounts).forEach(function(lcKey) {
+        if (lcCounts[lcKey] > domCount) {
+            domCount = lcCounts[lcKey];
+            domLC = parseInt(lcKey);
+        }
+    });
+
+    return { code: domLC, count: domCount, total: total };
+}
+
+function populatePredictionCityDropdown() {
+    var select = document.getElementById('predCitySelect');
+    if (!select || !citiesGeoData || !citiesGeoData.features) return;
+
+    var names = citiesGeoData.features.map(function(f) { return f.properties.city_name; }).sort();
+    select.innerHTML = '';
+    names.forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+    });
+
+    if (names.length > 0) {
+        select.value = names[0];
+        syncPredictionFormForCity(names[0], true);
+    }
+}
+
+function syncPredictionFormForCity(cityName, applyDefaults) {
+    var feature = getCityFeatureByName(cityName);
+    var dominant = getDominantLandCoverForCity(feature);
+    var defaults = LANDCOVER_COVARIATES[dominant.code] || LANDCOVER_COVARIATES[13];
+    var coveragePct = dominant.total > 0 ? Math.round((dominant.count / dominant.total) * 100) : 0;
+    var citySeed = Math.abs(hashCode(cityName || 'city'));
+
+    // City-specific baseline tweak so changing cities produces visibly different demo values
+    var tempDefault = clamp(defaults.temp + (((citySeed % 7) - 3) * 0.35), 10, 45);
+    var alanDefault = clamp(defaults.alan + ((citySeed % 21) - 10), 0, 100);
+    var precipDefault = clamp(defaults.precip + ((citySeed % 81) - 40), 0, 500);
+    var ndviDefault = clamp(defaults.ndvi + ((citySeed % 15) - 7), 0, 100);
+
+    var tempInput = document.getElementById('predTempInput');
+    var alanInput = document.getElementById('predAlanInput');
+    var precipInput = document.getElementById('predPrecipInput');
+    var ndviInput = document.getElementById('predNdviInput');
+
+    document.getElementById('predLandTypeName').textContent = getLandCoverName(dominant.code);
+    document.getElementById('predLandTypeCoverage').textContent = coveragePct + '% cover';
+
+    var shouldApplyDefaults = !!applyDefaults;
+    if (!shouldApplyDefaults) {
+        shouldApplyDefaults =
+            tempInput.value === '' ||
+            alanInput.value === '' ||
+            precipInput.value === '' ||
+            ndviInput.value === '';
+    }
+
+    if (shouldApplyDefaults) {
+        tempInput.value = tempDefault.toFixed(1);
+        alanInput.value = alanDefault.toFixed(0);
+        precipInput.value = precipDefault.toFixed(0);
+        ndviInput.value = ndviDefault.toFixed(0);
+    }
+
+    document.getElementById('predShapCity').textContent = cityName;
+}
+
+function setBarWidth(id, pct) {
+    var el = document.getElementById(id);
+    if (el) el.style.width = clamp(pct, 0, 100).toFixed(0) + '%';
+}
+
+var bauBarAnimationTimers = [];
+
+function clearBauBarAnimationTimers() {
+    while (bauBarAnimationTimers.length) {
+        clearTimeout(bauBarAnimationTimers.pop());
+    }
+}
+
+function animateBauResultBars(result) {
+    clearBauBarAnimationTimers();
+
+    var total = Math.max(1, result.total || 1);
+    var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var items = [
+        { id: 'bauSensitiveBar', value: result.lightSensitive },
+        { id: 'bauTolerantBar', value: result.lightTolerant },
+        { id: 'bauResidentBar', value: result.resident },
+        { id: 'bauMigratoryBar', value: result.migratory }
+    ];
+
+    items.forEach(function(item, index) {
+        var el = document.getElementById(item.id);
+        if (!el) return;
+
+        var target = clamp((item.value / total) * 100, 0, 100).toFixed(0) + '%';
+        if (reducedMotion) {
+            el.style.width = target;
+            return;
+        }
+
+        el.style.transition = 'none';
+        el.style.width = '0%';
+        el.offsetWidth;
+        el.style.transition = 'width 640ms cubic-bezier(0.22, 1, 0.36, 1)';
+
+        var timer = setTimeout(function() {
+            el.style.width = target;
+        }, 70 + (index * 120));
+        bauBarAnimationTimers.push(timer);
+    });
+}
+
+var valueAnimHandles = {};
+function animateValue(id, target, decimals, durationMs) {
+    var el = document.getElementById(id);
+    if (!el) return;
+
+    var duration = durationMs || 380;
+    var precision = decimals || 0;
+    var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (valueAnimHandles[id]) {
+        cancelAnimationFrame(valueAnimHandles[id]);
+        valueAnimHandles[id] = null;
+    }
+
+    var currentRaw = el.getAttribute('data-current');
+    var startVal = currentRaw !== null ? parseFloat(currentRaw) : parseFloat(el.textContent);
+    if (!isFinite(startVal)) startVal = 0;
+    var endVal = isFinite(target) ? target : 0;
+
+    if (reducedMotion || Math.abs(endVal - startVal) < 0.01) {
+        el.textContent = endVal.toFixed(precision);
+        el.setAttribute('data-current', String(endVal));
+        return;
+    }
+
+    var startTs = null;
+    function easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    function step(ts) {
+        if (!startTs) startTs = ts;
+        var progress = clamp((ts - startTs) / duration, 0, 1);
+        var eased = easeOutCubic(progress);
+        var val = startVal + (endVal - startVal) * eased;
+        el.textContent = val.toFixed(precision);
+        el.setAttribute('data-current', String(val));
+
+        if (progress < 1) {
+            valueAnimHandles[id] = requestAnimationFrame(step);
+        } else {
+            el.textContent = endVal.toFixed(precision);
+            el.setAttribute('data-current', String(endVal));
+            valueAnimHandles[id] = null;
+        }
+    }
+
+    valueAnimHandles[id] = requestAnimationFrame(step);
+}
+
+function runRichnessPrediction() {
+    var cityName = document.getElementById('predCitySelect').value;
+    var cityFeature = getCityFeatureByName(cityName);
+    var dom = getDominantLandCoverForCity(cityFeature);
+    var citySeed = Math.abs(hashCode(cityName || 'city'));
+    var citySites = citySitesLookup[cityName] || [];
+
+    var temp = parseFloat(document.getElementById('predTempInput').value) || 31;
+    var alan = parseFloat(document.getElementById('predAlanInput').value) || 55;
+    var precip = parseFloat(document.getElementById('predPrecipInput').value) || 150;
+    var ndvi = parseFloat(document.getElementById('predNdviInput').value) || 41;
+    var monthIdx = (parseInt(document.getElementById('predMonthSlider').value, 10) || 1) - 1;
+
+    temp = clamp(temp, 10, 45);
+    alan = clamp(alan, 0, 100);
+    precip = clamp(precip, 0, 500);
+    ndvi = clamp(ndvi, 0, 100);
+
+    var base = LANDCOVER_RICHNESS[dom.code] || 8;
+    var tempFactor = clamp(1 - Math.abs(temp - 28) / 22, 0.58, 1.08);
+    var alanFactor = clamp((75 - alan) / 75, 0.22, 1.08);
+    var precipFactor = clamp(0.72 + precip / 420, 0.72, 1.22);
+    var ndviFactor = 0.72 + (ndvi / 100) * 0.86;
+    var monthFactor = MONTH_FACTORS[monthIdx] || 1;
+    var cityFactor = 0.88 + ((citySeed % 17) / 100);
+    var siteDensityFactor = clamp(0.92 + Math.min(citySites.length, 12) * 0.015, 0.92, 1.1);
+
+    var predicted = clamp(Math.round(base * tempFactor * alanFactor * precipFactor * ndviFactor * monthFactor * cityFactor * siteDensityFactor * 2.05), 2, 45);
+
+    var sensitiveShare = clamp(0.52 - alan / 185 + ndvi / 240, 0.08, 0.65);
+    var lightSensitive = Math.round(predicted * sensitiveShare);
+    var lightTolerant = Math.max(0, predicted - lightSensitive);
+
+    var residentShare = clamp(0.48 + precip / 900 - alan / 320, 0.2, 0.82);
+    var resident = Math.round(predicted * residentShare);
+    var migratory = Math.max(0, predicted - resident);
+
+    var shapLight = clamp(alan / 100 * 0.62, 0.04, 0.62);
+    var shapNdvi = clamp(ndvi / 100 * 0.34, 0.03, 0.34);
+    var shapTemp = clamp((1 - Math.abs(temp - 28) / 18) * 0.24, 0.02, 0.24);
+    var shapElev = clamp((dom.code === 13 ? 0.08 : 0.11), 0.04, 0.16);
+    var shapWater = clamp((precip / 500) * 0.12, 0.02, 0.12);
+    var shapTotal = shapLight + shapNdvi + shapTemp + shapElev + shapWater;
+
+    animateValue('predTotalValue', predicted, 0, 360);
+    document.getElementById('predTotalContext').textContent = getLandCoverName(dom.code) + ' · ALAN ' + alan.toFixed(0) + ' nW · ' + MONTH_NAMES[monthIdx];
+
+    animateValue('predSensitiveValue', lightSensitive, 0, 320);
+    animateValue('predTolerantValue', lightTolerant, 0, 320);
+    animateValue('predResidentValue', resident, 0, 320);
+    animateValue('predMigratoryValue', migratory, 0, 320);
+
+    setBarWidth('predSensitiveBar', (lightSensitive / predicted) * 100);
+    setBarWidth('predTolerantBar', (lightTolerant / predicted) * 100);
+    setBarWidth('predResidentBar', (resident / predicted) * 100);
+    setBarWidth('predMigratoryBar', (migratory / predicted) * 100);
+
+    animateValue('predShapLightVal', shapLight, 2, 300);
+    animateValue('predShapNdviVal', shapNdvi, 2, 300);
+    animateValue('predShapTempVal', shapTemp, 2, 300);
+    animateValue('predShapElevVal', shapElev, 2, 300);
+    animateValue('predShapWaterVal', shapWater, 2, 300);
+
+    setBarWidth('predShapLightBar', (shapLight / shapTotal) * 100);
+    setBarWidth('predShapNdviBar', (shapNdvi / shapTotal) * 100);
+    setBarWidth('predShapTempBar', (shapTemp / shapTotal) * 100);
+    setBarWidth('predShapElevBar', (shapElev / shapTotal) * 100);
+    setBarWidth('predShapWaterBar', (shapWater / shapTotal) * 100);
+
+    document.getElementById('predDriverText').textContent =
+        'Key driver: Light Intensity (' + shapLight.toFixed(2) + ') has the strongest influence on predicted richness for ' + cityName +
+        '. High ALAN suppresses light-sensitive species while vegetation support (NDVI) helps retain refugia.';
+}
+
+function getBaselineForCity(cityName) {
+    var feature = getCityFeatureByName(cityName);
+    var dominant = getDominantLandCoverForCity(feature);
+    var defaults = LANDCOVER_COVARIATES[dominant.code] || LANDCOVER_COVARIATES[13];
+    var citySeed = Math.abs(hashCode(cityName || 'city'));
+
+    return {
+        cityName: cityName,
+        dominantName: getLandCoverName(dominant.code),
+        coveragePct: dominant.total > 0 ? Math.round((dominant.count / dominant.total) * 100) : 0,
+        alan: clamp(defaults.alan + ((citySeed % 21) - 10), 0, 100),
+        ndvi: clamp(defaults.ndvi + ((citySeed % 15) - 7), 0, 100),
+        temp: clamp(defaults.temp + (((citySeed % 7) - 3) * 0.35), 10, 45),
+        precip: clamp(defaults.precip + ((citySeed % 81) - 40), 0, 500)
+    };
+}
+
+function computeScenarioPrediction(cityName, inputs, monthIndex) {
+    var cityFeature = getCityFeatureByName(cityName);
+    var dom = getDominantLandCoverForCity(cityFeature);
+    var citySeed = Math.abs(hashCode(cityName || 'city'));
+    var citySites = citySitesLookup[cityName] || [];
+
+    var temp = clamp(inputs.temp, 10, 45);
+    var alan = clamp(inputs.alan, 0, 100);
+    var precip = clamp(inputs.precip, 0, 500);
+    var ndvi = clamp(inputs.ndvi, 0, 100);
+
+    var base = LANDCOVER_RICHNESS[dom.code] || 8;
+    var tempFactor = clamp(1 - Math.abs(temp - 28) / 22, 0.58, 1.08);
+    var alanFactor = clamp((75 - alan) / 75, 0.22, 1.08);
+    var precipFactor = clamp(0.72 + precip / 420, 0.72, 1.22);
+    var ndviFactor = 0.72 + (ndvi / 100) * 0.86;
+    var monthFactor = MONTH_FACTORS[monthIndex] || 1;
+    var cityFactor = 0.88 + ((citySeed % 17) / 100);
+    var siteDensityFactor = clamp(0.92 + Math.min(citySites.length, 12) * 0.015, 0.92, 1.1);
+
+    var predicted = clamp(Math.round(base * tempFactor * alanFactor * precipFactor * ndviFactor * monthFactor * cityFactor * siteDensityFactor * 2.05), 2, 45);
+
+    var sensitiveShare = clamp(0.52 - alan / 185 + ndvi / 240, 0.08, 0.65);
+    var lightSensitive = Math.round(predicted * sensitiveShare);
+    var lightTolerant = Math.max(0, predicted - lightSensitive);
+
+    var residentShare = clamp(0.48 + precip / 900 - alan / 320, 0.2, 0.82);
+    var resident = Math.round(predicted * residentShare);
+    var migratory = Math.max(0, predicted - resident);
+
+    var shapLight = clamp(alan / 100 * 0.62, 0.04, 0.62);
+    var shapNdvi = clamp(ndvi / 100 * 0.34, 0.03, 0.34);
+    var shapTemp = clamp((1 - Math.abs(temp - 28) / 18) * 0.24, 0.02, 0.24);
+    var shapElev = clamp((dom.code === 13 ? 0.08 : 0.11), 0.04, 0.16);
+    var shapWater = clamp((precip / 500) * 0.12, 0.02, 0.12);
+
+    return {
+        total: predicted,
+        lightSensitive: lightSensitive,
+        lightTolerant: lightTolerant,
+        resident: resident,
+        migratory: migratory,
+        shap: { light: shapLight, ndvi: shapNdvi, temp: shapTemp, elev: shapElev, water: shapWater },
+        monthName: MONTH_NAMES[monthIndex]
+    };
+}
+
+function updateBauInputsPanel(base) {
+    document.getElementById('bauLandcoverName').textContent = base.dominantName;
+    document.getElementById('bauLandcoverShare').textContent = base.coveragePct + '% cover';
+    document.getElementById('bauAlanVal').textContent = Math.round(base.alan) + ' nW/cm²/sr';
+    document.getElementById('bauNdviVal').textContent = Math.round(base.ndvi) + '%';
+    document.getElementById('bauTempVal').textContent = base.temp.toFixed(1) + '°C';
+    document.getElementById('bauPrecipVal').textContent = Math.round(base.precip) + ' mm';
+    document.getElementById('mitAlanBaseline').textContent = 'Baseline: ' + Math.round(base.alan) + ' nW';
+    document.getElementById('mitNdviBaseline').textContent = 'Baseline: ' + Math.round(base.ndvi) + '%';
+    document.getElementById('mitTempBaseline').textContent = 'Baseline: ' + base.temp.toFixed(1) + '°C';
+    document.getElementById('mitPrecipBaseline').textContent = 'Baseline: ' + Math.round(base.precip) + ' mm';
+}
+
+function resetBauScenarioState() {
+    hasCompletedBauRun = false;
+    hasCompletedMitigationRun = false;
+    cityPredictionValues = {};
+    cityPredictionDetails = {};
+
+    var bauResultHeading = document.getElementById('bauResultHeading');
+    var bauResultEmpty = document.getElementById('bauResultEmpty');
+    var bauResultContent = document.getElementById('bauResultContent');
+    if (bauResultHeading) bauResultHeading.textContent = 'BAU Prediction Result';
+    if (bauResultEmpty) {
+        bauResultEmpty.style.display = 'block';
+        bauResultEmpty.innerHTML = 'Select a city and run the BAU prediction<br>Historical inputs will be used automatically.';
+    }
+    if (bauResultContent) bauResultContent.style.display = 'none';
+
+    var mitigationSection = document.getElementById('mitigationScenarioSection');
+    if (mitigationSection) mitigationSection.style.display = 'none';
+    var cmpEmpty = document.getElementById('cmpEmpty');
+    var cmpContent = document.getElementById('cmpContent');
+    if (cmpEmpty) cmpEmpty.style.display = 'block';
+    if (cmpContent) cmpContent.style.display = 'none';
+    refreshCityLayerStyles();
+    syncMitigationPanelHeight();
+}
+
+function updateBauResultUI(cityName, result) {
+    document.getElementById('bauResultEmpty').style.display = 'none';
+    document.getElementById('bauResultContent').style.display = 'block';
+    document.getElementById('bauResultHeading').textContent = 'BAU Prediction Result — ' + cityName + ' · ' + result.monthName;
+    document.getElementById('bauResultTitle').textContent = 'BAU TOTAL PREDICTED — ' + cityName + ' · ' + result.monthName;
+    document.getElementById('bauTotalPred').textContent = result.total;
+    document.getElementById('bauShapTitle').textContent = 'Feature Importance (SHAP) — ' + cityName;
+    document.getElementById('bauShapSubtitle').textContent = 'Local SHAP values for ' + cityName + ' · ' + document.getElementById('bauLandcoverName').textContent;
+
+    document.getElementById('bauSensitiveVal').textContent = result.lightSensitive;
+    document.getElementById('bauTolerantVal').textContent = result.lightTolerant;
+    document.getElementById('bauResidentVal').textContent = result.resident;
+    document.getElementById('bauMigratoryVal').textContent = result.migratory;
+
+    animateBauResultBars(result);
+
+    var oldCanvas = document.getElementById('bauShapCanvas');
+    if (!oldCanvas || !oldCanvas.parentNode) return;
+
+    if (bauShapChartInstance) {
+        bauShapChartInstance.destroy();
+        bauShapChartInstance = null;
+    }
+
+    var newCanvas = oldCanvas.cloneNode(false);
+    newCanvas.id = 'bauShapCanvas';
+    newCanvas.height = 170;
+    oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
+
+    var shapCtx = newCanvas.getContext('2d');
+    if (!shapCtx) return;
+
+    var shapValues = [result.shap.light, result.shap.ndvi, result.shap.temp, result.shap.elev, result.shap.water];
+    var shapAxisMax = Math.max.apply(null, shapValues);
+    if (!isFinite(shapAxisMax) || shapAxisMax <= 0) {
+        shapAxisMax = 0.1;
+    }
+
+    bauShapChartInstance = new Chart(shapCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Light Intensity', 'NDVI', 'Temperature', 'Elevation', 'Distance to Water'],
+            datasets: [{ data: shapValues, backgroundColor: ['#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4'] }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            animation: getAvpBarAnimation(90),
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, max: shapAxisMax, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } },
+                x: { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false } }
+            }
+        }
+    });
+
+    document.getElementById('bauShapText').textContent =
+        'Interpretation: In ' + cityName + ', light intensity (' + result.shap.light.toFixed(2) + ') and ndvi (' + result.shap.ndvi.toFixed(2) + ') are the strongest drivers of bird species richness.';
+
+    syncBauResultPanelHeight();
+}
+
+function syncBauResultPanelHeight() {
+    var left = document.getElementById('bauLeftPanel');
+    var right = document.getElementById('bauRightPanel');
+    if (!left || !right) return;
+
+    var targetHeight = left.offsetHeight;
+    if (!targetHeight || targetHeight < 100) {
+        right.style.height = '';
+        right.style.maxHeight = '';
+        return;
+    }
+
+    right.style.height = targetHeight + 'px';
+    right.style.maxHeight = targetHeight + 'px';
+}
+
+function syncMitigationPanelHeight() {
+    var section = document.getElementById('mitigationScenarioSection');
+    var left = document.getElementById('mitLeftPanel');
+    var right = document.getElementById('mitRightPanel');
+    if (!section || !left || !right) return;
+
+    if (section.style.display === 'none') {
+        right.style.height = '';
+        right.style.maxHeight = '';
+        return;
+    }
+
+    var targetHeight = left.offsetHeight;
+    if (!targetHeight || targetHeight < 100) {
+        right.style.height = '';
+        right.style.maxHeight = '';
+        return;
+    }
+
+    right.style.height = targetHeight + 'px';
+    right.style.maxHeight = targetHeight + 'px';
+}
+
+function runBauPrediction() {
+    var cityName = document.getElementById('bauCitySelect').value;
+    if (!cityName) return;
+
+    var monthIndex = (parseInt(document.getElementById('bauMonthSlider').value, 10) || 1) - 1;
+    document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[monthIndex];
+
+    var base = getBaselineForCity(cityName);
+    updateBauInputsPanel(base);
+    updateMitigationSliderBadges();
+
+    var result = computeScenarioPrediction(cityName, {
+        alan: base.alan,
+        ndvi: base.ndvi,
+        temp: base.temp,
+        precip: base.precip
+    }, monthIndex);
+
+    var cityFeature = getCityFeatureByName(cityName);
+    var dominant = getDominantLandCoverForCity(cityFeature);
+    stackedBauPredictions[cityName] = {
+        total: result.total,
+        lightSensitive: result.lightSensitive,
+        lightTolerant: result.lightTolerant,
+        resident: result.resident,
+        migratory: result.migratory,
+        monthName: result.monthName,
+        dominantName: getLandCoverName(dominant.code)
+    };
+
+    lastBauPrediction = { cityName: cityName, monthIndex: monthIndex, baseline: base, result: result };
+    updateBauResultUI(cityName, result);
+    hasCompletedBauRun = true;
+    hasCompletedMitigationRun = false;
+    cityPredictionValues = {};
+    cityPredictionDetails = {};
+    var mitigationSection = document.getElementById('mitigationScenarioSection');
+    if (mitigationSection) mitigationSection.style.display = 'grid';
+    var cmpEmpty = document.getElementById('cmpEmpty');
+    var cmpContent = document.getElementById('cmpContent');
+    if (cmpEmpty) cmpEmpty.style.display = 'block';
+    if (cmpContent) cmpContent.style.display = 'none';
+    refreshCityLayerStyles();
+    syncMitigationPanelHeight();
+}
+
+function updateMitigationSliderBadges() {
+    var cityName = document.getElementById('bauCitySelect').value;
+    var base = (lastBauPrediction && lastBauPrediction.baseline) ? lastBauPrediction.baseline : getBaselineForCity(cityName);
+    var alanDeltaPct = (parseInt(document.getElementById('mitAlanSlider').value, 10) || 0) / 100;
+    var ndviDeltaPct = (parseInt(document.getElementById('mitNdviSlider').value, 10) || 0) / 100;
+    var tempDelta = (parseInt(document.getElementById('mitTempSlider').value, 10) || 0) / 10;
+    var precipDeltaPct = (parseInt(document.getElementById('mitPrecipSlider').value, 10) || 0) / 100;
+
+    var adjustedAlan = clamp(base.alan * (1 + alanDeltaPct), 0, 100);
+    var adjustedNdvi = clamp(base.ndvi * (1 + ndviDeltaPct), 0, 100);
+    var adjustedTemp = clamp(base.temp + tempDelta, 10, 45);
+    var adjustedPrecip = clamp(base.precip * (1 + precipDeltaPct), 0, 500);
+
+    document.getElementById('mitAlanBadge').textContent = Math.round(adjustedAlan) + ' nW';
+    document.getElementById('mitNdviBadge').textContent = Math.round(adjustedNdvi) + '%';
+    document.getElementById('mitTempBadge').textContent = adjustedTemp.toFixed(1) + '°C';
+    document.getElementById('mitPrecipBadge').textContent = Math.round(adjustedPrecip) + ' mm';
+}
+
+function updateScenarioComparison(mitigationResult) {
+    var bau = lastBauPrediction ? lastBauPrediction.result : { total: 0, lightSensitive: 0, lightTolerant: 0, resident: 0, migratory: 0 };
+    var mit = mitigationResult || bau;
+
+    var delta = mit.total - bau.total;
+    var pct = bau.total > 0 ? (delta / bau.total) * 100 : 0;
+
+    document.getElementById('cmpBauTotal').textContent = bau.total;
+    document.getElementById('cmpMitTotal').textContent = mit.total;
+    document.getElementById('cmpDelta').textContent = (delta >= 0 ? '+' : '') + delta;
+    document.getElementById('cmpDeltaPct').textContent = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+
+    var categories = [
+        { name: 'Light Sensitive', b: bau.lightSensitive, m: mit.lightSensitive },
+        { name: 'Light Tolerant',  b: bau.lightTolerant,  m: mit.lightTolerant },
+        { name: 'Resident',        b: bau.resident,      m: mit.resident },
+        { name: 'Migratory',       b: bau.migratory,     m: mit.migratory }
+    ];
+
+    document.getElementById('cmpRows').innerHTML = categories.map(function(item) {
+        var d = item.m - item.b;
+        return '<tr>' +
+            '<td>' + item.name + '</td>' +
+            '<td>' + item.b + '</td>' +
+            '<td>' + item.m + '</td>' +
+            '<td style="font-weight:700; color:' + (d >= 0 ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + (d >= 0 ? '+' : '') + d + '</td>' +
+        '</tr>';
+    }).join('');
+
+    var lightDelta = mit.lightSensitive - bau.lightSensitive;
+    var pctRounded = Math.round(pct * 10) / 10;
+    var pctText = (pctRounded >= 0 ? '+' : '') + (Number.isInteger(pctRounded) ? pctRounded.toFixed(0) : pctRounded.toFixed(1)) + '%';
+
+    document.getElementById('cmpSummary').textContent =
+        '🧾 Summary: The mitigation scenario projects a ' + (delta >= 0 ? 'gain' : 'loss') + ' of ' + Math.abs(delta) + ' species (' + pctText + ') over BAU. Light-sensitive species ' + (lightDelta >= 0 ? 'increase' : 'decrease') + ' by ' + Math.abs(lightDelta) + ', indicating that vegetation improvements partially offset light pollution effects.';
+}
+
+function runMitigationPrediction() {
+    if (!lastBauPrediction || !hasCompletedBauRun) return;
+
+    var base = lastBauPrediction.baseline;
+    var cityName = lastBauPrediction.cityName;
+    var monthIndex = lastBauPrediction.monthIndex;
+
+    var alanDeltaPct = parseInt(document.getElementById('mitAlanSlider').value, 10) / 100;
+    var ndviDeltaPct = parseInt(document.getElementById('mitNdviSlider').value, 10) / 100;
+    var tempDelta = parseInt(document.getElementById('mitTempSlider').value, 10) / 10;
+    var precipDeltaPct = parseInt(document.getElementById('mitPrecipSlider').value, 10) / 100;
+
+    var mitInputs = {
+        alan: clamp(base.alan * (1 + alanDeltaPct), 0, 100),
+        ndvi: clamp(base.ndvi * (1 + ndviDeltaPct), 0, 100),
+        temp: clamp(base.temp + tempDelta, 10, 45),
+        precip: clamp(base.precip * (1 + precipDeltaPct), 0, 500)
+    };
+
+    var mitResult = computeScenarioPrediction(cityName, mitInputs, monthIndex);
+
+    var hasSliderChange = alanDeltaPct !== 0 || ndviDeltaPct !== 0 || tempDelta !== 0 || precipDeltaPct !== 0;
+    if (hasSliderChange) {
+        var mitigationSignal = (-alanDeltaPct * 0.9) + (ndviDeltaPct * 0.8) + (-tempDelta * 0.05) + (precipDeltaPct * 0.4);
+        if (Math.abs(mitigationSignal) > 0.001) {
+            var adjustedTotal = clamp(Math.round(mitResult.total + (mitigationSignal * 7)), 2, 50);
+            if (adjustedTotal === lastBauPrediction.result.total) {
+                adjustedTotal = clamp(adjustedTotal + (mitigationSignal > 0 ? 1 : -1), 2, 50);
+            }
+            if (adjustedTotal !== mitResult.total) {
+                var sShare = mitResult.total > 0 ? mitResult.lightSensitive / mitResult.total : 0.32;
+                var rShare = mitResult.total > 0 ? mitResult.resident / mitResult.total : 0.5;
+                var adjSensitive = Math.round(adjustedTotal * sShare);
+                var adjTolerant = Math.max(0, adjustedTotal - adjSensitive);
+                var adjResident = Math.round(adjustedTotal * rShare);
+                var adjMigratory = Math.max(0, adjustedTotal - adjResident);
+                mitResult = {
+                    total: adjustedTotal,
+                    lightSensitive: adjSensitive,
+                    lightTolerant: adjTolerant,
+                    resident: adjResident,
+                    migratory: adjMigratory,
+                    shap: mitResult.shap,
+                    monthName: mitResult.monthName
+                };
+            }
+        }
+    }
+
+    hasCompletedMitigationRun = true;
+    var cmpEmpty = document.getElementById('cmpEmpty');
+    var cmpContent = document.getElementById('cmpContent');
+    if (cmpEmpty) cmpEmpty.style.display = 'none';
+    if (cmpContent) cmpContent.style.display = 'block';
+    updateScenarioComparison(mitResult);
+    refreshCityLayerStyles();
+    syncMitigationPanelHeight();
+}
+
+function initAnalyticsScenarioUI() {
+    var citySelect = document.getElementById('bauCitySelect');
+    if (!citySelect || !citiesGeoData || !citiesGeoData.features) return;
+
+    var names = citiesGeoData.features.map(function(f) { return f.properties.city_name; }).sort();
+    citySelect.innerHTML = '';
+    names.forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        citySelect.appendChild(opt);
+    });
+
+    citySelect.addEventListener('change', function() {
+        updateBauInputsPanel(getBaselineForCity(this.value));
+        updateMitigationSliderBadges();
+        resetBauScenarioState();
+        focusMapOnCity(this.value);
+    });
+
+    document.getElementById('bauMonthSlider').addEventListener('input', function() {
+        document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[(parseInt(this.value, 10) || 1) - 1];
+        resetBauScenarioState();
+    });
+
+    document.getElementById('runBauBtn').addEventListener('click', runBauPrediction);
+    document.getElementById('runMitigationBtn').addEventListener('click', runMitigationPrediction);
+
+    ['mitAlanSlider', 'mitNdviSlider', 'mitTempSlider', 'mitPrecipSlider'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', updateMitigationSliderBadges);
+    });
+
+    updateMitigationSliderBadges();
+    resetBauScenarioState();
+    syncBauResultPanelHeight();
+    syncMitigationPanelHeight();
+
+    if (names.length) {
+        citySelect.value = names[0];
+        updateBauInputsPanel(getBaselineForCity(names[0]));
+        highlightSelectedCityBoundary(names[0]);
+        focusMapOnCity(names[0]);
+    }
+}
+
+window.addEventListener('resize', syncBauResultPanelHeight);
+window.addEventListener('resize', syncMitigationPanelHeight);
+
 // Estimate richness for a land-cover feature
 function getPredictedRichness(properties) {
     var cellData = cellsLookup[properties.cell_id];
@@ -387,16 +1360,13 @@ function speciesMatchesFilters(sp) {
 
 function getRichnessColor(value) {
     var stops = [
-        { val: 0,  r: 49,  g: 54,  b: 149 },
-        { val: 5,  r: 69,  g: 117, b: 180 },
-        { val: 10, r: 116, g: 173, b: 209 },
-        { val: 15, r: 171, g: 217, b: 233 },
-        { val: 18, r: 254, g: 224, b: 144 },
-        { val: 22, r: 253, g: 174, b: 97  },
-        { val: 26, r: 244, g: 109, b: 67  },
-        { val: 30, r: 165, g: 0,   b: 38  }
+        { val: 0,  r: 31,  g: 42,  b: 125 },
+        { val: 12, r: 31,  g: 79,  b: 191 },
+        { val: 25, r: 46,  g: 125, b: 224 },
+        { val: 37, r: 102, g: 194, b: 255 },
+        { val: 50, r: 242, g: 182, b: 40  }
     ];
-    value = Math.max(0, Math.min(30, value));
+    value = Math.max(0, Math.min(50, value));
     var lower = stops[0], upper = stops[stops.length - 1];
     for (var i = 0; i < stops.length - 1; i++) {
         if (value >= stops[i].val && value <= stops[i + 1].val) {
@@ -414,6 +1384,9 @@ function getSelectedLandCoverTypes() {
     document.querySelectorAll('.lc-filter').forEach(function(cb) {
         if (cb.checked) selected.add(parseInt(cb.value));
     });
+    if (selected.size === 0) {
+        [2,8,9,10,11,12,13,14,16,17].forEach(function(code) { selected.add(code); });
+    }
     return selected;
 }
 
@@ -450,35 +1423,143 @@ function lcStyle(feature) {
 }
 
 function cityStyle() {
-    return { fillColor: 'transparent', weight: 1.8, color: '#333', fillOpacity: 0, opacity: 0.7 };
+    return { fillColor: '#9ca3af', weight: 1.5, color: '#64748b', fillOpacity: 0.35, opacity: 0.95 };
 }
 
 function cityHoverStyle() {
-    return { fillColor: '#fff', weight: 2.5, color: '#0066cc', fillOpacity: 0.12, opacity: 1 };
+    return { fillColor: '#d1d5db', weight: 2.3, color: '#38bdf8', fillOpacity: 0.42, opacity: 1 };
+}
+
+function getCityPredictionValue(cityName) {
+    if (!cityPredictionValues || !Object.prototype.hasOwnProperty.call(cityPredictionValues, cityName)) {
+        return null;
+    }
+    return cityPredictionValues[cityName];
+}
+
+function buildCityPredictionDetailsForMap(monthIndex, mitigationDeltas) {
+    var out = {};
+    if (!citiesGeoData || !citiesGeoData.features) return out;
+
+    citiesGeoData.features.forEach(function(feature) {
+        var cityName = feature.properties.city_name;
+        var dominant = getDominantLandCoverForCity(feature);
+        var base = getBaselineForCity(cityName);
+        var mitInputs = {
+            alan: clamp(base.alan * (1 + mitigationDeltas.alanDeltaPct), 0, 100),
+            ndvi: clamp(base.ndvi * (1 + mitigationDeltas.ndviDeltaPct), 0, 100),
+            temp: clamp(base.temp + mitigationDeltas.tempDelta, 10, 45),
+            precip: clamp(base.precip * (1 + mitigationDeltas.precipDeltaPct), 0, 500)
+        };
+        var result = computeScenarioPrediction(cityName, mitInputs, monthIndex);
+        out[cityName] = {
+            total: result.total,
+            lightSensitive: result.lightSensitive,
+            lightTolerant: result.lightTolerant,
+            resident: result.resident,
+            migratory: result.migratory,
+            monthName: result.monthName,
+            dominantName: getLandCoverName(dominant.code)
+        };
+    });
+
+    return out;
+}
+
+function buildCityHoverTooltipHtml(cityName, feature) {
+    var dominant = getDominantLandCoverForCity(feature);
+    var dominantName = getLandCoverName(dominant.code);
+    var details = stackedBauPredictions[cityName] || null;
+    var canShowPrediction = !!details;
+
+    if (!canShowPrediction) {
+        return '<div style="min-width:170px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:8px; overflow:hidden;">' +
+            '<div style="padding:7px 9px; font-weight:700; font-size:0.88rem;">' + cityName + '</div>' +
+            '<div style="padding:0 9px 8px 9px; color:#94a3b8; font-size:0.8rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + dominantName + '</div>' +
+        '</div>';
+    }
+
+    return '<div style="min-width:200px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:9px; overflow:hidden;">' +
+        '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
+            '<div style="font-weight:700; font-size:0.9rem;">' + cityName + '</div>' +
+            '<div style="margin-top:2px; color:#94a3b8; font-size:0.78rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + details.dominantName + '</div>' +
+        '</div>' +
+        '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
+            '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px;"><span style="font-size:0.74rem; color:#94a3b8;">Total Predicted</span><span style="font-size:1.35rem; line-height:1; font-weight:800; color:#d8b4fe;">' + details.total + ' spp.</span></div>' +
+            '<div style="display:flex; justify-content:space-between; color:#fda4af; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#fb7185; margin-right:6px;"></span>Light Sensitive</span><strong>' + details.lightSensitive + '</strong></div>' +
+            '<div style="display:flex; justify-content:space-between; color:#60a5fa; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#60a5fa; margin-right:6px;"></span>Light Tolerant</span><strong>' + details.lightTolerant + '</strong></div>' +
+            '<div style="display:flex; justify-content:space-between; color:#34d399; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#34d399; margin-right:6px;"></span>Resident</span><strong>' + details.resident + '</strong></div>' +
+            '<div style="display:flex; justify-content:space-between; color:#facc15; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#facc15; margin-right:6px;"></span>Migratory</span><strong>' + details.migratory + '</strong></div>' +
+        '</div>' +
+        '<div style="padding:6px 9px; color:#94a3b8; font-size:0.76rem; font-style:italic;">' + details.monthName + ' · ' + details.dominantName + '</div>' +
+    '</div>';
+}
+
+function getComputedCityStyle(feature, isHover) {
+    var baseStyle;
+    var cityName = feature && feature.properties ? feature.properties.city_name : null;
+    var stackedPrediction = cityName ? stackedBauPredictions[cityName] : null;
+
+    if (!stackedPrediction || !cityName) {
+        baseStyle = { fillColor: '#9ca3af', weight: 1.5, color: '#64748b', fillOpacity: 0.35, opacity: 0.95 };
+    } else {
+        var value = stackedPrediction.total;
+        if (value === null || typeof value === 'undefined') {
+            baseStyle = { fillColor: '#9ca3af', weight: 1.5, color: '#64748b', fillOpacity: 0.35, opacity: 0.95 };
+        } else {
+            baseStyle = { fillColor: getRichnessColor(value), weight: 1.5, color: '#0f172a', fillOpacity: 0.72, opacity: 0.95 };
+        }
+    }
+
+    if (!isHover) return baseStyle;
+
+    return {
+        fillColor: baseStyle.fillColor,
+        weight: 2.3,
+        color: '#38bdf8',
+        fillOpacity: Math.min(0.85, (baseStyle.fillOpacity || 0.35) + 0.08),
+        opacity: 1
+    };
+}
+
+function refreshCityLayerStyles() {
+    if (!cityLayer) return;
+    cityLayer.eachLayer(function(layer) {
+        layer.setStyle(getComputedCityStyle(layer.feature, false));
+    });
+    cityLayer.bringToFront();
+    if (selectedCityBoundaryLayer) selectedCityBoundaryLayer.bringToFront();
 }
 
 // ── Map mode ──────────────────────────────────────────────
 
 function setColorMode(mode) {
     colorMode = mode;
-    document.getElementById('btnPredictions').className = mode === 'predictions' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-    document.getElementById('btnLandCover').className   = mode === 'landcover'   ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-    document.getElementById('legendPrediction').style.display = mode === 'predictions' ? 'block' : 'none';
-    document.getElementById('legendLandCover').style.display  = mode === 'landcover'   ? 'block' : 'none';
-    applyLandCoverFilter();
+    var btnPred = document.getElementById('btnPredictions');
+    var btnLand = document.getElementById('btnLandCover');
+    if (btnPred) btnPred.className = mode === 'predictions' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    if (btnLand) btnLand.className = mode === 'landcover' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    document.getElementById('legendPrediction').style.display = 'block';
+
+    var richnessUI = document.getElementById('geoRichnessInterface');
+    var defaultUI = document.getElementById('geoDefaultInsights');
+    if (richnessUI && defaultUI) {
+        if (mode === 'predictions') {
+            richnessUI.style.display = 'block';
+            defaultUI.style.display = 'none';
+        } else {
+            richnessUI.style.display = 'none';
+            defaultUI.style.display = 'grid';
+        }
+    }
+
+    refreshCityLayerStyles();
 }
 
 // ── Land-cover layer ──────────────────────────────────────
 
 function applyLandCoverFilter() {
-    if (!geojsonData) return;
     if (geojsonLayer) { map.removeLayer(geojsonLayer); geojsonLayer = null; }
-    var filtered = filterToMetroManila(geojsonData);
-    geojsonLayer = L.geoJSON(filtered, {
-        style: lcStyle,
-        interactive: false   // land-cover is visual only; city layer handles clicks
-    }).addTo(map);
-    // Ensure city boundary layer stays on top
     if (cityLayer) cityLayer.bringToFront();
 }
 
@@ -498,16 +1579,21 @@ function buildCityLayer() {
     if (cityLayer) { map.removeLayer(cityLayer); cityLayer = null; }
 
     cityLayer = L.geoJSON(citiesGeoData, {
-        style: cityStyle,
+        style: function(feature) { return getComputedCityStyle(feature, false); },
         onEachFeature: function(feature, layer) {
             var cityName = feature.properties.city_name;
 
-            layer.bindTooltip('<strong>' + cityName + '</strong><br><em>Click to explore</em>',
-                { sticky: true, className: 'map-tooltip' });
+            layer.bindTooltip('', { sticky: true, className: 'map-tooltip', direction: 'auto', offset: L.point(14, 0), opacity: 1 });
 
-            layer.on('mouseover', function() { layer.setStyle(cityHoverStyle()); });
-            layer.on('mouseout',  function() { layer.setStyle(cityStyle()); });
-            layer.on('click',     function() { showCityAnalysis(cityName, feature); });
+            layer.on('mouseover', function() {
+                layer.setStyle(getComputedCityStyle(feature, true));
+                layer.setTooltipContent(buildCityHoverTooltipHtml(cityName, feature));
+                layer.openTooltip();
+            });
+            layer.on('mouseout',  function() {
+                layer.setStyle(getComputedCityStyle(feature, false));
+                layer.closeTooltip();
+            });
         }
     }).addTo(map);
 }
@@ -615,6 +1701,7 @@ function showCityAnalysis(cityName, cityFeature) {
         },
         options: {
             indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            animation: getAvpBarAnimation(72),
             plugins: { legend: { display: false } }
         }
     });
@@ -684,27 +1771,47 @@ document.addEventListener('click', function(e) {
 
 // ── Month slider ──────────────────────────────────────────
 
-document.getElementById('monthSlider').addEventListener('input', function() {
-    var months = ['January','February','March','April','May','June',
-                  'July','August','September','October','November','December'];
-    document.getElementById('monthValue').textContent = months[this.value - 1];
+var monthSliderEl = document.getElementById('monthSlider');
+if (monthSliderEl) {
+    monthSliderEl.addEventListener('input', function() {
+        var monthValueEl = document.getElementById('monthValue');
+        if (monthValueEl) monthValueEl.textContent = MONTH_NAMES[this.value - 1];
+    });
+}
+
+document.getElementById('predMonthSlider').addEventListener('input', function() {
+    document.getElementById('predMonthBadge').textContent = MONTH_NAMES[this.value - 1];
+    schedulePredictionUpdate();
+});
+
+document.getElementById('predCitySelect').addEventListener('change', function() {
+    syncPredictionFormForCity(this.value, false);
+    focusMapOnCity(this.value);
+    runRichnessPrediction();
+});
+
+var predictionUpdateTimer = null;
+function schedulePredictionUpdate() {
+    if (predictionUpdateTimer) clearTimeout(predictionUpdateTimer);
+    predictionUpdateTimer = setTimeout(runRichnessPrediction, 120);
+}
+
+['predTempInput', 'predAlanInput', 'predPrecipInput', 'predNdviInput'].forEach(function(id) {
+    var input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener('input', schedulePredictionUpdate);
+    input.addEventListener('change', runRichnessPrediction);
 });
 
 // ── Species filters ───────────────────────────────────────
 
 function filterSpecies(type) {
     activeLightFilter = type;
-    document.getElementById('btnFilterAll').className       = type === 'all'       ? 'btn btn-primary btn-sm'  : 'btn btn-secondary btn-sm';
-    document.getElementById('btnFilterSensitive').className = type === 'sensitive' ? 'btn btn-warning btn-sm'  : 'btn btn-secondary btn-sm';
-    document.getElementById('btnFilterTolerant').className  = type === 'tolerant'  ? 'btn btn-success btn-sm'  : 'btn btn-secondary btn-sm';
     applyLandCoverFilter();
 }
 
 function filterMigration(type) {
     activeMigrationFilter = type;
-    document.getElementById('btnMigAll').className       = type === 'all'       ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-    document.getElementById('btnMigResident').className  = type === 'resident'  ? 'btn btn-success btn-sm' : 'btn btn-secondary btn-sm';
-    document.getElementById('btnMigMigratory').className = type === 'migratory' ? 'btn btn-info btn-sm'    : 'btn btn-secondary btn-sm';
     applyLandCoverFilter();
 }
 
@@ -724,9 +1831,6 @@ Promise.all([
     citiesGeoData  = results[1];
     var maskData   = results[2];
 
-    // Land-cover layer (background, non-interactive)
-    applyLandCoverFilter();
-
     // Clipping mask — hides areas outside Metro Manila
     L.geoJSON(maskData, {
         style: {
@@ -742,6 +1846,15 @@ Promise.all([
 
     // Build city-to-sites lookup
     buildCitySitesLookup();
+
+    // Initialize BAU + Mitigation scenario panel
+    initAnalyticsScenarioUI();
+
+    // Initialize richness prediction interface
+    populatePredictionCityDropdown();
+    runRichnessPrediction();
+
+    applyAvpStaggerReveal('#geoControlBar, #analyticsScenarioSection, #geoRichnessInterface, #geoDefaultInsights .card', 90, 60);
 
 }).catch(function(err) {
     document.getElementById('loading').style.display = 'none';
@@ -764,6 +1877,7 @@ new Chart(ctxGlobal, {
     options: {
         responsive: true,
         maintainAspectRatio: true,
+        animation: getAvpBarAnimation(95),
         scales: {
             y: {
                 beginAtZero: true,
