@@ -20,8 +20,7 @@ require_once 'includes/header.php';
                 <label class="form-label">Select CSV/Excel File:</label>
                 <input type="file" class="form-control" id="dataFile" accept=".csv,.xlsx" required>
                 <small style="color: #666;">
-                    Accepted formats: CSV, XLSX. Max size: 50MB. 
-                    Required columns: species_name, latitude, longitude, date, observer
+                    Accepted formats: CSV, XLSX &nbsp;|&nbsp; Max size: 150 MB<br>
                 </small>
             </div>
             <button type="submit" class="btn btn-primary">Upload & Validate</button>
@@ -31,53 +30,58 @@ require_once 'includes/header.php';
     </div>
 </div>
 
-<!-- API Management -->
-<div class="grid-2">
-    <div class="card">
-        <h2 class="card-header">Satellite Data Fetch</h2>
-        <div class="card-body">
-            <h4>NASA VIIRS (Light Pollution)</h4>
-            <button class="btn btn-primary" onclick="fetchVIIRS()">
-                Fetch Latest VIIRS Data
-            </button>
-            <p style="margin-top: 10px; color: #666;">
-                <strong>Last Fetch:</strong> 2026-01-28 14:30 UTC<br>
-                <strong>Status:</strong> <span class="badge badge-success">Up to date</span>
-            </p>
-            
-            <hr style="margin: 20px 0;">
-            
-            <h4>MODIS NDVI (Vegetation)</h4>
-            <button class="btn btn-primary" onclick="fetchMODIS()">
-                Fetch Latest MODIS Data
-            </button>
-            <p style="margin-top: 10px; color: #666;">
-                <strong>Last Fetch:</strong> 2026-01-25 08:15 UTC<br>
-                <strong>Status:</strong> <span class="badge badge-warning">Update Available</span>
-            </p>
-        </div>
-    </div>
-    
-    <div class="card">
-        <h2 class="card-header">Weather Data (NOAA)</h2>
-        <div class="card-body">
-            <h4>Temperature & Precipitation</h4>
-            <button class="btn btn-primary" onclick="fetchNOAA()">
-                Fetch NOAA Climate Data
-            </button>
-            <p style="margin-top: 10px; color: #666;">
-                <strong>Last Fetch:</strong> 2026-01-30 06:00 UTC<br>
-                <strong>Status:</strong> <span class="badge badge-success">Up to date</span>
-            </p>
-            
-            <div style="margin-top: 20px; padding: 15px; background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: 8px;">
-                <strong>Auto-Fetch Schedule:</strong>
-                <ul style="margin-top: 10px;">
-                    <li>VIIRS: Weekly (Mondays 02:00)</li>
-                    <li>MODIS: Bi-weekly (1st & 15th)</li>
-                    <li>NOAA: Daily (06:00 UTC)</li>
-                </ul>
+<!-- Environmental Covariates -->
+<div class="card">
+    <h2 class="card-header">Environmental Covariates</h2>
+    <div class="card-body">
+        <div class="grid-2">
+
+            <!-- Left column -->
+            <div>
+                <h4>Artificial Light (VIIRS)</h4>
+                <button class="btn btn-primary" onclick="fetchVIIRS.call(this, this)">
+                    Fetch Artificial Light (VIIRS) Data
+                </button>
+                <p style="margin-top: 10px; color: #666;">
+                    <strong>Last Fetch:</strong> <span data-cov-fetch="viirs">Loading...</span><br>
+                    <strong>Status:</strong> <span data-cov-status="viirs" class="badge">Loading...</span>
+                </p>
+
+                <hr style="margin: 20px 0;">
+
+                <h4>Land Surface Temperature (MODIS)</h4>
+                <button class="btn btn-primary" onclick="fetchNOAATemp.call(this, this)">
+                    Fetch Land Surface Temperature (MODIS) Data
+                </button>
+                <p style="margin-top: 10px; color: #666;">
+                    <strong>Last Fetch:</strong> <span data-cov-fetch="land_temp">Loading...</span><br>
+                    <strong>Status:</strong> <span data-cov-status="land_temp" class="badge">Loading...</span>
+                </p>
             </div>
+
+            <!-- Right column -->
+            <div>
+                <h4>Vegetation Index (MODIS)</h4>
+                <button class="btn btn-primary" onclick="fetchMODIS.call(this, this)">
+                    Fetch Vegetation Index (MODIS) Data
+                </button>
+                <p style="margin-top: 10px; color: #666;">
+                    <strong>Last Fetch:</strong> <span data-cov-fetch="ndvi">Loading...</span><br>
+                    <strong>Status:</strong> <span data-cov-status="ndvi" class="badge">Loading...</span>
+                </p>
+
+                <hr style="margin: 20px 0;">
+
+                <h4>Precipitation (CHIRPS)</h4>
+                <button class="btn btn-primary" onclick="fetchNOAAPrecip.call(this, this)">
+                    Fetch Precipitation (CHIRPS) Data
+                </button>
+                <p style="margin-top: 10px; color: #666;">
+                    <strong>Last Fetch:</strong> <span data-cov-fetch="precip">Loading...</span><br>
+                    <strong>Status:</strong> <span data-cov-status="precip" class="badge">Loading...</span>
+                </p>
+            </div>
+
         </div>
     </div>
 </div>
@@ -310,6 +314,62 @@ require_once 'includes/header.php';
 <?php
 $extra_scripts = <<<'EOD'
 <script>
+// ── Covariate status loader ───────────────────────────────────────────────────
+
+const STATUS_BADGE = {
+    'Up to Date':             'badge-success',
+    'Fetch Required':         'badge-danger',
+    'Ahead of Observations':  'badge-info',
+    'No Data':                'badge-warning',
+    'No Observations':        'badge-warning',
+};
+
+function formatLastFetch(ingestedAt) {
+    if (!ingestedAt) return 'Never';
+    const ts = ingestedAt.replace('T', ' ').substring(0, 16) + ' UTC';
+    return ts;
+}
+
+function loadCovariateStatus() {
+    fetch('api/covariate_status.php?t=' + Date.now())
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                ['viirs','ndvi','land_temp','precip'].forEach(key => {
+                    document.querySelector(`[data-cov-fetch="${key}"]`).textContent = 'Error';
+                    const s = document.querySelector(`[data-cov-status="${key}"]`);
+                    s.textContent = 'Error';
+                    s.className = 'badge badge-warning';
+                });
+                return;
+            }
+
+            Object.entries(data.covariates).forEach(([key, cov]) => {
+                const fetchEl  = document.querySelector(`[data-cov-fetch="${key}"]`);
+                const statusEl = document.querySelector(`[data-cov-status="${key}"]`);
+
+                fetchEl.innerHTML = formatLastFetch(cov.ingested_at);
+
+                const badgeClass = STATUS_BADGE[cov.status] || 'badge-secondary';
+                statusEl.textContent = cov.status;
+                statusEl.className   = 'badge ' + badgeClass;
+            });
+        })
+        .catch(() => {
+            ['viirs','ndvi','land_temp','precip'].forEach(key => {
+                document.querySelector(`[data-cov-fetch="${key}"]`).textContent = 'Unavailable';
+                const s = document.querySelector(`[data-cov-status="${key}"]`);
+                s.textContent = 'Unavailable';
+                s.className = 'badge badge-warning';
+            });
+        });
+}
+
+// Load on page ready, then refresh every 60 seconds
+document.addEventListener('DOMContentLoaded', loadCovariateStatus);
+setInterval(loadCovariateStatus, 60000);
+
+// ── Data upload form ──────────────────────────────────────────────────────────
 // Data upload form
 document.getElementById('dataUploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
@@ -324,8 +384,8 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
     const file = fileInput.files[0];
     
     // Validate file size
-    if (file.size > 50 * 1024 * 1024) {
-        statusDiv.innerHTML = '<div class="alert alert-danger">File too large. Maximum size: 50MB</div>';
+    if (file.size > 150 * 1024 * 1024) {
+        statusDiv.innerHTML = '<div class="alert alert-danger">File exceeds the file size limit of 150MB.</div>';
         return;
     }
     
@@ -342,8 +402,15 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
     const formData = new FormData();
     formData.append('file', file);
     
-    fetch('/api/upload_data.php', { method: 'POST', body: formData })
-        .then(r => r.json())
+    fetch('api/upload_data.php', { method: 'POST', body: formData })
+        .then(r => {
+            if (!r.ok) {
+                return r.text().then(text => {
+                    throw new Error(`Server returned ${r.status}: ${text.substring(0, 300)}`);
+                });
+            }
+            return r.json();
+        })
         .then(data => {
             if (data.success) {
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ ${data.message}</strong></div>`;
@@ -351,8 +418,8 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
             }
         })
-        .catch(() => {
-            statusDiv.innerHTML = '<div class="alert alert-danger">Upload request failed. Check server connection.</div>';
+        .catch(err => {
+            statusDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${err.message}</div>`;
         });
 });
 
@@ -374,45 +441,119 @@ document.getElementById('modelUploadForm').addEventListener('submit', function(e
         .catch(() => alert('Model upload request failed. Check server connection.'));
 });
 
-// API fetch functions
-function fetchVIIRS() {
-    if (confirm('Fetch latest VIIRS data from NASA? This may take 5-10 minutes.')) {
-        fetch('/api/fetch_satellite.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'VIIRS' })
-        })
-            .then(r => r.json())
-            .then(data => alert(data.message || 'VIIRS fetch initiated.'))
-            .catch(() => alert('Request failed. Check server connection.'));
-    }
+// ── Covariate fetch functions ─────────────────────────────────────────────────
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/**
+ * Shared fetch logic for all 4 covariates.
+ * 1. Calls the backend to compute missing (year, month) chunks.
+ * 2. Shows the user exactly what will be fetched before proceeding.
+ * 3. Refreshes the covariate status panel on completion.
+ */
+// Safely parse a fetch Response — returns the JSON data or throws with a
+// readable message that includes the raw server response (up to 300 chars).
+function safeJson(r) {
+    return r.text().then(text => {
+        try {
+            return JSON.parse(text);
+        } catch (_) {
+            throw new Error(`Server returned HTTP ${r.status}. Response: ${text.substring(0, 300)}`);
+        }
+    });
 }
 
-function fetchMODIS() {
-    if (confirm('Fetch latest MODIS NDVI data? This may take 5-10 minutes.')) {
-        fetch('/api/fetch_satellite.php', {
+function fetchCovariate(btn, source, label) {
+    btn.disabled = true;
+    btn.textContent = 'Checking missing periods…';
+
+    // Step 1 — dry run: ask backend which (year, month) periods are missing
+    fetch('api/fetch_satellite.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source })
+    })
+    .then(safeJson)
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = `Fetch ${label} Data`;
+
+        if (!data.success) {
+            alert(`${label} error:\n\n${data.error || JSON.stringify(data)}`);
+            return;
+        }
+
+        // Nothing missing
+        if (!data.missing || data.missing.length === 0) {
+            alert(`${label} is already up to date with all bird observation periods.`);
+            loadCovariateStatus();
+            return;
+        }
+
+        // Step 2 — show user exactly which periods will be fetched (first batch)
+        const batchSize  = 10;
+        const totalCount = data.missing.length;
+        const thisBatch  = data.missing.slice(0, batchSize);
+        const periodList = thisBatch
+            .map(p => `${MONTH_NAMES[p.month - 1]} ${p.year}`)
+            .join(', ');
+        const remaining  = totalCount - thisBatch.length;
+        const remainNote = remaining > 0
+            ? `\n\n${remaining} period(s) will remain after this batch — click Fetch again to continue.`
+            : '';
+
+        const confirmed = confirm(
+            `${label}: ${totalCount} missing period(s) found.\n\n` +
+            `Fetching next ${thisBatch.length} from GEE:\n${periodList}` +
+            remainNote + `\n\nProceed? This may take a few minutes.`
+        );
+
+        if (!confirmed) return;
+
+        // Step 3 — confirmed: trigger actual GEE fetch
+        btn.disabled = true;
+        btn.textContent = `Fetching ${thisBatch.length} of ${totalCount} period(s)…`;
+
+        fetch('api/fetch_satellite.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'MODIS' })
+            body: JSON.stringify({ source, confirmed: true })
         })
-            .then(r => r.json())
-            .then(data => alert(data.message || 'MODIS fetch initiated.'))
-            .catch(() => alert('Request failed. Check server connection.'));
-    }
+        .then(safeJson)
+        .then(result => {
+            btn.disabled = false;
+            btn.textContent = `Fetch ${label} Data`;
+            loadCovariateStatus();
+            if (result.success) {
+                let msg = result.message || 'Batch complete.';
+                if (result.remaining_count > 0) {
+                    msg += `\n\n${result.remaining_count} period(s) still remaining. Click Fetch again to continue.`;
+                }
+                if (result.errors && result.errors.length > 0) {
+                    msg += `\n\nWarnings:\n${result.errors.join('\n')}`;
+                }
+                alert(`${label}:\n\n${msg}`);
+            } else {
+                alert(`${label} fetch failed:\n\n${result.error || JSON.stringify(result)}`);
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.textContent = `Fetch ${label} Data`;
+            alert(`${label} fetch failed:\n\n${err.message}`);
+        });
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = `Fetch ${label} Data`;
+        alert(`${label} check failed:\n\n${err.message}`);
+    });
 }
 
-function fetchNOAA() {
-    if (confirm('Fetch latest NOAA climate data?')) {
-        fetch('/api/fetch_satellite.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'NOAA' })
-        })
-            .then(r => r.json())
-            .then(data => alert(data.message || 'NOAA fetch initiated.'))
-            .catch(() => alert('Request failed. Check server connection.'));
-    }
-}
+function fetchVIIRS()     { fetchCovariate(this, 'viirs',     'Artificial Light (VIIRS)'); }
+function fetchMODIS()     { fetchCovariate(this, 'ndvi',      'Vegetation Index (MODIS)'); }
+function fetchNOAATemp()  { fetchCovariate(this, 'land_temp', 'Land Surface Temperature (MODIS)'); }
+function fetchNOAAPrecip(){ fetchCovariate(this, 'precip',    'Precipitation (CHIRPS)'); }
 
 // Model switching
 function switchModel(version) {
