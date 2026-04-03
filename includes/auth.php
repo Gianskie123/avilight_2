@@ -38,8 +38,3 @@ function logout() {
     exit;
 }
 
-// Handle logout request
-if (isset($_GET['logout'])) {
-    logout();
-}
-?>

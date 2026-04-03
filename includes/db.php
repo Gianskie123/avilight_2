@@ -2,6 +2,10 @@
 /**
  * db.php
  *
+ * Provides two database connections:
+ *   get_db()       – PDO connection to the legacy SQLite database.
+ *   get_mysql_db() – PDO connection to the MySQL/MariaDB `avilight` database.
+ *
  * Returns a PDO connection to the SQLite database.
  * On first call (when the DB file does not yet exist) both CSV datasets are
  * imported automatically:
@@ -173,4 +177,32 @@ function _init_db(PDO $pdo, string $csv_root): void {
         $pdo->commit();
         fclose($handle);
     }
+}
+
+// ── MySQL / MariaDB connection ─────────────────────────────────────────────────
+
+/**
+ * Returns a singleton PDO connection to the MySQL `avilight` database.
+ * Credentials match standard XAMPP defaults; adjust if your setup differs.
+ */
+function get_mysql_db(): PDO {
+    static $mysql_pdo = null;
+    if ($mysql_pdo !== null) {
+        return $mysql_pdo;
+    }
+
+    $host   = '127.0.0.1';
+    $port   = '3306';
+    $dbname = 'avilight';
+    $user   = 'root';
+    $pass   = '';
+
+    $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
+    $mysql_pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ]);
+
+    return $mysql_pdo;
 }
