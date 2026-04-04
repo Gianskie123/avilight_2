@@ -8,7 +8,7 @@
  */
 
 // Base URL of the Python backend (FastAPI / Flask)
-define('PYTHON_BACKEND_URL', getenv('PYTHON_BACKEND_URL') ?: 'http://localhost:5000');
+define('PYTHON_BACKEND_URL', getenv('PYTHON_BACKEND_URL') ?: 'http://127.0.0.1:5000');
 
 // ── Python worker configuration ───────────────────────────────────────────────
 

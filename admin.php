@@ -2,6 +2,21 @@
 $page_title = 'Admin Panel';
 require_once 'includes/auth.php';
 require_admin(); // Require admin access
+require_once 'includes/db.php';
+
+$model_rows = [];
+$model_error = null;
+try {
+    $model_db = get_mysql_db();
+    $stmt = $model_db->query(
+        "SELECT version_name, status, created_at
+         FROM models
+         ORDER BY created_at DESC, id DESC"
+    );
+    $model_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $model_error = $e->getMessage();
+}
 require_once 'includes/header.php';
 ?>
 
@@ -27,6 +42,17 @@ require_once 'includes/header.php';
         </form>
         
         <div id="uploadStatus" style="margin-top: 15px;"></div>
+
+        <hr style="margin: 20px 0;">
+
+        <h4>Analytics Cache</h4>
+        <p style="margin: 0 0 10px 0; color: #666;">
+            Rebuild precomputed analytics summaries used by the Analytics tab for faster loading.
+        </p>
+        <button type="button" class="btn btn-secondary" id="rebuildAnalyticsBtn" onclick="rebuildAnalyticsCache()">
+            Rebuild Analytics Cache
+        </button>
+        <div id="analyticsCacheStatus" style="margin-top: 10px;"></div>
     </div>
 </div>
 
@@ -96,8 +122,12 @@ require_once 'includes/header.php';
                 <form id="modelUploadForm">
                     <div class="form-group">
                         <label class="form-label">Model File:</label>
-                        <input type="file" class="form-control" id="modelFile" accept=".pkl,.h5,.pth" required>
-                        <small style="color: #666;">Supported: .pkl (XGBoost), .h5 (ConvLSTM), .pth (PyTorch)</small>
+                        <input type="file" class="form-control" id="modelFile" accept=".zip,.pkl,.h5,.pth" required>
+                        <small style="color: #666;">
+                            Recommended: upload one .zip bundle containing<br>
+                            xgb_tolerant.json, xgb_sensitive.json, xgb_resident.json, xgb_migrant.json,<br>
+                            convlstm_classifier.keras, convlstm_regressor.keras, meta_learner.joblib
+                        </small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Version Name:</label>
@@ -123,26 +153,44 @@ require_once 'includes/header.php';
                         </tr>
                     </thead>
                     <tbody>
+                        <?php if ($model_error !== null): ?>
                         <tr>
-                            <td><strong>v2.1.0</strong></td>
-                            <td>2026-01-15</td>
-                            <td><span class="badge badge-success">Active</span></td>
-                            <td>-</td>
+                            <td colspan="4" style="color: #b91c1c;">Failed to load model versions: <?php echo htmlspecialchars($model_error); ?></td>
                         </tr>
+                        <?php elseif (empty($model_rows)): ?>
                         <tr>
-                            <td>v2.0.3</td>
-                            <td>2025-12-10</td>
-                            <td><span class="badge badge-info">Backup</span></td>
-                            <td><button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="switchModel('v2.0.3')">Switch</button></td>
+                            <td colspan="4" style="color: #666;">No model versions found yet.</td>
                         </tr>
+                        <?php else: ?>
+                        <?php foreach ($model_rows as $row): ?>
+                        <?php
+                            $status = (string)($row['status'] ?? 'Archived');
+                            $version = (string)($row['version_name'] ?? '');
+                            $created_at = (string)($row['created_at'] ?? '');
+                            $badge = 'badge-info';
+                            if ($status === 'Active') {
+                                $badge = 'badge-success';
+                            } elseif ($status === 'Archived') {
+                                $badge = 'badge-secondary';
+                            }
+                        ?>
                         <tr>
-                            <td>v2.0.2</td>
-                            <td>2025-11-05</td>
-                            <td><span class="badge badge-info">Archived</span></td>
-                            <td><button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="switchModel('v2.0.2')">Switch</button></td>
+                            <td><?php echo $status === 'Active' ? '<strong>' . htmlspecialchars($version) . '</strong>' : htmlspecialchars($version); ?></td>
+                            <td><?php echo htmlspecialchars(substr($created_at, 0, 10)); ?></td>
+                            <td><span class="badge <?php echo $badge; ?>"><?php echo htmlspecialchars($status); ?></span></td>
+                            <td>
+                                <?php if ($status === 'Active'): ?>
+                                -
+                                <?php else: ?>
+                                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick='switchModel(<?php echo json_encode($version, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>)'>Switch</button>
+                                <?php endif; ?>
+                            </td>
                         </tr>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
+                <div id="modelStatus" style="margin-top: 10px;"></div>
             </div>
         </div>
     </div>
@@ -414,6 +462,7 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
         .then(data => {
             if (data.success) {
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ ${data.message}</strong></div>`;
+                rebuildAnalyticsCache(true);
             } else {
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
             }
@@ -423,22 +472,81 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
         });
 });
 
+function rebuildAnalyticsCache(silent = false) {
+    const btn = document.getElementById('rebuildAnalyticsBtn');
+    const statusEl = document.getElementById('analyticsCacheStatus');
+
+    btn.disabled = true;
+    if (!silent) {
+        statusEl.innerHTML = '<div class="alert alert-info">Rebuilding analytics cache...</div>';
+    }
+
+    fetch('api/rebuild_analytics_cache.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'metro' })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Cache rebuild failed.'}</div>`;
+                return;
+            }
+            const rows = Number(data.row_count || 0);
+            const refreshedAt = data.refreshed_at || 'n/a';
+            const bau = data.bau_cache || {};
+            const bauRows = Number(bau.rows || 0);
+            const bauRefreshed = bau.refreshed_at || 'n/a';
+            const bauOk = Number(bau.prewarm_ok || 0);
+            const bauFailed = Number(bau.prewarm_failed || 0);
+            const bauScope = bau.scope || 'metro';
+            const targetCities = Number(bau.target_cities || 0);
+            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Analytics cache rebuilt.'}<br><small>Latest Sites: ${rows} | Refreshed: ${refreshedAt}<br>BAU Scope: ${bauScope} | Target Cities: ${targetCities}<br>BAU Baselines: ${bauRows} | Prewarm OK: ${bauOk} | Failed: ${bauFailed} | Refreshed: ${bauRefreshed}</small></div>`;
+        })
+        .catch(() => {
+            statusEl.innerHTML = '<div class="alert alert-danger">Cache rebuild request failed. Check server connection.</div>';
+        })
+        .finally(() => {
+            btn.disabled = false;
+        });
+}
+
 // Model upload form
 document.getElementById('modelUploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const file    = document.getElementById('modelFile').files[0];
     const version = document.getElementById('versionName').value;
     const desc    = document.getElementById('versionDesc').value;
+    const statusEl = document.getElementById('modelStatus');
+
+    if (!file) {
+        statusEl.innerHTML = '<div class="alert alert-danger">Please select a model file.</div>';
+        return;
+    }
+    if (!version.trim()) {
+        statusEl.innerHTML = '<div class="alert alert-danger">Version name is required.</div>';
+        return;
+    }
+    statusEl.innerHTML = '<div class="alert alert-info">Uploading model...</div>';
     
     const formData = new FormData();
     formData.append('file', file);
     formData.append('version', version);
     formData.append('description', desc);
     
-    fetch('/api/upload_model.php', { method: 'POST', body: formData })
+    fetch('api/upload_model.php', { method: 'POST', body: formData })
         .then(r => r.json())
-        .then(data => alert(data.message || 'Model upload complete.'))
-        .catch(() => alert('Model upload request failed. Check server connection.'));
+        .then(data => {
+            if (!data.success) {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Model upload failed.'}</div>`;
+                return;
+            }
+            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Model upload complete.'}</div>`;
+            setTimeout(() => window.location.reload(), 700);
+        })
+        .catch(() => {
+            statusEl.innerHTML = '<div class="alert alert-danger">Model upload request failed. Check server connection.</div>';
+        });
 });
 
 // ── Covariate fetch functions ─────────────────────────────────────────────────
@@ -557,15 +665,26 @@ function fetchNOAAPrecip(){ fetchCovariate(this, 'precip',    'Precipitation (CH
 
 // Model switching
 function switchModel(version) {
+    const statusEl = document.getElementById('modelStatus');
     if (confirm(`Switch to model version ${version}? This will affect all predictions.`)) {
-        fetch('/api/switch_model.php', {
+        statusEl.innerHTML = `<div class="alert alert-info">Switching to ${version}...</div>`;
+        fetch('api/switch_model.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ version: version })
         })
             .then(r => r.json())
-            .then(data => alert(data.message || `Switched to ${version}.`))
-            .catch(() => alert('Request failed. Check server connection.'));
+            .then(data => {
+                if (!data.success) {
+                    statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Model switch failed.'}</div>`;
+                    return;
+                }
+                statusEl.innerHTML = `<div class="alert alert-info">${data.message || `Switched to ${version}.`}</div>`;
+                setTimeout(() => window.location.reload(), 700);
+            })
+            .catch(() => {
+                statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
+            });
     }
 }
 
