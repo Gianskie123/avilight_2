@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import importlib.util
 import xgboost as xgb
 import tensorflow as tf
 import joblib
@@ -8,7 +9,7 @@ import numpy as np
 import pandas as pd
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, Dict, List
 
 # =====================================================================
 # 1. API INITIALIZATION & CORS SETUP
@@ -31,6 +32,14 @@ print("Loading Machine Learning Models into memory...")
 # Set correct paths - since model.py is now in avilight-main folder
 BASE_DIR = Path(__file__).parent
 MODEL_DIR = BASE_DIR / "api_models"
+
+DIAGNOSTICS_SCRIPT = BASE_DIR / "api" / "diagnostics_inference.py"
+diagnostics_module = None
+if DIAGNOSTICS_SCRIPT.exists():
+    diagnostics_spec = importlib.util.spec_from_file_location("diagnostics_inference", str(DIAGNOSTICS_SCRIPT))
+    if diagnostics_spec and diagnostics_spec.loader:
+        diagnostics_module = importlib.util.module_from_spec(diagnostics_spec)
+        diagnostics_spec.loader.exec_module(diagnostics_module)
 
 print(f"Looking for models in: {MODEL_DIR}")
 
@@ -78,9 +87,9 @@ try:
     # C. Load Meta-Learner
     meta_model = joblib.load(str(MODEL_DIR / "meta_learner.joblib"))
 
-    print("✅ All models loaded successfully!")
+    print("[OK] All models loaded successfully!")
 except Exception as e:
-    print(f"❌ Error loading models: {e}")
+    print(f"[ERROR] Error loading models: {e}")
     print(f"Model directory: {MODEL_DIR}")
     print("Make sure your 'api_models' folder is in the avilight-main directory.")
 
@@ -112,6 +121,11 @@ class ScenarioRequest(BaseModel):
     lc_dummy_3: float = 0.0
     lc_dummy_4: float = 0.0
     lc_dummy_5: float = 0.0
+
+
+class DiagnosticsRequest(BaseModel):
+    rows: List[Dict[str, Any]]
+    model_dir: Optional[str] = None
     
 def reconcile_predictions(preds_array):
     """The strict mathematical gatekeeper formula."""
@@ -148,6 +162,22 @@ def to_sorted_shap_chart(groups):
     chart = [{"feature": k, "importance": float(v)} for k, v in groups.items()]
     chart.sort(key=lambda item: item["importance"], reverse=True)
     return chart
+
+
+@app.post("/diagnostics")
+async def diagnostics_report(data: DiagnosticsRequest):
+    if diagnostics_module is None or not hasattr(diagnostics_module, "compute_diagnostics"):
+        raise HTTPException(status_code=500, detail="Diagnostics engine is unavailable.")
+
+    payload = {
+        "rows": data.rows,
+        "model_dir": data.model_dir or str(MODEL_DIR),
+    }
+
+    try:
+        return diagnostics_module.compute_diagnostics(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Diagnostics failed: {exc}")
 
 # =====================================================================
 # 4. THE PREDICTION ENGINE

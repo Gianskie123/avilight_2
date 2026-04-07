@@ -235,6 +235,55 @@ require_once 'includes/header.php';
                 </div>
             </div>
         </div>
+
+        <hr style="margin: 20px 0;">
+
+        <h4>KBA/PA Audit Effectiveness Weights</h4>
+        <p style="margin: 0 0 14px 0; color: #666;">
+            Suggested weights for the 7-pillar KBA/PA audit score. The total may be kept at 100% for the current formula.
+        </p>
+
+        <div class="grid-2">
+            <div>
+                <div class="form-group">
+                    <label class="form-label">Richness Weight (%)</label>
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaRichnessWeight">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Density Weight (%)</label>
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaDensityWeight">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Sensitive Species Weight (%)</label>
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaSensitiveWeight">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NDVI Weight (%)</label>
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaNdviWeight">
+                </div>
+            </div>
+
+            <div>
+                <div class="form-group">
+                    <label class="form-label">ALAN Weight (%)</label>
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaAlanWeight">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">LST Weight (%)</label>
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaLstWeight">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Precipitation Weight (%)</label>
+                    <input type="number" class="form-control" value="10" min="0" max="100" step="0.1" id="kbaPrecipWeight">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Total Weight (%)</label>
+                    <input type="text" class="form-control" id="kbaWeightTotal" value="100.0" readonly>
+                    <small style="color: #666;">A total of 100% is suggested for the current scoring model.</small>
+                </div>
+            </div>
+        </div>
+
         <button class="btn btn-primary" style="margin-top: 15px;" onclick="saveThresholds()">Save Configuration</button>
     </div>
 </div>
@@ -696,7 +745,14 @@ function saveThresholds() {
         low_risk:      document.getElementById('lowRiskThreshold').value,
         critical_shap: document.getElementById('criticalShap').value,
         warning_shap:  document.getElementById('warningShap').value,
-        positive_shap: document.getElementById('positiveShap').value
+        positive_shap: document.getElementById('positiveShap').value,
+        kba_richness_weight: document.getElementById('kbaRichnessWeight').value,
+        kba_density_weight: document.getElementById('kbaDensityWeight').value,
+        kba_sensitive_weight: document.getElementById('kbaSensitiveWeight').value,
+        kba_ndvi_weight: document.getElementById('kbaNdviWeight').value,
+        kba_alan_weight: document.getElementById('kbaAlanWeight').value,
+        kba_lst_weight: document.getElementById('kbaLstWeight').value,
+        kba_precip_weight: document.getElementById('kbaPrecipWeight').value
     };
     
     fetch('/api/save_thresholds.php', {
@@ -708,6 +764,38 @@ function saveThresholds() {
         .then(data => alert(data.message || 'Thresholds saved.'))
         .catch(() => alert('Request failed. Check server connection.'));
 }
+
+function updateKbaWeightTotal() {
+    const ids = [
+        'kbaRichnessWeight',
+        'kbaDensityWeight',
+        'kbaSensitiveWeight',
+        'kbaNdviWeight',
+        'kbaAlanWeight',
+        'kbaLstWeight',
+        'kbaPrecipWeight'
+    ];
+
+    const total = ids.reduce((sum, id) => {
+        const el = document.getElementById(id);
+        const value = el ? parseFloat(el.value) : 0;
+        return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+
+    const totalEl = document.getElementById('kbaWeightTotal');
+    if (totalEl) {
+        totalEl.value = total.toFixed(1);
+        totalEl.style.color = Math.abs(total - 100) < 0.01 ? '#15803d' : '#b91c1c';
+    }
+}
+
+['kbaRichnessWeight','kbaDensityWeight','kbaSensitiveWeight','kbaNdviWeight','kbaAlanWeight','kbaLstWeight','kbaPrecipWeight'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+        el.addEventListener('input', updateKbaWeightTotal);
+    }
+});
+updateKbaWeightTotal();
 </script>
 EOD;
 

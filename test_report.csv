@@ -1,0 +1,21 @@
+AviLight Statistical Reports Export
+Generated At,2026-04-05 09:46:55 UTC
+Area,All Areas
+Start Year,2014
+End Year,2024
+
+ENSEMBLE METRICS
+Metric,Value
+RMSE,-
+MAE,-
+R2,-
+
+CORRELATION ANALYSIS
+Metric,Value
+Richness vs VIIRS,
+Richness vs NDVI,
+Richness vs LST,
+Richness vs Precip,
+
+HISTORICAL TRENDS
+Year,Bird Richness,VIIRS,NDVI,LST,Precipitation

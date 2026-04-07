@@ -4,25 +4,120 @@ require_once 'includes/header.php';
 
 // Load data
 require_once 'includes/db.php';
-$pdo         = get_db();
+$pdo           = get_db();
 $total_species = (int) $pdo->query('SELECT COUNT(*) FROM species')->fetchColumn();
-$kba_data    = json_decode(file_get_contents('data/sample_kba.json'), true);
+
+// KBA / PA site definitions – geographic/policy facts; enriched below with live DB values
+$kba_data = [
+    ['id' => 1, 'name' => 'La Mesa Watershed',                    'type' => 'KBA', 'latitude' => 14.7167, 'longitude' => 121.0833, 'area_hectares' => 2700,  'status' => 'Protected',           'species_count' => null, 'light_exposure' => null],
+    ['id' => 2, 'name' => 'Ninoy Aquino Parks & Wildlife Center', 'type' => 'PA',  'latitude' => 14.6537, 'longitude' => 121.0499, 'area_hectares' => 64,    'status' => 'Protected',           'species_count' => null, 'light_exposure' => null],
+    ['id' => 3, 'name' => 'Las Piñas-Parañaque Critical Habitat', 'type' => 'KBA', 'latitude' => 14.4500, 'longitude' => 120.9833, 'area_hectares' => 175,   'status' => 'Protected',           'species_count' => null, 'light_exposure' => null],
+    ['id' => 4, 'name' => 'Marikina Watershed',                   'type' => 'PA',  'latitude' => 14.6833, 'longitude' => 121.1333, 'area_hectares' => 1800,  'status' => 'Protected',           'species_count' => null, 'light_exposure' => null],
+    ['id' => 5, 'name' => 'Laguna de Bay Wetlands',               'type' => 'KBA', 'latitude' => 14.3833, 'longitude' => 121.2667, 'area_hectares' => 90000, 'status' => 'Partially Protected', 'species_count' => null, 'light_exposure' => null],
+];
+
+// Enrich KBA/PA sites with real data from the MySQL avilight database
+$db_failed = false;
+try {
+    $mysql  = get_mysql_db();
+    $radius = 0.15; // bounding box half-width in degrees (≈ ±0.15° at ~14°N)
+
+    // Latest year with VIIRS radiance data (null when the table is empty)
+    $viirs_max_year = null;
+    try {
+        $yr = $mysql->query('SELECT MAX(year) FROM viirs')->fetchColumn();
+        if ($yr !== false && $yr !== null) {
+            $viirs_max_year = (int) $yr;
+        }
+    } catch (Throwable $e) { /* viirs table may not exist yet */ }
+
+    // Build a UNION ALL of site bounding boxes so both counts can be fetched in
+    // a single query each, avoiding a per-site (N+1) round-trip pattern.
+    $union_parts  = [];
+    $union_params = [];
+    foreach ($kba_data as $site) {
+        $id  = (int) $site['id'];
+        $lat = (float) $site['latitude'];
+        $lng = (float) $site['longitude'];
+        $union_parts[] = "SELECT {$id} AS sid,
+            ({$lat} - {$radius}) AS lat_min, ({$lat} + {$radius}) AS lat_max,
+            ({$lng} - {$radius}) AS lng_min, ({$lng} + {$radius}) AS lng_max";
+    }
+    $bounds_sql = implode(' UNION ALL ', $union_parts);
+
+    // Batch species-count query: one row per site
+    $species_sql = "
+        SELECT b.sid, COUNT(DISTINCT rbo.species_id) AS cnt
+          FROM ({$bounds_sql}) AS b
+          LEFT JOIN raw_bird_observation rbo
+            ON rbo.latitude  BETWEEN b.lat_min AND b.lat_max
+           AND rbo.longitude BETWEEN b.lng_min AND b.lng_max
+         GROUP BY b.sid";
+    $species_rows = $mysql->query($species_sql)->fetchAll(PDO::FETCH_ASSOC);
+    $species_by_id = [];
+    foreach ($species_rows as $row) {
+        $species_by_id[(int) $row['sid']] = (int) $row['cnt'];
+    }
+
+    // Batch VIIRS query: one row per site (skip if no VIIRS year available)
+    $viirs_by_id = [];
+    if ($viirs_max_year !== null) {
+        $viirs_sql = "
+            SELECT b.sid, AVG(v.viirs_avg_rad) AS avg_rad
+              FROM ({$bounds_sql}) AS b
+              JOIN final_master_grid g
+                ON g.lat BETWEEN b.lat_min AND b.lat_max
+               AND g.lon BETWEEN b.lng_min AND b.lng_max
+              JOIN viirs v
+                ON v.cell_id = g.cell_id
+               AND v.year = {$viirs_max_year}
+             GROUP BY b.sid";
+        $viirs_rows = $mysql->query($viirs_sql)->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($viirs_rows as $row) {
+            $viirs_by_id[(int) $row['sid']] = round((float) $row['avg_rad'], 1);
+        }
+    }
+
+    // Apply results back to each site
+    foreach ($kba_data as &$site) {
+        $id = (int) $site['id'];
+        if (isset($species_by_id[$id]) && $species_by_id[$id] > 0) {
+            $site['species_count'] = $species_by_id[$id];
+        }
+        if (isset($viirs_by_id[$id])) {
+            $site['light_exposure'] = $viirs_by_id[$id];
+        }
+    }
+    unset($site);
+} catch (Throwable $e) {
+    // MySQL unavailable – fall back to the sample data values for display
+    $db_failed = true;
+    $fallback = json_decode(file_get_contents('data/sample_kba.json'), true) ?? [];
+    $fb_map   = [];
+    foreach ($fallback as $fb) {
+        $fb_map[(int) $fb['id']] = $fb;
+    }
+    foreach ($kba_data as &$site) {
+        $fb = $fb_map[(int) $site['id']] ?? null;
+        $site['species_count']  = $fb ? (int)   $fb['species_count']  : null;
+        $site['light_exposure'] = $fb ? (float) $fb['light_exposure'] : null;
+    }
+    unset($site);
+}
 
 // --- Current Light Risk Level (Metro Manila average VIIRS radiance) ---
 $metro_manila_light = 0;
 $metro_count = 0;
-if ($kba_data) {
-    foreach ($kba_data as $area) {
-        if (isset($area['light_exposure'])) {
-            $metro_manila_light += $area['light_exposure'];
-            $metro_count++;
-        }
+foreach ($kba_data as $area) {
+    if ($area['light_exposure'] !== null) {
+        $metro_manila_light += $area['light_exposure'];
+        $metro_count++;
     }
 }
-$avg_radiance   = $metro_count > 0 ? round($metro_manila_light / $metro_count, 1) : 0;
-$risk_label     = 'Low';
-$risk_class     = 'success';
-$risk_icon      = '🟢';
+$avg_radiance = $metro_count > 0 ? round($metro_manila_light / $metro_count, 1) : 0;
+$risk_label   = 'Low';
+$risk_class   = 'success';
+$risk_icon    = '🟢';
 if ($avg_radiance > 40) {
     $risk_label = 'High';
     $risk_class = 'danger';
@@ -48,6 +143,12 @@ $announcements = fetch_bmb_announcements(5);
     📅 <strong>Dataset Period: 2014 – 2024</strong> | <strong>Monitoring Status: 2014 – 2024</strong> —
     All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in 2024.
 </div>
+
+<?php if ($db_failed): ?>
+<div class="alert alert-warning home-enter home-enter-2" role="alert">
+    <span aria-hidden="true">⚠️</span> <strong>Live database could not be reached.</strong> The site metrics and species data shown below are <strong>sample/hardcoded values</strong> and do not reflect real-time database records.
+</div>
+<?php endif; ?>
 
 <!-- Top stat cards -->
 <div class="stats-grid home-stats-grid home-enter home-enter-3">
@@ -100,7 +201,7 @@ $announcements = fetch_bmb_announcements(5);
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($kba_data): foreach ($kba_data as $area): ?>
+                    <?php foreach ($kba_data as $area): ?>
                     <tr>
                         <td><?php echo htmlspecialchars($area['name']); ?></td>
                         <td>
@@ -108,19 +209,22 @@ $announcements = fetch_bmb_announcements(5);
                                 <?php echo htmlspecialchars($area['type']); ?>
                             </span>
                         </td>
-                        <td><?php echo (int)$area['species_count']; ?></td>
+                        <td><?php echo $area['species_count'] !== null ? (int) $area['species_count'] : '—'; ?></td>
                         <td>
-                            <?php
-                            $le = $area['light_exposure'];
-                            $le_class = $le > 40 ? 'danger' : ($le > 30 ? 'warning' : 'success');
+                            <?php if ($area['light_exposure'] !== null):
+                                $le       = $area['light_exposure'];
+                                $le_class = $le > 40 ? 'danger' : ($le > 30 ? 'warning' : 'success');
                             ?>
                             <span class="badge badge-<?php echo $le_class; ?>">
                                 <?php echo $le; ?> nW
                             </span>
+                            <?php else: ?>
+                            <span class="badge badge-secondary">—</span>
+                            <?php endif; ?>
                         </td>
                         <td><?php echo htmlspecialchars($area['status']); ?></td>
                     </tr>
-                    <?php endforeach; endif; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
@@ -134,45 +238,47 @@ $announcements = fetch_bmb_announcements(5);
         </div>
         <div class="card-body">
             <div class="announcements-feed screenshot-announcements">
+                <?php if (empty($announcements)): ?>
+                <div class="announcement-row" role="status" aria-live="polite">
+                    <div class="announcement-row-icon">ⓘ</div>
+                    <div class="announcement-row-content">
+                        <div class="announcement-row-title">Live announcements could not be loaded at this time. Visit the DENR-BMB FAPS portal for the latest updates.</div>
+                        <div class="announcement-row-meta">
+                            <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="announcement-featured-link">Visit Portal ↗</a>
+                        </div>
+                    </div>
+                </div>
+                <?php else: ?>
+                <?php
+                $ann_featured = $announcements[0];
+                $ann_rows     = count($announcements) > 1 ? array_slice($announcements, 1) : [];
+                ?>
                 <div class="announcement-featured">
-                    <div class="announcement-featured-chip">Info</div>
-                    <div class="announcement-featured-title">DENR-BMB FAPS – Recent Announcements</div>
-                    <div class="announcement-featured-summary">Live announcements could not be loaded at this time. Visit the DENR-BMB FAPS portal for the latest updates.</div>
-                    <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="announcement-featured-link">Visit Portal ↗</a>
+                    <div class="announcement-featured-chip"><?php echo htmlspecialchars($ann_featured['tag']); ?></div>
+                    <div class="announcement-featured-title"><?php echo htmlspecialchars($ann_featured['title']); ?></div>
+                    <?php if (!empty($ann_featured['summary'])): ?>
+                    <div class="announcement-featured-summary"><?php echo htmlspecialchars($ann_featured['summary']); ?></div>
+                    <?php endif; ?>
+                    <a href="<?php echo htmlspecialchars($ann_featured['link']); ?>" target="_blank" rel="noopener noreferrer" class="announcement-featured-link">
+                        <?php echo empty($ann_featured['date']) ? 'Visit Portal ↗' : 'Read More ↗'; ?>
+                    </a>
                 </div>
 
+                <?php foreach ($ann_rows as $ann): ?>
                 <div class="announcement-row">
                     <div class="announcement-row-icon">ⓘ</div>
                     <div class="announcement-row-content">
-                        <div class="announcement-row-title">Wildlife Week 2024 Celebration</div>
+                        <div class="announcement-row-title"><?php echo htmlspecialchars($ann['title']); ?></div>
                         <div class="announcement-row-meta">
-                            <span class="announcement-row-badge">Event</span>
-                            <span>Dec 10, 2024</span>
+                            <span class="announcement-row-badge"><?php echo htmlspecialchars($ann['tag']); ?></span>
+                            <?php if (!empty($ann['date'])): ?>
+                            <span><?php echo htmlspecialchars($ann['date']); ?></span>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
-
-                <div class="announcement-row">
-                    <div class="announcement-row-icon">ⓘ</div>
-                    <div class="announcement-row-content">
-                        <div class="announcement-row-title">Updated Protected Area Guidelines</div>
-                        <div class="announcement-row-meta">
-                            <span class="announcement-row-badge">Policy</span>
-                            <span>Nov 28, 2024</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="announcement-row">
-                    <div class="announcement-row-icon">ⓘ</div>
-                    <div class="announcement-row-content">
-                        <div class="announcement-row-title">Bird Survey Results: Metro Manila</div>
-                        <div class="announcement-row-meta">
-                            <span class="announcement-row-badge">Report</span>
-                            <span>Nov 15, 2024</span>
-                        </div>
-                    </div>
-                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>
