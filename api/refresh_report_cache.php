@@ -167,15 +167,15 @@ function rrc_refreshSpatialMaps(PDO $pdo, array $cities): array {
         $pdo->exec('DELETE FROM observation_city_map');
         $pdo->exec('DELETE FROM city_grid_map');
 
-        $insertObs = $pdo->prepare('INSERT INTO observation_city_map (observation_id, area) VALUES (:id, :area)');
-        $obsStmt   = $pdo->query('SELECT observation_id, latitude, longitude FROM raw_bird_observation WHERE year IS NOT NULL AND species_id IS NOT NULL');
+        $insertObs = $pdo->prepare('INSERT INTO observation_city_map (rbo_id, area) VALUES (:id, :area)');
+        $obsStmt   = $pdo->query('SELECT id, latitude, longitude FROM raw_bird_observation WHERE year IS NOT NULL AND species_id IS NOT NULL');
         $mappedObs = 0;
         while ($row = $obsStmt->fetch(PDO::FETCH_ASSOC)) {
             $area = rrc_mapPointToCity((float) $row['latitude'], (float) $row['longitude'], $cityPolygons, $cities);
             if ($area === null) {
                 continue;
             }
-            $insertObs->execute([':id' => $row['observation_id'], ':area' => $area]);
+            $insertObs->execute([':id' => (int) $row['id'], ':area' => $area]);
             $mappedObs++;
         }
 
@@ -263,7 +263,7 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
                 r.year,
                 COUNT(DISTINCT r.species_id) AS bird_richness
             FROM raw_bird_observation r
-            JOIN observation_city_map m ON m.observation_id = r.observation_id
+            JOIN observation_city_map m ON m.rbo_id = r.id
             JOIN species_masterlist sm ON sm.species_id = r.species_id
             WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
             GROUP BY m.area, r.year');

@@ -45,6 +45,10 @@ config.local.php
 *.sqlite
 *.db
 
+# Large database dumps — not versioned
+database/avilight*.sql
+database/optimization.sql
+
 # Backup files
 *.bak
 *.backup

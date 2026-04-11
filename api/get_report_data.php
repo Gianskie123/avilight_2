@@ -194,10 +194,10 @@ function mapPointToCity(float $lat, float $lon, array $cityPolygons, array $orde
 
 function ensureSpatialMapTables(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS observation_city_map (
-        observation_id VARCHAR(255) NOT NULL,
+        rbo_id BIGINT NOT NULL,
         area VARCHAR(100) NOT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (observation_id),
+        PRIMARY KEY (rbo_id),
         KEY idx_ocm_area (area)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
@@ -265,8 +265,8 @@ function refreshSpatialMaps(PDO $pdo, array $cities, int $maxAgeSeconds = 86400)
             $pdo->exec('DELETE FROM observation_city_map');
             $pdo->exec('DELETE FROM city_grid_map');
 
-            $insertObs = $pdo->prepare('INSERT INTO observation_city_map (observation_id, area) VALUES (:id, :area)');
-            $obsStmt = $pdo->query('SELECT observation_id, latitude, longitude FROM raw_bird_observation WHERE year IS NOT NULL AND species_id IS NOT NULL');
+            $insertObs = $pdo->prepare('INSERT INTO observation_city_map (rbo_id, area) VALUES (:id, :area)');
+            $obsStmt = $pdo->query('SELECT id, latitude, longitude FROM raw_bird_observation WHERE year IS NOT NULL AND species_id IS NOT NULL');
             while ($row = $obsStmt->fetch(PDO::FETCH_ASSOC)) {
                 $lat = (float) ($row['latitude'] ?? 0);
                 $lon = (float) ($row['longitude'] ?? 0);
@@ -275,7 +275,7 @@ function refreshSpatialMaps(PDO $pdo, array $cities, int $maxAgeSeconds = 86400)
                     continue;
                 }
                 $insertObs->execute([
-                    ':id' => (string) $row['observation_id'],
+                    ':id' => (int) $row['id'],
                     ':area' => $area,
                 ]);
             }
@@ -469,7 +469,7 @@ function refreshSummary(PDO $pdo, array $cities): array {
                 COUNT(DISTINCT r.species_id) AS bird_richness
             FROM raw_bird_observation r
             JOIN observation_city_map m
-                ON m.observation_id = r.observation_id
+                ON m.rbo_id = r.id
             JOIN species_masterlist sm
                 ON sm.species_id = r.species_id
             WHERE r.year IS NOT NULL
@@ -689,7 +689,7 @@ function fetchSnapshotSpeciesDistributions(PDO $pdo, string $selectedArea, int $
         JOIN species_masterlist sm
             ON sm.species_id = r.species_id
         JOIN observation_city_map m
-            ON m.observation_id = r.observation_id
+            ON m.rbo_id = r.id
         WHERE r.year = :snapshot_year
           AND r.month = :snapshot_month
           AND r.species_id IS NOT NULL
@@ -703,7 +703,7 @@ function fetchSnapshotSpeciesDistributions(PDO $pdo, string $selectedArea, int $
         JOIN species_masterlist sm
             ON sm.species_id = r.species_id
         JOIN observation_city_map m
-            ON m.observation_id = r.observation_id
+            ON m.rbo_id = r.id
         WHERE r.year = :snapshot_year
           AND r.month = :snapshot_month
           AND r.species_id IS NOT NULL
@@ -798,7 +798,7 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
         JOIN species_masterlist sm
             ON sm.species_id = r.species_id
         LEFT JOIN observation_city_map m
-            ON m.observation_id = r.observation_id
+            ON m.rbo_id = r.id
         LEFT JOIN city_grid_map cg
             ON ABS(cg.lat - r.latitude) < 0.000001
            AND ABS(cg.lon - r.longitude) < 0.000001
@@ -1268,7 +1268,7 @@ function fetchDiagnosticsYearlySeries(PDO $pdo, string $selectedArea, int $start
             JOIN species_masterlist sm
                 ON sm.species_id = r.species_id
             JOIN observation_city_map m
-                ON m.observation_id = r.observation_id
+                ON m.rbo_id = r.id
             WHERE r.year BETWEEN :start_year AND :end_year
               AND r.species_id IS NOT NULL
             GROUP BY r.year
@@ -1302,7 +1302,7 @@ function fetchDiagnosticsYearlySeries(PDO $pdo, string $selectedArea, int $start
             JOIN species_masterlist sm
                 ON sm.species_id = r.species_id
             JOIN observation_city_map m
-                ON m.observation_id = r.observation_id
+                ON m.rbo_id = r.id
             WHERE m.area = :area
               AND r.year BETWEEN :start_year AND :end_year
               AND r.species_id IS NOT NULL
@@ -2093,7 +2093,7 @@ try {
             JOIN species_masterlist sm
                 ON sm.species_id = r.species_id
             JOIN observation_city_map m
-                ON m.observation_id = r.observation_id
+                ON m.rbo_id = r.id
             WHERE r.year BETWEEN :start_year AND :end_year
               AND r.species_id IS NOT NULL
               AND m.area IN ({$areaListSql})

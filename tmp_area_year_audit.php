@@ -15,7 +15,7 @@ $summaryRows = $summaryStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $obsStmt = $pdo->query("SELECT m.area, r.year, COUNT(*) AS sightings, COUNT(DISTINCT r.species_id) AS species_count
     FROM raw_bird_observation r
-    JOIN observation_city_map m ON m.observation_id = r.observation_id
+    JOIN observation_city_map m ON m.rbo_id = r.id
     GROUP BY m.area, r.year
     ORDER BY m.area, r.year");
 $obsRows = $obsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
