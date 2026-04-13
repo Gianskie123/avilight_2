@@ -277,7 +277,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 </div>
 
 <?php
-// Build risk zones JSON from KBA data + extra Philippine locations
+// Build risk zones JSON from Metro Manila KBA/PA data
 $risk_zones = [];
 if ($kba_data) {
     foreach ($kba_data as $area) {
@@ -297,22 +297,7 @@ if ($kba_data) {
         ];
     }
 }
-// Add extra Philippine locations for wider coverage
-$extra_zones = [
-    ['lat' => 16.4023, 'lng' => 120.5960, 'name' => 'Baguio Highlands', 'risk' => 'low'],
-    ['lat' => 10.3157, 'lng' => 123.8854, 'name' => 'Cebu Urban Core', 'risk' => 'high'],
-    ['lat' =>  7.0736, 'lng' => 125.6120, 'name' => 'Davao Gulf', 'risk' => 'medium'],
-    ['lat' => 10.6920, 'lng' => 122.5644, 'name' => 'Iloilo Wetlands', 'risk' => 'low'],
-    ['lat' => 14.1700, 'lng' => 121.2400, 'name' => 'Mt. Makiling Forest', 'risk' => 'low'],
-    ['lat' =>  9.3068, 'lng' => 123.3054, 'name' => 'Bohol Forests', 'risk' => 'medium'],
-    ['lat' => 13.1391, 'lng' => 123.7438, 'name' => 'Mt. Mayon Buffer', 'risk' => 'medium'],
-    ['lat' => 15.4755, 'lng' => 120.5963, 'name' => 'Tarlac Agricultural', 'risk' => 'low'],
-    ['lat' => 11.5800, 'lng' => 124.9500, 'name' => 'Leyte Corridor', 'risk' => 'medium'],
-    ['lat' =>  8.4542, 'lng' => 124.6319, 'name' => 'Cagayan de Oro', 'risk' => 'high'],
-    ['lat' => 18.1964, 'lng' => 121.7470, 'name' => 'Cagayan Valley', 'risk' => 'low'],
-    ['lat' =>  6.9214, 'lng' => 122.0740, 'name' => 'Zamboanga Peninsula', 'risk' => 'high'],
-];
-$risk_zones = array_merge($risk_zones, $extra_zones);
+// Risk zones are scoped to Metro Manila KBA/PA sites only
 $risk_zones_json = json_encode($risk_zones);
 
 $extra_scripts = <<<SCRIPTS
@@ -573,6 +558,19 @@ function playRiskViewAnimation() {
     var fallbackTimer = setTimeout(reveal, 1650);
     riskAnimationTimers.push(fallbackTimer);
 }
+
+// ── Species masterlist lookup (loaded once on init) ───────────────────────
+// Keyed by lower-cased common name → { tolerance, migration }
+var speciesLookup = {};
+
+fetch('api/get_species_lookup.php')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data && data.success && data.lookup) {
+            speciesLookup = data.lookup;
+        }
+    })
+    .catch(function() { /* non-critical – badges simply won't show */ });
 
 // ── Map view switching (Risk Zones / Historical Data) ─────────────────────
 
@@ -951,7 +949,17 @@ function showHistoricalSiteDetail(site) {
     var species = parseSpeciesList(site.species_list);
     var speciesHtml = species.length
         ? ('<ul class="historical-site-species-items">' + species.map(function(name) {
-            return '<li>' + escapeHtml(name) + '</li>';
+            var info = speciesLookup[name.toLowerCase()];
+            var badges = '';
+            if (info) {
+                var migClass  = info.migration  === 'Migratory' ? 'spp-badge-migrant'  : 'spp-badge-resident';
+                var tolClass  = info.tolerance  === 'Tolerant'  ? 'spp-badge-tolerant' : 'spp-badge-sensitive';
+                var migLabel  = info.migration  === 'Migratory' ? 'Migratory'          : 'Resident';
+                var tolLabel  = info.tolerance  === 'Tolerant'  ? 'Light-tolerant'     : 'Light-sensitive';
+                badges = ' <span class="spp-badge ' + migClass  + '">' + migLabel + '</span>' +
+                         ' <span class="spp-badge ' + tolClass  + '">' + tolLabel + '</span>';
+            }
+            return '<li>' + escapeHtml(name) + badges + '</li>';
         }).join('') + '</ul>')
         : '<div class="historical-site-empty">No species list available for this site entry.</div>';
 
