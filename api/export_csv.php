@@ -10,49 +10,26 @@ if (!is_logged_in()) {
 }
 
 function sanitize_filters(array $input): array {
+    $defaultYear = (int) gmdate('Y');
+
     return [
         'selected_area' => trim((string) ($input['selected_area'] ?? 'All Areas')),
         'start_year' => (int) ($input['start_year'] ?? 2014),
-        'end_year' => (int) ($input['end_year'] ?? 2024),
-        'snapshot_year' => (int) ($input['snapshot_year'] ?? 2024),
+        'end_year' => (int) ($input['end_year'] ?? $defaultYear),
+        'snapshot_year' => (int) ($input['snapshot_year'] ?? $defaultYear),
         'snapshot_month' => (int) ($input['snapshot_month'] ?? 12),
     ];
 }
 
-function get_cached_report_payload(array $filters): array {
-    $cacheDir = __DIR__ . '/../data/cache/reports';
-    if (!is_dir($cacheDir)) {
-        return [];
-    }
-
-    $cacheKey = 'reports:'
-        . $filters['selected_area'] . ':'
-        . $filters['start_year'] . ':'
-        . $filters['end_year'] . ':'
-        . $filters['snapshot_year'] . ':'
-        . $filters['snapshot_month'] . ':diag=1';
-    $cacheFile = $cacheDir . '/' . sha1($cacheKey) . '.json';
-    if (!is_file($cacheFile) || !is_readable($cacheFile)) {
-        return [];
-    }
-
-    $raw = @file_get_contents($cacheFile);
-    if ($raw === false || trim($raw) === '') {
-        return [];
-    }
-
-    $decoded = json_decode($raw, true);
-    return (is_array($decoded) && !empty($decoded['success'])) ? $decoded : [];
-}
-
-function fetch_json_with_session(string $url): array {
+function fetch_json_with_session(string $url, int $timeoutSeconds = 45): array {
     $cookie = session_name() . '=' . session_id();
+    $timeoutSeconds = max(15, $timeoutSeconds);
 
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 45,
+            CURLOPT_TIMEOUT => $timeoutSeconds,
             CURLOPT_HTTPHEADER => [
                 'Accept: application/json',
                 'Cookie: ' . $cookie,
@@ -74,7 +51,7 @@ function fetch_json_with_session(string $url): array {
     $opts = [
         'http' => [
             'method' => 'GET',
-            'timeout' => 45,
+            'timeout' => $timeoutSeconds,
             'header' => "Accept: application/json\r\nCookie: {$cookie}\r\nConnection: close\r\n",
         ],
     ];
@@ -89,12 +66,13 @@ function fetch_json_with_session(string $url): array {
 }
 
 function call_report_data_api(array $filters): array {
-    $cached = get_cached_report_payload($filters);
-    if (!empty($cached)) {
-        return $cached;
-    }
+    $queryFresh = http_build_query(array_merge($filters, [
+        'scope' => 'diagnostics',
+        'include_diagnostics' => '1',
+        'force_refresh' => '1',
+    ]));
 
-    $query = http_build_query(array_merge($filters, [
+    $queryCached = http_build_query(array_merge($filters, [
         'scope' => 'diagnostics',
         'include_diagnostics' => '1',
     ]));
@@ -106,9 +84,14 @@ function call_report_data_api(array $filters): array {
     if ($appBase === '') {
         $appBase = '';
     }
-    $url = $scheme . '://' . $host . $appBase . '/api/get_report_data.php?' . $query;
+    $baseUrl = $scheme . '://' . $host . $appBase . '/api/get_report_data.php?';
 
-    $decoded = fetch_json_with_session($url);
+    $decoded = fetch_json_with_session($baseUrl . $queryFresh, 300);
+    if (is_array($decoded) && !empty($decoded['success'])) {
+        return $decoded;
+    }
+
+    $decoded = fetch_json_with_session($baseUrl . $queryCached, 120);
     return (is_array($decoded) && !empty($decoded['success'])) ? $decoded : [];
 }
 
