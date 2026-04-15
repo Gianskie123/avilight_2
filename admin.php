@@ -510,7 +510,8 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
         })
         .then(data => {
             if (data.success) {
-                statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ ${data.message}</strong></div>`;
+                const added = Number(data.inserted || 0).toLocaleString();
+                statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
                 rebuildAnalyticsCache(true);
             } else {
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
@@ -648,20 +649,30 @@ function fetchCovariate(btn, source, label) {
         }
 
         // Step 2 — show user exactly which periods will be fetched (first batch)
-        const batchSize  = 10;
+        const batchSize  = 12;
         const totalCount = data.missing.length;
         const thisBatch  = data.missing.slice(0, batchSize);
-        const periodList = thisBatch
-            .map(p => `${MONTH_NAMES[p.month - 1]} ${p.year}`)
-            .join(', ');
         const remaining  = totalCount - thisBatch.length;
+
+        // Group this batch's periods by year for readability
+        const byYear = {};
+        thisBatch.forEach(p => {
+            if (!byYear[p.year]) byYear[p.year] = [];
+            byYear[p.year].push(MONTH_NAMES[p.month - 1]);
+        });
+        const periodList = Object.keys(byYear).sort().map(yr =>
+            `  ${yr}: ${byYear[yr].join(', ')}`
+        ).join('\n');
+
         const remainNote = remaining > 0
-            ? `\n\n${remaining} period(s) will remain after this batch — click Fetch again to continue.`
+            ? `\n\n${remaining} more period(s) will remain — click Fetch again to continue.`
             : '';
 
         const confirmed = confirm(
-            `${label}: ${totalCount} missing period(s) found.\n\n` +
-            `Fetching next ${thisBatch.length} from GEE:\n${periodList}` +
+            `${label}\n` +
+            `${'─'.repeat(40)}\n` +
+            `${totalCount} missing period(s) found.\n\n` +
+            `Fetching next ${thisBatch.length}:\n${periodList}` +
             remainNote + `\n\nProceed? This may take a few minutes.`
         );
 
