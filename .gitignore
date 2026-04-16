@@ -46,8 +46,7 @@ config.local.php
 *.db
 
 # Large database dumps — not versioned
-database/avilight*.sql
-database/optimization.sql
+database/
 
 # Backup files
 *.bak
@@ -82,6 +81,9 @@ htmlcov/
 
 # Documentation build files
 /docs/_build/
+
+# Reference notebooks — not part of the production codebase
+python_extraction_reference/
 
 # Misc
 *.orig

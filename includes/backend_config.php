@@ -12,8 +12,19 @@ define('PYTHON_BACKEND_URL', getenv('PYTHON_BACKEND_URL') ?: 'http://127.0.0.1:5
 
 // ── Python worker configuration ───────────────────────────────────────────────
 
-// Python executable. On Windows/XAMPP use 'python'; on Linux/Mac use 'python3'.
-define('PYTHON_BIN', getenv('PYTHON_BIN') ?: 'python3');
+// Python executable.
+// Priority: PYTHON_BIN env var → venv (auto-detected) → system python fallback.
+// Run setup_env.bat once to create the venv; after that this resolves automatically.
+if (!defined('PYTHON_BIN')) {
+    $_venv_win  = realpath(__DIR__ . '/../venv/Scripts/python.exe');   // Windows
+    $_venv_unix = realpath(__DIR__ . '/../venv/bin/python');           // Linux / Mac
+    $_python    = getenv('PYTHON_BIN')
+               ?: ($_venv_win  && file_exists($_venv_win)  ? $_venv_win  : null)
+               ?: ($_venv_unix && file_exists($_venv_unix) ? $_venv_unix : null)
+               ?: 'python';
+    define('PYTHON_BIN', $_python);
+    unset($_venv_win, $_venv_unix, $_python);
+}
 
 // Absolute path to the directory containing the extract_*.py worker scripts.
 define('PYTHON_SCRIPTS_DIR', realpath(__DIR__ . '/../python'));

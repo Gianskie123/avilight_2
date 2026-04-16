@@ -81,29 +81,40 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
  * ]
  */
 const COVARIATE_MAP = [
-    'viirs'     => [
+    'viirs'       => [
         'db_table'    => 'viirs',
         'script'      => 'extract_viirs.py',
         'gee_dataset' => 'NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG',
         'inserter'    => 'insert_viirs',
+        'temporal'    => 'monthly',
     ],
-    'ndvi'      => [
+    'ndvi'        => [
         'db_table'    => 'ndvi',
         'script'      => 'extract_ndvi.py',
         'gee_dataset' => 'MODIS/061/MOD13A1',
         'inserter'    => 'insert_ndvi',
+        'temporal'    => 'monthly',
     ],
-    'land_temp' => [
+    'land_temp'   => [
         'db_table'    => 'land_temp',
         'script'      => 'extract_lst.py',
         'gee_dataset' => 'MODIS/061/MOD11A2',
         'inserter'    => 'insert_land_temp',
+        'temporal'    => 'monthly',
     ],
-    'precip'    => [
+    'precip'      => [
         'db_table'    => 'precip',
         'script'      => 'extract_precip.py',
         'gee_dataset' => 'UCSB-CHG/CHIRPS/DAILY',
         'inserter'    => 'insert_precip',
+        'temporal'    => 'monthly',
+    ],
+    'land_cover'  => [
+        'db_table'    => 'land_cover',
+        'script'      => 'extract_land_cover.py',
+        'gee_dataset' => 'MODIS/061/MCD12Q1',
+        'inserter'    => 'insert_land_cover',
+        'temporal'    => 'annual',   // year-only — no month argument passed to Python
     ],
 ];
 
@@ -124,40 +135,71 @@ if (!array_key_exists($source, COVARIATE_MAP)) {
 
 $cfg       = COVARIATE_MAP[$source];
 $db_table  = $cfg['db_table'];
+$is_annual = $cfg['temporal'] === 'annual';
 
 // ── Compute missing (year, month) chunks ──────────────────────────────────────
 
 try {
     $pdo = get_mysql_db();
 
-    $obs_rows = $pdo->query(
-        'SELECT DISTINCT year, month FROM raw_bird_observation ORDER BY year, month'
-    )->fetchAll(PDO::FETCH_ASSOC);
+    if ($is_annual) {
+        // Land cover and other annual covariates — compare distinct years only.
+        $obs_rows = $pdo->query(
+            'SELECT DISTINCT year FROM raw_bird_observation ORDER BY year'
+        )->fetchAll(PDO::FETCH_ASSOC);
 
-    if (empty($obs_rows)) {
-        ob_end_clean();
-        echo json_encode([
-            'success' => false,
-            'error'   => 'No bird observation data found. Upload observations before fetching covariates.',
-        ]);
-        exit;
-    }
+        if (empty($obs_rows)) {
+            ob_end_clean();
+            echo json_encode([
+                'success' => false,
+                'error'   => 'No bird observation data found. Upload observations before fetching covariates.',
+            ]);
+            exit;
+        }
 
-    $cov_rows = $pdo->query(
-        "SELECT DISTINCT year, month FROM `{$db_table}`"
-    )->fetchAll(PDO::FETCH_ASSOC);
+        $cov_rows = $pdo->query(
+            "SELECT DISTINCT year FROM `{$db_table}`"
+        )->fetchAll(PDO::FETCH_ASSOC);
 
-    // Build lookup: "YYYY-MM" → true
-    $cov_existing = [];
-    foreach ($cov_rows as $row) {
-        $cov_existing[$row['year'] . '-' . str_pad($row['month'], 2, '0', STR_PAD_LEFT)] = true;
-    }
+        $cov_existing = array_column($cov_rows, null, 'year');
 
-    $missing = [];
-    foreach ($obs_rows as $period) {
-        $key = $period['year'] . '-' . str_pad($period['month'], 2, '0', STR_PAD_LEFT);
-        if (!isset($cov_existing[$key])) {
-            $missing[] = ['year' => (int) $period['year'], 'month' => (int) $period['month']];
+        $missing = [];
+        foreach ($obs_rows as $period) {
+            if (!isset($cov_existing[$period['year']])) {
+                $missing[] = ['year' => (int) $period['year']];
+            }
+        }
+    } else {
+        // Monthly covariates — compare (year, month) pairs.
+        $obs_rows = $pdo->query(
+            'SELECT DISTINCT year, month FROM raw_bird_observation ORDER BY year, month'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($obs_rows)) {
+            ob_end_clean();
+            echo json_encode([
+                'success' => false,
+                'error'   => 'No bird observation data found. Upload observations before fetching covariates.',
+            ]);
+            exit;
+        }
+
+        $cov_rows = $pdo->query(
+            "SELECT DISTINCT year, month FROM `{$db_table}`"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        // Build lookup: "YYYY-MM" → true
+        $cov_existing = [];
+        foreach ($cov_rows as $row) {
+            $cov_existing[$row['year'] . '-' . str_pad($row['month'], 2, '0', STR_PAD_LEFT)] = true;
+        }
+
+        $missing = [];
+        foreach ($obs_rows as $period) {
+            $key = $period['year'] . '-' . str_pad($period['month'], 2, '0', STR_PAD_LEFT);
+            if (!isset($cov_existing[$key])) {
+                $missing[] = ['year' => (int) $period['year'], 'month' => (int) $period['month']];
+            }
         }
     }
 
@@ -212,20 +254,30 @@ if (GEE_SA_KEY && file_exists(GEE_SA_KEY)) {
     putenv('GOOGLE_APPLICATION_CREDENTIALS=' . GEE_SA_KEY);
 }
 
+// Pass MariaDB credentials to Python workers for hierarchical gap-filling.
+// The Python db_fill module reads these with the same defaults, so this is
+// only strictly necessary if your setup differs from standard XAMPP defaults.
+putenv('DB_HOST=127.0.0.1');
+putenv('DB_PORT=3306');
+putenv('DB_NAME=avilight');
+putenv('DB_USER=root');
+putenv('DB_PASS=');
+
 $total_inserted = 0;
 $errors         = [];
 
 foreach ($missing as $period) {
-    $year  = (int) $period['year'];
-    $month = (int) $period['month'];
+    $year         = (int) $period['year'];
+    $month        = $is_annual ? null : (int) $period['month'];
+    $period_label = $is_annual ? (string) $year : "{$year}-{$month}";
 
     // Build the command.
     // stdout  → captured by proc_open pipe (JSON rows from Python)
     // stderr  → captured separately so we can surface Python tracebacks
-    $python_bin  = PYTHON_BIN;
-    $script      = $script_path;
-    $yr_arg      = (string) $year;
-    $mo_arg      = (string) $month;
+    $python_bin = PYTHON_BIN;
+    $script     = $script_path;
+    $yr_arg     = (string) $year;
+    $mo_part    = $is_annual ? '' : ' ' . (string) $month;
 
     if ($is_windows) {
         // On Windows, wrap in cmd /c so the PATH is resolved correctly
@@ -233,13 +285,13 @@ foreach ($missing as $period) {
             escapeshellcmd($python_bin)
             . ' ' . escapeshellarg($script)
             . ' ' . $yr_arg
-            . ' ' . $mo_arg
+            . $mo_part
         );
     } else {
         $cmd = escapeshellcmd($python_bin)
              . ' ' . escapeshellarg($script)
              . ' ' . escapeshellarg($yr_arg)
-             . ' ' . escapeshellarg($mo_arg);
+             . ($is_annual ? '' : ' ' . escapeshellarg((string) $month));
     }
 
     // proc_open gives us separate stdout and stderr pipes
@@ -252,7 +304,7 @@ foreach ($missing as $period) {
     $process = proc_open($cmd, $descriptors, $pipes);
 
     if (!is_resource($process)) {
-        $errors[] = "Period {$year}-{$month}: Failed to start Python process.";
+        $errors[] = "Period {$period_label}: Failed to start Python process.";
         continue;
     }
 
@@ -268,24 +320,24 @@ foreach ($missing as $period) {
     $py_error_short = $py_error ? ' Python error: ' . substr($py_error, -300) : '';
 
     if ($return_code !== 0 || empty(trim($raw_output))) {
-        $errors[] = "Period {$year}-{$month}: Python exited with code {$return_code}.{$py_error_short}";
+        $errors[] = "Period {$period_label}: Python exited with code {$return_code}.{$py_error_short}";
         continue;
     }
 
     $rows = json_decode($raw_output, true);
     if (!is_array($rows)) {
-        $errors[] = "Period {$year}-{$month}: Could not parse Python output as JSON.";
+        $errors[] = "Period {$period_label}: Could not parse Python output as JSON.";
         continue;
     }
 
     // Check if Python returned an error object instead of a row array
     if (isset($rows['error'])) {
-        $errors[] = "Period {$year}-{$month}: {$rows['error']}";
+        $errors[] = "Period {$period_label}: {$rows['error']}";
         continue;
     }
 
     if (empty($rows)) {
-        $errors[] = "Period {$year}-{$month}: No data returned (possibly outside GEE coverage).";
+        $errors[] = "Period {$period_label}: No data returned (possibly outside GEE coverage).";
         continue;
     }
 
@@ -293,7 +345,7 @@ foreach ($missing as $period) {
         $inserted = call_user_func($cfg['inserter'], $pdo, $rows);
         $total_inserted += $inserted;
     } catch (PDOException $e) {
-        $errors[] = "Period {$year}-{$month}: DB insert failed — " . $e->getMessage();
+        $errors[] = "Period {$period_label}: DB insert failed — " . $e->getMessage();
     }
 }
 
@@ -414,4 +466,20 @@ function insert_precip(PDO $pdo, array $rows): int {
         ];
     }
     return batch_insert($pdo, 'precip', $cols, $data);
+}
+
+function insert_land_cover(PDO $pdo, array $rows): int {
+    $cols = ['system_index', 'cell_id', 'latitude', 'longitude', 'year', 'land_cover'];
+    $data = [];
+    foreach ($rows as $r) {
+        $data[] = [
+            $r['system_index'],
+            $r['cell_id'],
+            $r['latitude'],
+            $r['longitude'],
+            $r['year'],
+            $r['land_cover'],   // NULL allowed — imputed during master grid build
+        ];
+    }
+    return batch_insert($pdo, 'land_cover', $cols, $data);
 }

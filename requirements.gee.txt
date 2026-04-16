@@ -1,0 +1,12 @@
+# ============================================================
+# AviLight — DEV / DATA PIPELINE extras
+# ============================================================
+# Install on your local machine ONLY (not the production server).
+# Extends requirements.txt with Google Earth Engine support.
+#
+#     pip install -r requirements.txt
+#     pip install -r requirements.gee.txt
+# ============================================================
+
+# Google Earth Engine — satellite covariate extraction
+earthengine-api

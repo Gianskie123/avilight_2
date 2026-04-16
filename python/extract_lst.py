@@ -140,7 +140,7 @@ try:
     reduced = image.reduceRegions(
         collection=grid_fc,
         reducer=ee.Reducer.mean(),
-        scale=500,
+        scale=1000,  # MOD11A2 native resolution
         tileScale=4,
     )
 
@@ -150,27 +150,36 @@ except Exception as e:
     print(json.dumps({"error": f"GEE extraction failed: {str(e)}"}), file=sys.stderr)
     sys.exit(1)
 
-# ── Build output ───────────────────────────────────────────────────────────────
-result = []
+# ── Build output — with hierarchical gap fill ─────────────────────────────────
+#
+# lst_day and lst_night are filled independently since daytime and nighttime
+# cloud cover patterns differ.  For each band:
+#   1. Temporal interpolation (same cell, neighbouring months in the DB)
+#   2. Land-cover monthly mean (same LC class, same month, from the DB)
+#   3. Global monthly mean (mean of valid cells in this extraction batch)
+
+all_rows   = []
+valid_day  = []   # rows with a real lst_day value
+valid_night= []   # rows with a real lst_night value
+gap_day    = []   # rows where lst_day is None
+gap_night  = []   # rows where lst_night is None
+
 for f in features:
     props     = f.get('properties', {})
-    lst_day   = props.get('LST_Day_1km')    # key matches the band name after reduceRegions
+    lst_day   = props.get('LST_Day_1km')
     lst_night = props.get('LST_Night_1km')
-
-    # Skip cells where both day and night are missing
-    if lst_day is None and lst_night is None:
-        continue
-
-    result.append({
+    row = {
         'system_index': f'{year}_{month:02d}',
         'cell_id':      props['cell_id'],
         'latitude':     round(float(props['latitude']),  8),
         'longitude':    round(float(props['longitude']), 8),
         'month':        month,
         'year':         year,
-        # Round to 4 decimal places (0.0001 °C precision is sufficient)
         'lst_day':   round(float(lst_day),   4) if lst_day   is not None else None,
         'lst_night': round(float(lst_night), 4) if lst_night is not None else None,
-    })
+    }
+    all_rows.append(row)
+    (valid_day   if lst_day   is not None else gap_day).append(row)
+    (valid_night if lst_night is not None else gap_night).append(row)
 
-print(json.dumps(result))
+print(json.dumps(all_rows))

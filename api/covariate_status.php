@@ -51,8 +51,8 @@ require_once __DIR__ . '/../includes/db.php';
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 /**
- * Get the latest year + month from a table, and the most recent ingested_at.
- * Returns null if the table is empty.
+ * Get the latest year + month from a monthly covariate table, and the most
+ * recent ingested_at. Returns null if the table is empty.
  */
 function latest_period(PDO $pdo, string $table): ?array {
     $stmt = $pdo->query(
@@ -74,6 +74,26 @@ function latest_period(PDO $pdo, string $table): ?array {
 }
 
 /**
+ * Get the latest year from an annual covariate table (e.g. land_cover).
+ * Returns null if the table is empty.
+ */
+function latest_year_only(PDO $pdo, string $table): ?array {
+    $stmt = $pdo->query(
+        "SELECT MAX(year) AS year, MAX(ingested_at) AS ingested_at
+         FROM `{$table}`"
+    );
+    $row = $stmt->fetch();
+    if (!$row || $row['year'] === null) {
+        return null;
+    }
+    return [
+        'year'        => (int) $row['year'],
+        'month'       => null,
+        'ingested_at' => $row['ingested_at'],
+    ];
+}
+
+/**
  * Determine sync status by comparing the observation period to a covariate period.
  */
 function sync_status(?array $obs, ?array $cov): string {
@@ -85,6 +105,17 @@ function sync_status(?array $obs, ?array $cov): string {
 
     if ($obs_ym > $cov_ym) return 'Fetch Required';
     if ($obs_ym === $cov_ym) return 'Up to Date';
+    return 'Ahead of Observations';
+}
+
+/**
+ * Sync status for annual covariates — compares years only.
+ */
+function sync_status_annual(?array $obs, ?array $cov): string {
+    if ($obs === null) return 'No Observations';
+    if ($cov === null) return 'No Data';
+    if ($obs['year'] > $cov['year']) return 'Fetch Required';
+    if ($obs['year'] === $cov['year']) return 'Up to Date';
     return 'Ahead of Observations';
 }
 
@@ -106,7 +137,7 @@ try {
         ? ['year' => (int) $obs_row['year'], 'month' => (int) $obs_row['month']]
         : null;
 
-    // Latest period + ingested_at for each covariate
+    // Latest period + ingested_at for each monthly covariate
     $covariates = [];
     foreach (['viirs', 'ndvi', 'land_temp', 'precip'] as $table) {
         $period = latest_period($pdo, $table);
@@ -117,6 +148,15 @@ try {
             'status'      => sync_status($obs, $period),
         ];
     }
+
+    // Land cover — annual covariate, year-only comparison
+    $lc_period = latest_year_only($pdo, 'land_cover');
+    $covariates['land_cover'] = [
+        'year'        => $lc_period['year']        ?? null,
+        'month'       => null,
+        'ingested_at' => $lc_period['ingested_at'] ?? null,
+        'status'      => sync_status_annual($obs, $lc_period),
+    ];
 
     ob_end_clean();
     echo json_encode([

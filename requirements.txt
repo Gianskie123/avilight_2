@@ -1,12 +1,36 @@
+# ============================================================
+# AviLight Python Requirements
+# ============================================================
+# Run setup_env.bat (Windows) or setup_env.sh (Linux) once.
+# PHP auto-detects venv/Scripts/python.exe after setup.
+# ============================================================
+
+# ── Web server ────────────────────────────────────────────
 fastapi
 uvicorn
-xgboost
-tensorflow
-scikit-learn
-joblib
+
+# ── Data / science ────────────────────────────────────────
 numpy
 pandas
+scipy
+openpyxl
+
+# ── Database ──────────────────────────────────────────────
+PyMySQL
+
+# ── Google Earth Engine ───────────────────────────────────
+# Used by admin panel to fetch satellite covariates.
+# Requires service account key — set path in:
+#   includes/backend_config.php  →  GEE_SA_KEY
+earthengine-api
+
+# ── Reporting ─────────────────────────────────────────────
 fpdf2
 matplotlib
 pyshp
-PyMySQL
+
+# ── Machine Learning ──────────────────────────────────────
+xgboost
+scikit-learn
+joblib
+tensorflow

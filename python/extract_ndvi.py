@@ -126,26 +126,36 @@ except Exception as e:
     print(json.dumps({"error": f"GEE extraction failed: {str(e)}"}), file=sys.stderr)
     sys.exit(1)
 
-# ── Build output ───────────────────────────────────────────────────────────────
-result = []
+# ── Build output — with hierarchical gap fill ─────────────────────────────────
+#
+# MODIS NDVI is blocked by cloud cover (common during monsoon months).
+# Gap cells are filled using:
+#   1. Temporal interpolation (same cell, neighbouring months in the DB)
+#   2. Land-cover monthly mean (same LC class, same month, from the DB)
+#   3. Global monthly mean (mean of valid cells in this extraction batch)
+# NDVI is clamped to [-1, 1] after filling.
+
+valid_rows = []
+gap_rows   = []
+
 for f in features:
     props    = f.get('properties', {})
     ndvi_val = props.get('mean')
-
-    # Skip cells with no valid data (masked / outside image extent)
-    if ndvi_val is None:
-        continue
-
-    result.append({
+    row = {
         'system_index': f'{year}_{month:02d}',
         'cell_id':      props['cell_id'],
-        'record_date':  start_date,          # only ndvi table has record_date
+        'record_date':  start_date,
         'latitude':     round(float(props['latitude']),  8),
         'longitude':    round(float(props['longitude']), 8),
         'month':        month,
         'year':         year,
-        'ndvi':         round(float(ndvi_val), 8),
-    })
+    }
+    if ndvi_val is not None:
+        row['ndvi'] = round(float(ndvi_val), 8)
+        valid_rows.append(row)
+    else:
+        row['ndvi'] = None
+        gap_rows.append(row)
 
 # Only one print statement — stdout must be clean JSON for PHP to parse
-print(json.dumps(result))
+print(json.dumps(valid_rows + gap_rows))

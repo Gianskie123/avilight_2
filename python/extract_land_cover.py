@@ -1,16 +1,16 @@
 """
-extract_precip.py
------------------
-Extracts total monthly precipitation (mm) over a Metro Manila grid from
-UCSB-CHG/CHIRPS/DAILY via Google Earth Engine.
+extract_land_cover.py
+---------------------
+Extracts annual land cover type per grid cell for Metro Manila from
+MODIS/061/MCD12Q1 (annual, 500 m) via Google Earth Engine.
 
 Usage:
-    python extract_precip.py <year> <month>
-    e.g.  python extract_precip.py 2024 5
+    python extract_land_cover.py <year>
+    e.g.  python extract_land_cover.py 2024
 
 Output:
     Prints a single JSON array to stdout. Each element corresponds to one
-    0.005-degree grid cell and contains the fields required by the `precip`
+    0.005-degree grid cell and contains the fields required by the `land_cover`
     MariaDB table. Nothing else is printed to stdout.
 
 Authentication:
@@ -18,39 +18,53 @@ Authentication:
     Set GEE_PROJECT to your Google Cloud project ID.
 
 Dataset notes:
-    UCSB-CHG/CHIRPS/DAILY — Climate Hazards Group InfraRed Precipitation with
-    Station data, daily, ~5 km (0.05°) resolution.
-    Band 'precipitation': daily rainfall in mm/day. No scaling factor needed.
+    MODIS/061/MCD12Q1 — MODIS Land Cover Type, annual, 500 m.
+    Band used:
+        LC_Type1 — Annual IGBP classification. Integer codes 1–17:
+            1  Evergreen Needleleaf Forests
+            2  Evergreen Broadleaf Forests
+            3  Deciduous Needleleaf Forests
+            4  Deciduous Broadleaf Forests
+            5  Mixed Forests
+            6  Closed Shrublands
+            7  Open Shrublands
+            8  Woody Savannas
+            9  Savannas
+           10  Grasslands
+           11  Permanent Wetlands
+           12  Croplands
+           13  Urban and Built-up Lands
+           14  Cropland/Natural Vegetation Mosaics
+           15  Permanent Snow and Ice
+           16  Barren
+           17  Water Bodies
 
-    Aggregation strategy:
-        Sum all daily images within the month → total monthly precipitation (mm).
-        This is the ecologically meaningful quantity for habitat/species models.
+    Reducer:
+        ee.Reducer.mode() — most frequent class code within each 0.005° cell.
+        Never average class codes: they are categorical, not ordinal.
 
-    Note on spatial resolution:
-        CHIRPS native resolution is ~5 km (0.05°). Our grid cells are 0.005°,
-        so ~100 grid cells share each CHIRPS pixel value. The reduce scale is
-        set to 5000 m to sample one CHIRPS pixel per reduce call, avoiding
-        artificial sub-pixel variation.
+    Availability note:
+        MCD12Q1 for year Y is typically released in GEE around mid-year Y+1.
+        Attempting to extract a year before the product is available will
+        return no features; the script will output an empty array in that case.
 """
 
 import ee
 import sys
 import json
 import os
-from calendar import monthrange
 
 # ── Argument validation ────────────────────────────────────────────────────────
-if len(sys.argv) != 3:
-    print(json.dumps({"error": "Usage: extract_precip.py <year> <month>"}), file=sys.stderr)
+if len(sys.argv) != 2:
+    print(json.dumps({"error": "Usage: extract_land_cover.py <year>"}), file=sys.stderr)
     sys.exit(1)
 
 try:
-    year  = int(sys.argv[1])
-    month = int(sys.argv[2])
-    if not (1 <= month <= 12):
+    year = int(sys.argv[1])
+    if year < 2001 or year > 2100:
         raise ValueError
 except ValueError:
-    print(json.dumps({"error": "year and month must be valid integers."}), file=sys.stderr)
+    print(json.dumps({"error": "year must be a valid integer (2001–present)."}), file=sys.stderr)
     sys.exit(1)
 
 # ── GEE initialisation ─────────────────────────────────────────────────────────
@@ -73,15 +87,11 @@ except Exception as e:
 # ── Constants ──────────────────────────────────────────────────────────────────
 AOI      = ee.Geometry.Rectangle([120.9, 14.3, 121.15, 14.8])
 GRID_RES = 0.005
-DATASET  = 'UCSB-CHG/CHIRPS/DAILY'
+DATASET  = 'MODIS/061/MCD12Q1'
 
-_, last_day = monthrange(year, month)
-start_date  = f'{year}-{month:02d}-01'
-# filterDate end is exclusive, so use the 1st of next month
-if month == 12:
-    end_date = f'{year + 1}-01-01'
-else:
-    end_date = f'{year}-{month + 1:02d}-01'
+# MCD12Q1 images are dated Jan 1 of the observation year.
+start_date = f'{year}-01-01'
+end_date   = f'{year}-12-31'
 
 # ── Grid creation ──────────────────────────────────────────────────────────────
 def create_grid(aoi, res):
@@ -120,18 +130,18 @@ try:
         ee.ImageCollection(DATASET)
         .filterBounds(AOI)
         .filterDate(start_date, end_date)
-        .select('precipitation')
+        .select('LC_Type1')
     )
 
-    # Sum all daily images → total monthly precipitation in mm.
-    # ee.Reducer.sum() with sharedInputs=True is equivalent to collection.sum()
-    # but explicit here for clarity.
-    monthly_total = collection.sum()
+    # MCD12Q1 is annual — .first() gets the single image for the requested year.
+    # ee.Reducer.mode() returns the most frequent IGBP class code within each
+    # 0.005° cell. scale=500 matches the native MCD12Q1 resolution.
+    image = collection.first()
 
-    reduced = monthly_total.reduceRegions(
+    reduced = image.reduceRegions(
         collection=grid_fc,
-        reducer=ee.Reducer.mean(),
-        scale=5566,  # CHIRPS native resolution ~5.5 km
+        reducer=ee.Reducer.mode(),
+        scale=500,
         tileScale=4,
     )
 
@@ -141,35 +151,18 @@ except Exception as e:
     print(json.dumps({"error": f"GEE extraction failed: {str(e)}"}), file=sys.stderr)
     sys.exit(1)
 
-# ── Build output — with hierarchical gap fill ─────────────────────────────────
-#
-# CHIRPS is a gauge+radar product so gaps are rare, but the 0.05° native
-# resolution can leave some 0.005° grid cells without a reading.
-# Gap cells are filled using:
-#   1. Temporal interpolation (same cell, neighbouring months in the DB)
-#   2. Land-cover monthly mean (same LC class, same month, from the DB)
-#   3. Global monthly mean (mean of valid cells in this extraction batch)
-# Precipitation is clamped to >= 0 after filling.
-
-valid_rows = []
-gap_rows   = []
-
+# ── Build output ───────────────────────────────────────────────────────────────
+rows = []
 for f in features:
-    props      = f.get('properties', {})
-    precip_val = props.get('mean')
-    row = {
-        'system_index': f'{year}_{month:02d}',
+    props  = f.get('properties', {})
+    lc_val = props.get('mode')
+    rows.append({
+        'system_index': f'{year}_01_01',
         'cell_id':      props['cell_id'],
         'latitude':     round(float(props['latitude']),  8),
         'longitude':    round(float(props['longitude']), 8),
-        'month':        month,
         'year':         year,
-    }
-    if precip_val is not None:
-        row['precip_mm'] = round(max(0.0, float(precip_val)), 4)
-        valid_rows.append(row)
-    else:
-        row['precip_mm'] = None
-        gap_rows.append(row)
+        'land_cover':   int(lc_val) if lc_val is not None else None,
+    })
 
-print(json.dumps(valid_rows + gap_rows))
+print(json.dumps(rows))

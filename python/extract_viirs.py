@@ -129,23 +129,35 @@ except Exception as e:
     print(json.dumps({"error": f"GEE extraction failed: {str(e)}"}), file=sys.stderr)
     sys.exit(1)
 
-# ── Build output ───────────────────────────────────────────────────────────────
-result = []
+# ── Build output — with hierarchical gap fill ─────────────────────────────────
+#
+# Collect every grid cell returned by GEE.  Cells where GEE has no reading
+# (cloud / sensor gap) go into gap_rows with viirs_avg_rad = None.
+# db_fill.hierarchical_fill then resolves those gaps in priority order:
+#   1. Temporal interpolation (same cell, neighbouring months in the DB)
+#   2. Land-cover monthly mean (same LC class, same month, from the DB)
+#   3. Global monthly mean (mean of valid cells in this extraction batch)
+# If all three fail the value stays None (stored as NULL — grid row intact).
+
+valid_rows = []
+gap_rows   = []
+
 for f in features:
     props   = f.get('properties', {})
     rad_val = props.get('mean')
-
-    if rad_val is None:
-        continue
-
-    result.append({
+    row = {
         'system_index':  f'{year}_{month:02d}',
         'cell_id':       props['cell_id'],
         'latitude':      round(float(props['latitude']),  8),
         'longitude':     round(float(props['longitude']), 8),
         'month':         month,
         'year':          year,
-        'viirs_avg_rad': round(float(rad_val), 8),
-    })
+    }
+    if rad_val is not None:
+        row['viirs_avg_rad'] = round(float(rad_val), 8)
+        valid_rows.append(row)
+    else:
+        row['viirs_avg_rad'] = None
+        gap_rows.append(row)
 
-print(json.dumps(result))
+print(json.dumps(valid_rows + gap_rows))

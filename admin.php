@@ -109,6 +109,37 @@ require_once 'includes/header.php';
             </div>
 
         </div>
+
+        <hr style="margin: 24px 0;">
+
+        <!-- Land Cover (annual) -->
+        <h4>Land Cover Type (MODIS)</h4>
+        <p style="color: #666; margin-bottom: 8px; font-size: 0.9em;">
+            Annual IGBP land cover classification (MCD12Q1, 500 m). Fetched once per year —
+            not per month. New years are released ~12 months after observation year end.
+        </p>
+        <button class="btn btn-primary" onclick="fetchLandCover.call(this, this)">
+            Fetch Land Cover Type (MODIS) Data
+        </button>
+        <p style="margin-top: 10px; color: #666;">
+            <strong>Last Fetch:</strong> <span data-cov-fetch="land_cover">Loading...</span><br>
+            <strong>Status:</strong> <span data-cov-status="land_cover" class="badge">Loading...</span>
+        </p>
+
+        <hr style="margin: 24px 0;">
+
+        <!-- Merge to Master Grid -->
+        <h4>Merge Covariates → Master Grid</h4>
+        <p style="color: #666; margin-bottom: 10px;">
+            Merges all environmental covariates with aggregated bird observations into
+            <code>final_master_grid</code>. Only years where every covariate table has
+            matching (year, month) data are included.
+        </p>
+        <button class="btn btn-success" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
+            Build Master Grid
+        </button>
+        <div id="masterGridStatus" style="margin-top: 10px;"></div>
+
     </div>
 </div>
 
@@ -432,7 +463,7 @@ function loadCovariateStatus() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                ['viirs','ndvi','land_temp','precip'].forEach(key => {
+                ['viirs','ndvi','land_temp','precip','land_cover'].forEach(key => {
                     document.querySelector(`[data-cov-fetch="${key}"]`).textContent = 'Error';
                     const s = document.querySelector(`[data-cov-status="${key}"]`);
                     s.textContent = 'Error';
@@ -453,7 +484,7 @@ function loadCovariateStatus() {
             });
         })
         .catch(() => {
-            ['viirs','ndvi','land_temp','precip'].forEach(key => {
+            ['viirs','ndvi','land_temp','precip','land_cover'].forEach(key => {
                 document.querySelector(`[data-cov-fetch="${key}"]`).textContent = 'Unavailable';
                 const s = document.querySelector(`[data-cov-status="${key}"]`);
                 s.textContent = 'Unavailable';
@@ -718,10 +749,107 @@ function fetchCovariate(btn, source, label) {
     });
 }
 
-function fetchVIIRS()     { fetchCovariate(this, 'viirs',     'Artificial Light (VIIRS)'); }
-function fetchMODIS()     { fetchCovariate(this, 'ndvi',      'Vegetation Index (MODIS)'); }
-function fetchNOAATemp()  { fetchCovariate(this, 'land_temp', 'Land Surface Temperature (MODIS)'); }
-function fetchNOAAPrecip(){ fetchCovariate(this, 'precip',    'Precipitation (CHIRPS)'); }
+function fetchVIIRS()      { fetchCovariate(this, 'viirs',      'Artificial Light (VIIRS)'); }
+function fetchMODIS()      { fetchCovariate(this, 'ndvi',       'Vegetation Index (MODIS)'); }
+function fetchNOAATemp()   { fetchCovariate(this, 'land_temp',  'Land Surface Temperature (MODIS)'); }
+function fetchNOAAPrecip() { fetchCovariate(this, 'precip',     'Precipitation (CHIRPS)'); }
+function fetchLandCover()  { fetchCovariate(this, 'land_cover', 'Land Cover Type (MODIS)'); }
+
+function buildMasterGrid(btn) {
+    const statusEl = document.getElementById('masterGridStatus');
+    btn.disabled   = true;
+    btn.textContent = 'Checking coverage…';
+    statusEl.textContent = '';
+
+    // Step 1 — dry run: check which years have complete covariate coverage
+    fetch('api/build_master_grid.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    })
+    .then(safeJson)
+    .then(data => {
+        btn.disabled    = false;
+        btn.textContent = 'Build Master Grid';
+
+        if (!data.success) {
+            statusEl.innerHTML = `<span style="color:red;">Error: ${data.error}</span>`;
+            return;
+        }
+
+        if (!data.ready_years || data.ready_years.length === 0) {
+            statusEl.innerHTML = `<span style="color:orange;">${data.message}</span>`;
+            return;
+        }
+
+        // Build a readable summary of ready vs blocked years
+        const detail = (data.year_detail || []).map(d => {
+            if (!d.ready) {
+                return `  ✗ ${d.year} — BLOCKED: ${d.missing[0]}`;
+            }
+            const warns = (d.warnings || []);
+            if (warns.length === 0) return `  ✓ ${d.year} — all covariates present`;
+            return `  ✓ ${d.year} — gap-fill will cover: ${warns.join('; ')}`;
+        }).join('\n');
+
+        const confirmed = confirm(
+            `Build Master Grid\n` +
+            `${'─'.repeat(40)}\n` +
+            `${data.ready_years.length} year(s) ready: ${data.ready_years.join(', ')}\n\n` +
+            `Coverage detail:\n${detail}\n\n` +
+            `Current rows in final_master_grid: ${(data.current_rows || 0).toLocaleString()}\n\n` +
+            `Proceed? This may take several minutes.`
+        );
+
+        if (!confirmed) return;
+
+        // Step 2 — execute
+        btn.disabled    = true;
+        btn.textContent = 'Building… (do not close this page)';
+        statusEl.innerHTML = '<span style="color:#666;">Running merge pipeline…</span>';
+
+        fetch('api/build_master_grid.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmed: true })
+        })
+        .then(safeJson)
+        .then(result => {
+            btn.disabled    = false;
+            btn.textContent = 'Build Master Grid';
+
+            // Parse every log line and render as a scrollable pre block
+            const logLines = (result.log || []).map(l => {
+                try {
+                    const p = JSON.parse(l);
+                    return p.msg || l;
+                } catch { return l; }
+            });
+
+            const logHtml = logLines.length
+                ? `<pre style="max-height:200px;overflow-y:auto;background:#f4f4f4;padding:8px;font-size:12px;border-radius:4px;margin-top:8px;">${logLines.join('\n')}</pre>`
+                : '';
+
+            if (result.success) {
+                const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
+                statusEl.innerHTML = `<span style="color:green;">✓ ${lastMsg}</span>${logHtml}`;
+            } else {
+                const errMsg = result.error || 'Did not complete successfully.';
+                statusEl.innerHTML = `<span style="color:red;">✗ ${errMsg}</span>${logHtml}`;
+            }
+        })
+        .catch(err => {
+            btn.disabled    = false;
+            btn.textContent = 'Build Master Grid';
+            statusEl.innerHTML = `<span style="color:red;">Request failed: ${err.message}</span>`;
+        });
+    })
+    .catch(err => {
+        btn.disabled    = false;
+        btn.textContent = 'Build Master Grid';
+        statusEl.innerHTML = `<span style="color:red;">Coverage check failed: ${err.message}</span>`;
+    });
+}
 
 // Model switching
 function switchModel(version) {
