@@ -87,12 +87,12 @@ function authenticate_user(string $email, string $password) {
         ]);
 
         if ($success) {
-            $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = :id')
-                ->execute([':id' => $user['id']]);
+            $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE user_id = :id')
+                ->execute([':id' => $user['user_id']]);
             $pdo->prepare(
                 'INSERT INTO access_log (user_id, email, action, ip_address) VALUES (:uid, :email, :act, :ip)'
             )->execute([
-                ':uid'   => $user['id'],
+                ':uid'   => $user['user_id'],
                 ':email' => $user['email'],
                 ':act'   => 'login',
                 ':ip'    => $_SERVER['REMOTE_ADDR'] ?? '',
@@ -120,15 +120,15 @@ function change_password(string $current_password, string $new_password) {
     try {
         $pdo  = get_mysql_db();
         _ensure_users_table($pdo);
-        $stmt = $pdo->prepare('SELECT id, password_hash FROM users WHERE email = :email LIMIT 1');
+        $stmt = $pdo->prepare('SELECT user_id, password_hash FROM users WHERE email = :email LIMIT 1');
         $stmt->execute([':email' => $_SESSION['user_email']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$user || !password_verify($current_password, $user['password_hash'])) {
             return 'Current password is incorrect.';
         }
         $new_hash = password_hash($new_password, PASSWORD_BCRYPT);
-        $pdo->prepare('UPDATE users SET password_hash = :hash WHERE id = :id')
-            ->execute([':hash' => $new_hash, ':id' => $user['id']]);
+        $pdo->prepare('UPDATE users SET password_hash = :hash WHERE user_id = :id')
+            ->execute([':hash' => $new_hash, ':id' => $user['user_id']]);
         return true;
     } catch (Exception $e) {
         error_log('[AVILIGHT] change_password error: ' . $e->getMessage());
@@ -144,7 +144,7 @@ function list_users(): array {
     try {
         $pdo = get_mysql_db();
         _ensure_users_table($pdo);
-        return $pdo->query('SELECT id, email, role, created_at, last_login FROM users ORDER BY id')
+        return $pdo->query('SELECT user_id, email, role, created_at, last_login_at FROM users ORDER BY user_id')
                    ->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         return [];
