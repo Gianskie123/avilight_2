@@ -24,6 +24,12 @@ if ($year < 2000 || $year > 2100) {
 try {
     $pdo = get_db();
 
+    // Metro Manila geographic bounding box
+    $mm_lat_min = 14.35;
+    $mm_lat_max = 14.82;
+    $mm_lng_min = 120.90;
+    $mm_lng_max = 121.22;
+
     if ($month >= 1 && $month <= 12) {
         $stmt = $pdo->prepare(
                 'SELECT species_list, site_name, latitude, longitude, month, year,
@@ -31,11 +37,20 @@ try {
                     total_resident, total_migrant, total_count
              FROM observations
              WHERE year = :yr AND month = :mo
+               AND latitude  BETWEEN :lat_min AND :lat_max
+               AND longitude BETWEEN :lng_min AND :lng_max
                AND latitude != 0 AND longitude != 0
                AND site_name != ""
              ORDER BY total_unique DESC'
         );
-        $stmt->execute([':yr' => $year, ':mo' => $month]);
+        $stmt->execute([
+            ':yr'      => $year,
+            ':mo'      => $month,
+            ':lat_min' => $mm_lat_min,
+            ':lat_max' => $mm_lat_max,
+            ':lng_min' => $mm_lng_min,
+            ':lng_max' => $mm_lng_max,
+        ]);
     } else {
         $stmt = $pdo->prepare(
                 'SELECT species_list, site_name, latitude, longitude, month, year,
@@ -43,11 +58,19 @@ try {
                     total_resident, total_migrant, total_count
              FROM observations
              WHERE year = :yr
+               AND latitude  BETWEEN :lat_min AND :lat_max
+               AND longitude BETWEEN :lng_min AND :lng_max
                AND latitude != 0 AND longitude != 0
                AND site_name != ""
              ORDER BY total_unique DESC'
         );
-        $stmt->execute([':yr' => $year]);
+        $stmt->execute([
+            ':yr'      => $year,
+            ':lat_min' => $mm_lat_min,
+            ':lat_max' => $mm_lat_max,
+            ':lng_min' => $mm_lng_min,
+            ':lng_max' => $mm_lng_max,
+        ]);
     }
 
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

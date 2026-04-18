@@ -1,5 +1,11 @@
 <?php
 require_once __DIR__ . '/auth.php';
+
+// Handle logout before any output
+if (isset($_GET['logout'])) {
+    logout(); // destroys session and redirects to login.php
+}
+
 require_login(); // Require login for all dashboard pages
 ?>
 <?php

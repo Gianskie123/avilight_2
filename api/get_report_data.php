@@ -22,6 +22,7 @@ $snapshot_month = (int) ($_GET['snapshot_month'] ?? 12);
 $include_normalized = (string) ($_GET['include_normalized'] ?? '0') === '1';
 $scope = trim((string) ($_GET['scope'] ?? 'trend'));
 $include_diagnostics = ((string) ($_GET['include_diagnostics'] ?? '0') === '1') || ($scope === 'diagnostics');
+$force_refresh = ((string) ($_GET['force_refresh'] ?? '0') === '1');
 
 $metro_manila_cities = [
     'Caloocan',
@@ -2033,7 +2034,7 @@ try {
     $cacheKey = 'reports:' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_year . ':' . $snapshot_month . ':diag=' . ($include_diagnostics ? '1' : '0');
     $cacheFile = $cacheDir . '/' . sha1($cacheKey) . '.json';
 
-    $cached = cacheGet($cacheFile, $cacheTtlSeconds);
+    $cached = $force_refresh ? null : cacheGet($cacheFile, $cacheTtlSeconds);
     if (is_array($cached)) {
         echo json_encode($cached, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
         exit;

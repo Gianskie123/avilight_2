@@ -4,6 +4,53 @@ require_once 'includes/auth.php';
 require_admin(); // Require admin access
 require_once 'includes/db.php';
 
+// ── Handle change-password POST ───────────────────────────────────────────
+$pw_success = '';
+$pw_error   = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'change_password') {
+    $cur = $_POST['current_password'] ?? '';
+    $new = $_POST['new_password']     ?? '';
+    $cfm = $_POST['confirm_password'] ?? '';
+    if ($new !== $cfm) {
+        $pw_error = 'New passwords do not match.';
+    } else {
+        $result = change_password($cur, $new);
+        if ($result === true) {
+            $pw_success = 'Password changed successfully.';
+        } else {
+            $pw_error = $result;
+        }
+    }
+}
+
+// ── Handle add-user POST (admin only) ─────────────────────────────────────
+$add_user_success = '';
+$add_user_error   = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_user') {
+    $nu_email = trim($_POST['new_user_email']    ?? '');
+    $nu_pass  = trim($_POST['new_user_password'] ?? '');
+    $nu_role  = in_array($_POST['new_user_role'] ?? '', ['admin', 'user']) ? $_POST['new_user_role'] : 'user';
+    if (!filter_var($nu_email, FILTER_VALIDATE_EMAIL)) {
+        $add_user_error = 'Please enter a valid email address.';
+    } elseif (strlen($nu_pass) < 8) {
+        $add_user_error = 'Password must be at least 8 characters.';
+    } else {
+        try {
+            $pdo = get_mysql_db();
+            _ensure_users_table($pdo);
+            $pdo->prepare('INSERT INTO users (email, password_hash, role) VALUES (:email, :hash, :role)')
+                ->execute([
+                    ':email' => $nu_email,
+                    ':hash'  => password_hash($nu_pass, PASSWORD_BCRYPT),
+                    ':role'  => $nu_role,
+                ]);
+            $add_user_success = 'User ' . htmlspecialchars($nu_email) . ' added successfully.';
+        } catch (Exception $e) {
+            $add_user_error = str_contains($e->getMessage(), 'UNIQUE') ? 'That email is already registered.' : 'An unexpected error occurred. Please try again.';
+        }
+    }
+}
+
 $model_rows = [];
 $model_error = null;
 try {
@@ -17,6 +64,34 @@ try {
 } catch (Throwable $e) {
     $model_error = $e->getMessage();
 }
+
+// ── Security logs from MySQL ──────────────────────────────────────────────
+$recent_access    = [];
+$recent_failures  = [];
+try {
+    $log_db = get_mysql_db();
+    _ensure_access_log_table($log_db);
+    _ensure_login_attempts_table($log_db);
+
+    $recent_access = $log_db->query(
+        'SELECT email, action, ip_address, logged_at
+         FROM access_log
+         ORDER BY logged_at DESC
+         LIMIT 20'
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    $recent_failures = $log_db->query(
+        'SELECT email, ip_address, attempted_at
+         FROM login_attempts
+         WHERE success = 0
+         ORDER BY attempted_at DESC
+         LIMIT 20'
+    )->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    // Non-fatal – tables may not exist yet; logs will show empty
+    error_log('[AVILIGHT] admin security log query error: ' . $e->getMessage());
+}
+
 require_once 'includes/header.php';
 ?>
 
@@ -374,38 +449,145 @@ require_once 'includes/header.php';
     </div>
 </div>
 
+<!-- Account Management -->
+<div class="card">
+    <h2 class="card-header">Account Management</h2>
+    <div class="card-body">
+        <div class="grid-2">
+            <!-- Change Password -->
+            <div>
+                <h4>Change Password</h4>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 12px;">
+                    Logged in as <strong><?= htmlspecialchars(get_logged_user()) ?></strong>
+                </p>
+                <?php if ($pw_success): ?>
+                    <div class="alert alert-success" style="margin-bottom:10px;"><?= htmlspecialchars($pw_success) ?></div>
+                <?php endif; ?>
+                <?php if ($pw_error): ?>
+                    <div class="alert alert-danger" style="margin-bottom:10px;"><?= htmlspecialchars($pw_error) ?></div>
+                <?php endif; ?>
+                <form method="POST">
+                    <input type="hidden" name="action" value="change_password">
+                    <div class="form-group">
+                        <label class="form-label">Current Password</label>
+                        <input type="password" name="current_password" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">New Password <small style="color:#666;">(min. 8 characters)</small></label>
+                        <input type="password" name="new_password" class="form-control" minlength="8" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Confirm New Password</label>
+                        <input type="password" name="confirm_password" class="form-control" minlength="8" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update Password</button>
+                </form>
+            </div>
+
+            <!-- User Management -->
+            <div>
+                <h4>System Users</h4>
+                <?php if ($add_user_success): ?>
+                    <div class="alert alert-success" style="margin-bottom:10px;"><?= $add_user_success ?></div>
+                <?php endif; ?>
+                <?php if ($add_user_error): ?>
+                    <div class="alert alert-danger" style="margin-bottom:10px;"><?= htmlspecialchars($add_user_error) ?></div>
+                <?php endif; ?>
+                <?php $all_users = list_users(); ?>
+                <table style="font-size: 0.88rem; width:100%; margin-bottom:16px;">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Last Login</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_users as $u): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($u['email']) ?></td>
+                            <td><span class="badge <?= $u['role'] === 'admin' ? 'badge-info' : 'badge-secondary' ?>"><?= htmlspecialchars($u['role']) ?></span></td>
+                            <td style="color:#666; font-size:0.82rem;"><?= $u['last_login'] ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+
+                <details>
+                    <summary style="cursor:pointer; font-size:0.9rem; color:var(--accent-blue,#3b82f6); margin-bottom:10px;">+ Add new user</summary>
+                    <form method="POST" style="margin-top:10px;">
+                        <input type="hidden" name="action" value="add_user">
+                        <div class="form-group">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="new_user_email" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Password <small style="color:#666;">(min. 8 characters)</small></label>
+                            <input type="password" name="new_user_password" class="form-control" minlength="8" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Role</label>
+                            <select name="new_user_role" class="form-control">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add User</button>
+                    </form>
+                </details>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Security & Activity Logs -->
 <div class="grid-2">
     <div class="card">
         <h2 class="card-header">Security & Access Logs</h2>
         <div class="card-body">
             <h4>Recent Activity</h4>
-            <table style="font-size: 0.9rem;">
+            <table style="font-size: 0.9rem; width:100%;">
                 <thead>
                     <tr>
                         <th>User</th>
                         <th>Action</th>
-                        <th>Time</th>
+                        <th>IP</th>
+                        <th>Time (UTC)</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td><?php echo htmlspecialchars(get_logged_user()); ?></td>
-                        <td>Logged in</td>
-                        <td>Just now</td>
-                    </tr>
-                    <tr>
-                        <td>admin@avilight.ph</td>
-                        <td>Model upload v2.1.0</td>
-                        <td>2 days ago</td>
-                    </tr>
-                    <tr>
-                        <td>researcher@denr.gov</td>
-                        <td>Downloaded report</td>
-                        <td>3 days ago</td>
-                    </tr>
+                    <?php if (empty($recent_access)): ?>
+                        <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
+                    <?php else: foreach ($recent_access as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['email']) ?></td>
+                            <td><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
                 </tbody>
             </table>
+
+            <h4 style="margin-top:20px;">Recent Failed Login Attempts</h4>
+            <table style="font-size: 0.9rem; width:100%;">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>IP</th>
+                        <th>Time (UTC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recent_failures)): ?>
+                        <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
+                    <?php else: foreach ($recent_failures as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['email']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
         </div>
     </div>
     
