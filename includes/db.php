@@ -110,7 +110,7 @@ function refresh_analytics_latest_sites_cache(PDO $pdo): void {
 /**
  * Return latest-per-site rows from cache, rebuilding when missing or stale.
  */
-function get_analytics_latest_sites(PDO $pdo, int $limit = 200, int $maxAgeSeconds = 86400): array {
+function get_analytics_latest_sites(PDO $pdo, int $limit = 200, int $maxAgeSeconds = 2592000): array {
     ensure_analytics_cache_tables($pdo);
 
     $limit = max(1, $limit);
@@ -241,6 +241,7 @@ function _init_db(PDO $pdo, string $csv_root): void {
         CREATE INDEX IF NOT EXISTS idx_obs_month ON observations(month);
         CREATE INDEX IF NOT EXISTS idx_obs_site  ON observations(site_name);
         CREATE INDEX IF NOT EXISTS idx_obs_coords ON observations(latitude, longitude);
+        CREATE INDEX IF NOT EXISTS idx_obs_year_month_coords ON observations(year, month, latitude, longitude);
     ');
 
     $obs_csv = $csv_root . 'observations.csv';

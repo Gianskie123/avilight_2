@@ -187,12 +187,12 @@ function resolveYearRange(PDO $pdo): array {
     if ($min <= 0 || $max <= 0 || $min > $max) {
         $row2 = $pdo->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM raw_bird_observation WHERE year IS NOT NULL')->fetch(PDO::FETCH_ASSOC) ?: [];
         $min = (int) ($row2['min_year'] ?? 2014);
-        $max = (int) ($row2['max_year'] ?? 2024);
+        $max = (int) ($row2['max_year'] ?? 2025);
     }
 
     if ($min <= 0 || $max <= 0 || $min > $max) {
         $min = 2014;
-        $max = 2024;
+        $max = 2025;
     }
 
     return [$min, $max];

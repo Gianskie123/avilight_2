@@ -45,7 +45,7 @@ function rrc_buildCityInlineSql(array $cities): string {
     $parts = [];
     foreach ($cities as $city) {
         $safe = str_replace("'", "''", $city);
-        $parts[] = "SELECT '{$safe}' AS area";
+        $parts[] = "SELECT '{$safe}' COLLATE utf8mb4_general_ci AS area";
     }
     return implode(' UNION ALL ', $parts);
 }
@@ -145,16 +145,17 @@ function rrc_mapPointToCity(float $lat, float $lon, array $cityPolygons, array $
     return null;
 }
 
+function rrc_isDeadlock(Throwable $e): bool {
+    $msg = $e->getMessage();
+    return strpos($msg, 'SQLSTATE[40001]') !== false
+        || strpos($msg, 'Deadlock found when trying to get lock') !== false
+        || strpos($msg, '1213') !== false;
+}
+
 function rrc_refreshSpatialMaps(PDO $pdo, array $cities): array {
     $sourceObsCount  = (int) $pdo->query('SELECT COUNT(*) FROM raw_bird_observation WHERE year IS NOT NULL AND species_id IS NOT NULL')->fetchColumn();
     $sourceGridCount = (int) $pdo->query('SELECT COUNT(*) FROM (
-        SELECT latitude AS lat, longitude AS lon FROM viirs
-        UNION
-        SELECT latitude AS lat, longitude AS lon FROM ndvi
-        UNION
-        SELECT latitude AS lat, longitude AS lon FROM land_temp
-        UNION
-        SELECT latitude AS lat, longitude AS lon FROM precip
+        SELECT DISTINCT lat, lon FROM final_master_grid
     ) g')->fetchColumn();
 
     $cityPolygons = rrc_loadCityPolygons($cities);
@@ -180,15 +181,7 @@ function rrc_refreshSpatialMaps(PDO $pdo, array $cities): array {
         }
 
         $insertGrid = $pdo->prepare('INSERT INTO city_grid_map (lat, lon, area) VALUES (:lat, :lon, :area)');
-        $gridStmt   = $pdo->query('SELECT lat, lon FROM (
-            SELECT latitude AS lat, longitude AS lon FROM viirs
-            UNION
-            SELECT latitude AS lat, longitude AS lon FROM ndvi
-            UNION
-            SELECT latitude AS lat, longitude AS lon FROM land_temp
-            UNION
-            SELECT latitude AS lat, longitude AS lon FROM precip
-        ) g');
+        $gridStmt   = $pdo->query('SELECT DISTINCT lat, lon FROM final_master_grid');
         $mappedGrid = 0;
         while ($row = $gridStmt->fetch(PDO::FETCH_ASSOC)) {
             $area = rrc_mapPointToCity((float) $row['lat'], (float) $row['lon'], $cityPolygons, $cities);
@@ -239,20 +232,14 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
         ) ENGINE=InnoDB');
         $pdo->exec('INSERT INTO tmp_rrc_years (year)
             SELECT DISTINCT year FROM (
-                SELECT year FROM viirs
-                UNION
-                SELECT year FROM ndvi
-                UNION
-                SELECT year FROM land_temp
-                UNION
-                SELECT year FROM precip
+                SELECT year FROM final_master_grid
                 UNION
                 SELECT year FROM raw_bird_observation
             ) yrs WHERE year IS NOT NULL');
 
         // Step 2 – distinct species_id per city-year (bird richness)
         $pdo->exec('CREATE TEMPORARY TABLE tmp_rrc_richness (
-            area VARCHAR(100) NOT NULL,
+            area VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
             year INT NOT NULL,
             bird_richness INT NULL,
             PRIMARY KEY (area, year)
@@ -274,7 +261,7 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
         //   VIIRS: exclude zero-fill sentinel values
         //   Precip: exclude negative fill values
         $pdo->exec('CREATE TEMPORARY TABLE tmp_rrc_env_cell_month (
-            area       VARCHAR(100) NOT NULL,
+            area       VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
             year       INT NOT NULL,
             month      INT NOT NULL,
             lat        DECIMAL(10,8) NOT NULL,
@@ -289,50 +276,35 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
         $pdo->exec('INSERT INTO tmp_rrc_env_cell_month
                 (area, year, month, lat, lon, viirs_month, ndvi_month, lst_month, precip_month)
             SELECT
-                cells.area, p.year, p.month, p.latitude, p.longitude,
-                AVG(NULLIF(v.viirs_avg_rad, 0)),
+                cells.area, g.year, g.month, g.lat, g.lon,
+                AVG(NULLIF(g.viirs_avg_rad, 0)),
                 AVG(CASE
-                    WHEN n.ndvi = 0     THEN NULL
-                    WHEN ABS(n.ndvi) > 1 THEN n.ndvi / 10000
-                    ELSE n.ndvi
+                    WHEN g.ndvi = 0     THEN NULL
+                    WHEN ABS(g.ndvi) > 1 THEN g.ndvi / 10000
+                    ELSE g.ndvi
                 END),
                 MAX(CASE
-                    WHEN lt.lst_day > 100 THEN (lt.lst_day * 0.02) - 273.15
-                    WHEN lt.lst_day > 0   THEN lt.lst_day
+                    WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                    WHEN g.lst_day > 0   THEN g.lst_day
                     ELSE NULL
                 END),
-                AVG(CASE WHEN p.precip_mm >= 0 THEN p.precip_mm ELSE NULL END)
-            FROM precip p
-            JOIN city_grid_map cells ON p.latitude = cells.lat AND p.longitude = cells.lon
-            LEFT JOIN viirs v
-                ON v.year = p.year
-               AND v.month = p.month
-               AND v.latitude = p.latitude
-               AND v.longitude = p.longitude
-            LEFT JOIN ndvi n
-                ON n.year = p.year
-               AND n.month = p.month
-               AND n.latitude = p.latitude
-               AND n.longitude = p.longitude
-            LEFT JOIN land_temp lt
-                ON lt.year = p.year
-               AND lt.month = p.month
-               AND lt.latitude = p.latitude
-               AND lt.longitude = p.longitude
+                AVG(CASE WHEN g.monthly_precip_mm >= 0 THEN g.monthly_precip_mm ELSE NULL END)
+                FROM final_master_grid g
+                JOIN city_grid_map cells ON ROUND(g.lat, 6) = ROUND(cells.lat, 6) AND ROUND(g.lon, 6) = ROUND(cells.lon, 6)
             WHERE NOT (
-                COALESCE(v.viirs_avg_rad, 0) = 0
-                AND COALESCE(n.ndvi, 0) = 0
-                AND COALESCE(lt.lst_day, 0) = 0
-                AND COALESCE(p.precip_mm, 0) = 0
+                COALESCE(g.viirs_avg_rad, 0) = 0
+                AND COALESCE(g.ndvi, 0) = 0
+                AND COALESCE(g.lst_day, 0) = 0
+                AND COALESCE(g.monthly_precip_mm, 0) = 0
             )
-            GROUP BY cells.area, p.year, p.month, p.latitude, p.longitude');
+            GROUP BY cells.area, g.year, g.month, g.lat, g.lon');
 
         // Step 4 – collapse months → cell-year
         //   VIIRS + NDVI: annual mean of monthly means
         //   LST:          peak (MAX) over months — preserves hottest-month signal
         //   Precip:       annual sum of monthly spatial averages (mm/year per cell)
         $pdo->exec('CREATE TEMPORARY TABLE tmp_rrc_env_cell_year (
-            area           VARCHAR(100) NOT NULL,
+            area           VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
             year           INT NOT NULL,
             lat            DECIMAL(10,8) NOT NULL,
             lon            DECIMAL(11,8) NOT NULL,
@@ -357,7 +329,7 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
         //   VIIRS + NDVI + precip: mean across cells (equal-area grid, so simple mean is correct)
         //   LST: MAX across cells (area-level peak heat — ecologically meaningful)
         $pdo->exec('CREATE TEMPORARY TABLE tmp_rrc_env_area_year (
-            area                 VARCHAR(100) NOT NULL,
+            area                 VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
             year                 INT NOT NULL,
             viirs_avg            DOUBLE NULL,
             ndvi_avg             DOUBLE NULL,
@@ -365,15 +337,71 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
             precipitation_total  DOUBLE NULL,
             PRIMARY KEY (area, year)
         ) ENGINE=InnoDB');
-        $pdo->exec('INSERT INTO tmp_rrc_env_area_year
-                (area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total)
-            SELECT area, year,
-                AVG(viirs_cell_yr),
-                AVG(ndvi_cell_yr),
-                MAX(lst_cell_yr),
-                AVG(precip_cell_yr)
-            FROM tmp_rrc_env_cell_year
-            GROUP BY area, year');
+        $pdo->exec("INSERT INTO tmp_rrc_env_area_year (area, year)
+            SELECT c.area, y.year
+            FROM ({$citySql}) c
+            CROSS JOIN tmp_rrc_years y");
+        $pdo->exec('UPDATE tmp_rrc_env_area_year e
+            JOIN (
+                SELECT
+                    area,
+                    year,
+                    AVG(precip_cell_yr) AS precipitation_total
+                FROM tmp_rrc_env_cell_year
+                GROUP BY area, year
+            ) p ON p.area = e.area AND p.year = e.year
+            SET e.precipitation_total = p.precipitation_total');
+        $pdo->exec('UPDATE tmp_rrc_env_area_year e
+            JOIN (
+                SELECT
+                    cells.area,
+                    g.year,
+                    AVG(NULLIF(g.viirs_avg_rad, 0)) AS viirs_avg
+                FROM final_master_grid g
+                JOIN city_grid_map cells
+                    ON ROUND(g.lat, 6) = ROUND(cells.lat, 6)
+                   AND ROUND(g.lon, 6) = ROUND(cells.lon, 6)
+                GROUP BY cells.area, g.year
+            ) vsrc ON vsrc.area = e.area AND vsrc.year = e.year
+            SET e.viirs_avg = vsrc.viirs_avg');
+        $pdo->exec('UPDATE tmp_rrc_env_area_year e
+            JOIN (
+                SELECT
+                    cells.area,
+                    g.year,
+                    AVG(
+                        CASE
+                            WHEN g.ndvi = 0 THEN NULL
+                            WHEN ABS(g.ndvi) > 1 THEN g.ndvi / 10000
+                            ELSE g.ndvi
+                        END
+                    ) AS ndvi_avg
+                FROM final_master_grid g
+                JOIN city_grid_map cells
+                    ON ROUND(g.lat, 6) = ROUND(cells.lat, 6)
+                   AND ROUND(g.lon, 6) = ROUND(cells.lon, 6)
+                GROUP BY cells.area, g.year
+            ) nsrc ON nsrc.area = e.area AND nsrc.year = e.year
+            SET e.ndvi_avg = nsrc.ndvi_avg');
+        $pdo->exec('UPDATE tmp_rrc_env_area_year e
+            JOIN (
+                SELECT
+                    cells.area,
+                    g.year,
+                    MAX(
+                        CASE
+                            WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                            WHEN g.lst_day > 0 THEN g.lst_day
+                            ELSE NULL
+                        END
+                    ) AS lst_avg
+                FROM final_master_grid g
+                JOIN city_grid_map cells
+                    ON ROUND(g.lat, 6) = ROUND(cells.lat, 6)
+                   AND ROUND(g.lon, 6) = ROUND(cells.lon, 6)
+                GROUP BY cells.area, g.year
+            ) lsrc ON lsrc.area = e.area AND lsrc.year = e.year
+            SET e.lst_avg = lsrc.lst_avg');
 
         // Step 6 – upsert into permanent summary table (MariaDB-safe)
         $pdo->exec("REPLACE INTO ecological_yearly_summary
@@ -427,18 +455,42 @@ try {
     $pdo = get_mysql_db();
     $t0  = microtime(true);
 
-    // 1. Spatial maps
-    $spatialStats = rrc_refreshSpatialMaps($pdo, $metro_manila_cities);
-    $t1 = microtime(true);
+    $maxAttempts = 3;
+    $attempt = 0;
+    $spatialStats = [];
+    $summaryStats = [];
+    $purgedFiles = 0;
+    $lastError = null;
+    $t1 = $t0;
+    $t2 = $t0;
+    $t3 = $t0;
 
-    // 2. Ecological yearly summary
-    $summaryStats = rrc_refreshSummary($pdo, $metro_manila_cities);
-    $t2 = microtime(true);
+    while ($attempt < $maxAttempts) {
+        $attempt++;
+        try {
+            // 1. Spatial maps
+            $spatialStats = rrc_refreshSpatialMaps($pdo, $metro_manila_cities);
+            $t1 = microtime(true);
 
-    // 3. Purge stale file-cache entries so the next request rebuilds fresh
-    $cacheDir  = __DIR__ . '/../data/cache/reports';
-    $purgedFiles = rrc_purgeCacheFiles($cacheDir);
-    $t3 = microtime(true);
+            // 2. Ecological yearly summary
+            $summaryStats = rrc_refreshSummary($pdo, $metro_manila_cities);
+            $t2 = microtime(true);
+
+            // 3. Purge stale file-cache entries so the next request rebuilds fresh
+            $cacheDir = __DIR__ . '/../data/cache/reports';
+            $purgedFiles = rrc_purgeCacheFiles($cacheDir);
+            $t3 = microtime(true);
+            $lastError = null;
+            break;
+        } catch (Throwable $e) {
+            $lastError = $e;
+            if (!rrc_isDeadlock($e) || $attempt >= $maxAttempts) {
+                throw $e;
+            }
+            // Brief backoff before retrying deadlocked refresh operations.
+            usleep(200000 * $attempt);
+        }
+    }
 
     echo json_encode([
         'success'          => true,
@@ -447,6 +499,8 @@ try {
         'spatial_maps'     => array_merge($spatialStats, ['elapsed_s' => round($t1 - $t0, 2)]),
         'summary_table'    => array_merge($summaryStats, ['elapsed_s' => round($t2 - $t1, 2)]),
         'cache_files_purged' => $purgedFiles,
+        'retry_attempts'    => $attempt,
+        'deadlock_recovered' => $lastError === null && $attempt > 1,
         'refreshed_at'     => date('Y-m-d H:i:s'),
     ], JSON_PRETTY_PRINT);
 } catch (Throwable $e) {

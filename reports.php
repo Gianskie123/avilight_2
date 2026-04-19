@@ -3,8 +3,8 @@ $page_title = 'Statistical Reports';
 
 $selected_area = 'All Areas';
 $start_year = (int) ($_GET['start_year'] ?? 2014);
-$end_year = (int) ($_GET['end_year'] ?? 2024);
-$snapshot_year = (int) ($_GET['snapshot_year'] ?? 2024);
+$end_year = (int) ($_GET['end_year'] ?? 2025);
+$snapshot_year = (int) ($_GET['snapshot_year'] ?? 2025);
 $snapshot_month = (int) ($_GET['snapshot_month'] ?? 1);
 
 $available_areas = [
@@ -28,7 +28,7 @@ $available_areas = [
 ];
 
 $year_min = 2014;
-$year_max = 2024;
+$year_max = 2025;
 
 function loadJsonAssocFile(string $path): array {
     if (!is_readable($path)) {
@@ -38,11 +38,151 @@ function loadJsonAssocFile(string $path): array {
     return is_array($decoded) ? $decoded : [];
 }
 
+function extractDiagnosticsContext(array $payload, string $sourceLabel): array {
+    $ensemble = $payload['ensembleMetrics']['ensemble_average'] ?? null;
+    if (!is_array($ensemble)) {
+        return [];
+    }
+    if (!isset($ensemble['r2'], $ensemble['rmse'], $ensemble['mae'])) {
+        return [];
+    }
+
+    return [
+        'r2' => (float) $ensemble['r2'],
+        'rmse' => (float) $ensemble['rmse'],
+        'mae' => (float) $ensemble['mae'],
+        'source' => $sourceLabel,
+    ];
+}
+
+function getKbaWeightConfig(array $thresholds): array {
+    return [
+        'kba_richness_weight' => (float) ($thresholds['kba_richness_weight'] ?? 15.0),
+        'kba_sensitive_weight' => (float) ($thresholds['kba_sensitive_weight'] ?? 15.0),
+        'kba_ndvi_weight' => (float) ($thresholds['kba_ndvi_weight'] ?? 15.0),
+        'kba_alan_weight' => (float) ($thresholds['kba_alan_weight'] ?? 15.0),
+        'kba_lst_weight' => (float) ($thresholds['kba_lst_weight'] ?? 15.0),
+        'kba_precip_weight' => (float) ($thresholds['kba_precip_weight'] ?? 10.0),
+    ];
+}
+
+function statusFromEffectivenessScore(float $score): string {
+    if ($score < 40) {
+        return 'Critical';
+    }
+    if ($score < 60) {
+        return 'At Risk';
+    }
+    if ($score < 75) {
+        return 'Moderate';
+    }
+    return 'Good';
+}
+
+function decorateKbaAuditRows(array $rows, array $thresholds): array {
+    $weights = getKbaWeightConfig($thresholds);
+
+    foreach ($rows as &$area) {
+        $gridCells = max(1, (int) ($area['grid_cell_count'] ?? 0));
+        $speciesCount = (int) ($area['species_count'] ?? 0);
+        $sensitiveCount = (int) ($area['sensitive_species_count'] ?? 0);
+        $sensitivePercentDb = isset($area['sensitive_species_percent']) ? (float) $area['sensitive_species_percent'] : null;
+
+        $lightExposure = (float) ($area['light_exposure'] ?? 0);
+        $meanNdvi = (float) ($area['mean_ndvi'] ?? 0);
+        $maxLst = isset($area['max_lst']) && $area['max_lst'] !== null ? (float) $area['max_lst'] : null;
+        $precipTotalRaw = $area['precipitation_total'] ?? null;
+        $precipTotal = ($precipTotalRaw !== null && (float) $precipTotalRaw > 0.0) ? (float) $precipTotalRaw : null;
+
+        $density = $speciesCount / $gridCells;
+        $scoreRichness = min(1.0, $speciesCount / 50.0);
+        $scoreDensity = min(1.0, $density / 3.0);
+        $scoreAlan = max(0.0, 1.0 - ($lightExposure / 60.0));
+        $scoreSensitive = $sensitivePercentDb !== null
+            ? max(0.0, min(1.0, $sensitivePercentDb / 100.0))
+            : ($sensitiveCount / max(1, $speciesCount));
+        $scoreNdvi = min(1.0, $meanNdvi / 0.5);
+        $scoreLst = $maxLst !== null ? max(0.0, 1.0 - ($maxLst / 45.0)) : 0.0;
+        $scorePrecip = $precipTotal !== null ? min(1.0, $precipTotal / 300.0) : 0.0;
+
+        $effectiveness = (
+            ($scoreRichness * $weights['kba_richness_weight']) +
+            ($scoreSensitive * $weights['kba_sensitive_weight']) +
+            ($scoreNdvi * $weights['kba_ndvi_weight']) +
+            ($scoreAlan * $weights['kba_alan_weight']) +
+            ($scoreLst * $weights['kba_lst_weight']) +
+            ($scorePrecip * $weights['kba_precip_weight'])
+        );
+
+        $area['grid_cell_count'] = $gridCells;
+        $area['light_exposure'] = $lightExposure;
+        $area['mean_ndvi'] = $meanNdvi;
+        $area['max_lst'] = $maxLst;
+        $area['precipitation_total'] = $precipTotal;
+        $area['score_richness'] = $scoreRichness;
+        $area['score_density'] = $scoreDensity;
+        $area['score_sensitive'] = $scoreSensitive;
+        $area['score_alan'] = $scoreAlan;
+        $area['score_ndvi'] = $scoreNdvi;
+        $area['score_lst'] = $scoreLst;
+        $area['score_precip'] = $scorePrecip;
+        $area['effectiveness_score'] = round($effectiveness, 1);
+        $area['status'] = statusFromEffectivenessScore($area['effectiveness_score']);
+        $area['contrib_richness'] = $scoreRichness * $weights['kba_richness_weight'];
+        $area['contrib_density'] = 0.0;
+        $area['contrib_sensitive'] = $scoreSensitive * $weights['kba_sensitive_weight'];
+        $area['contrib_ndvi'] = $scoreNdvi * $weights['kba_ndvi_weight'];
+        $area['contrib_alan'] = $scoreAlan * $weights['kba_alan_weight'];
+        $area['contrib_lst'] = $scoreLst * $weights['kba_lst_weight'];
+        $area['contrib_precip'] = $scorePrecip * $weights['kba_precip_weight'];
+        $area['contrib_total'] = $area['contrib_richness'] + $area['contrib_sensitive'] + $area['contrib_ndvi'] + $area['contrib_alan'] + $area['contrib_lst'] + $area['contrib_precip'];
+    }
+    unset($area);
+
+    usort($rows, static function (array $left, array $right): int {
+        $cmp = ($left['effectiveness_score'] ?? 0) <=> ($right['effectiveness_score'] ?? 0);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+    });
+
+    return $rows;
+}
+
+function loadThresholdConfig(): array {
+    $defaults = [
+        'high_risk' => 60.0,
+        'mod_risk' => 40.0,
+        'low_risk' => 25.0,
+        'kba_richness_weight' => 15.0,
+        'kba_sensitive_weight' => 15.0,
+        'kba_ndvi_weight' => 15.0,
+        'kba_alan_weight' => 15.0,
+        'kba_lst_weight' => 15.0,
+        'kba_precip_weight' => 10.0,
+    ];
+
+    $stored = loadJsonAssocFile(__DIR__ . '/data/cache/thresholds.json');
+    if (!is_array($stored) || empty($stored)) {
+        return $defaults;
+    }
+
+    foreach ($defaults as $key => $value) {
+        if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
+            $defaults[$key] = (float) $stored[$key];
+        }
+    }
+
+    return $defaults;
+}
+
 function buildRuleBasedRecommendations(
     array $kbaAudit,
     array $trendContext,
     array $diagnosticsContext,
-    array $featureContext
+    array $featureContext,
+    array $thresholds
 ): array {
     $recommendations = [];
 
@@ -61,21 +201,25 @@ function buildRuleBasedRecommendations(
         $lowNdviCount = 0;
         $highLstCount = 0;
 
+        $viirsThreshold = (float) ($thresholds['mod_risk'] ?? 40.0);
+        $ndviThreshold = 0.22;
+        $lstThreshold = 35.0;
+
         foreach ($kbaAudit as $row) {
             $status = (string) ($row['status'] ?? '');
             if ($status === 'Critical') {
                 $criticalCount++;
             }
-            if ($status === 'Critical' || $status === 'At Risk') {
+            if ($status === 'At Risk') {
                 $atRiskCount++;
             }
-            if ((float) ($row['light_exposure'] ?? 0) > 40.0) {
+            if ((float) ($row['light_exposure'] ?? 0) > $viirsThreshold) {
                 $highLightCount++;
             }
-            if ((float) ($row['mean_ndvi'] ?? 0) < 0.22) {
+            if ((float) ($row['mean_ndvi'] ?? 0) < $ndviThreshold) {
                 $lowNdviCount++;
             }
-            if ((float) ($row['max_lst'] ?? 0) > 35.0) {
+            if ((float) ($row['max_lst'] ?? 0) > $lstThreshold) {
                 $highLstCount++;
             }
         }
@@ -89,12 +233,13 @@ function buildRuleBasedRecommendations(
         $worstName = (string) ($worst['name'] ?? 'lowest-ranked site');
 
         $message = sprintf(
-            'Reports tab audit indicates %d Critical and %d At Risk sites. Lowest score is %.1f at %s. A first intervention queue may focus on %s, with shielded low-CCT lighting considered where VIIRS > 40 nW and canopy/cooling interventions suggested where NDVI < 0.22 or LST > 35°C (current counts: light=%d, NDVI=%d, LST=%d).',
+            'Reports tab audit indicates %d Critical and %d At Risk sites. Lowest score is %.1f at %s. A first intervention queue may focus on %s, with shielded low-CCT lighting considered where VIIRS > %.1f nW and canopy/cooling interventions suggested where NDVI < 0.22 or LST > 35°C (current counts: light=%d, NDVI=%d, LST=%d).',
             $criticalCount,
             $atRiskCount,
             $worstScore,
             $worstName,
             implode(', ', $weakSiteNames),
+            $viirsThreshold,
             $highLightCount,
             $lowNdviCount,
             $highLstCount
@@ -109,10 +254,10 @@ function buildRuleBasedRecommendations(
             'evidence' => [
                 'Weakest sites: ' . implode(', ', $weakSiteNames),
                 'Critical sites: ' . $criticalCount,
-                'At Risk or worse: ' . $atRiskCount,
-                'High VIIRS > 40 nW: ' . $highLightCount,
-                'Low NDVI < 0.22: ' . $lowNdviCount,
-                'High LST > 35°C: ' . $highLstCount,
+                'At Risk sites: ' . $atRiskCount,
+                'High VIIRS > ' . number_format($viirsThreshold, 1) . ' nW: ' . $highLightCount,
+                'Low NDVI < ' . number_format($ndviThreshold, 2) . ': ' . $lowNdviCount,
+                'High LST > ' . number_format($lstThreshold, 1) . '°C: ' . $highLstCount,
             ],
         ]);
 
@@ -121,15 +266,16 @@ function buildRuleBasedRecommendations(
                 'title' => 'Night-Light Hotspot Review',
                 'class' => 'critical',
                 'message' => sprintf(
-                    'A targeted night-light review may be appropriate for %d KBA/PA sites with VIIRS above 40 nW. Shielding, dimming, or fixture replacement may be considered, with follow-up review in the next monthly cycle.',
-                    max($highLightCount, $criticalCount)
+                    'A targeted night-light review may be appropriate for %d KBA/PA sites with VIIRS above %.1f nW. Shielding, dimming, or fixture replacement may be considered, with follow-up review in the next monthly cycle.',
+                    max($highLightCount, $criticalCount),
+                    $viirsThreshold
                 ),
                 'source' => 'Reports tab + KBA/PA audit table',
                 'source_key' => 'reports',
                 'evidence' => [
                     'High VIIRS sites: ' . $highLightCount,
                     'Critical sites: ' . $criticalCount,
-                    'Threshold used: VIIRS > 40 nW',
+                    'Threshold used: VIIRS > ' . number_format($viirsThreshold, 1) . ' nW',
                 ],
             ]);
         }
@@ -144,8 +290,8 @@ function buildRuleBasedRecommendations(
                 'evidence' => [
                     'Low NDVI sites: ' . $lowNdviCount,
                     'High LST sites: ' . $highLstCount,
-                    'NDVI threshold used: < 0.22',
-                    'LST threshold used: > 35°C',
+                    'NDVI threshold used: < ' . number_format($ndviThreshold, 2),
+                    'LST threshold used: > ' . number_format($lstThreshold, 1) . '°C',
                 ],
             ]);
         }
@@ -237,6 +383,7 @@ function buildRuleBasedRecommendations(
             'source' => 'Analytics tab diagnostics',
             'source_key' => 'analytics',
             'evidence' => [
+                'Metrics source: ' . (string) ($diagnosticsContext['source'] ?? 'Unknown'),
                 'R²: ' . number_format($r2, 4),
                 'RMSE: ' . number_format($rmse, 4),
                 'MAE: ' . number_format($mae, 4),
@@ -291,12 +438,13 @@ $kba_audit_data = [];
 $trend_context = [];
 $diagnostics_context = [];
 $feature_context = [];
+$threshold_config = loadThresholdConfig();
 try {
     $mysql_reports = get_mysql_db();
     $yearRangeRow = $mysql_reports->query(
         'SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary'
     )->fetch(PDO::FETCH_ASSOC) ?: [];
-    $year_min = (int) ($yearRangeRow['min_year'] ?? $year_min);
+    $year_min = max(2014, (int) ($yearRangeRow['min_year'] ?? $year_min));
     $year_max = (int) ($yearRangeRow['max_year'] ?? $year_max);
 
     $tableExistsStmt = $mysql_reports->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'kba_pa_audit_live'");
@@ -324,21 +472,7 @@ try {
             FROM kba_pa_audit_live
             ORDER BY effectiveness_score ASC, area_name ASC");
         $kba_audit_data = $kbaRowsStmt ? ($kbaRowsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    }
-
-    if (empty($kba_audit_data)) {
-        $kbaPath = __DIR__ . '/data/sample_kba.json';
-        if (is_readable($kbaPath)) {
-            $decoded = json_decode((string) file_get_contents($kbaPath), true);
-            if (is_array($decoded)) {
-                $kba_audit_data = array_values(array_filter($decoded, static function ($row) {
-                    return is_array($row) && in_array((string) ($row['type'] ?? ''), ['KBA', 'PA'], true);
-                }));
-                usort($kba_audit_data, static function (array $left, array $right): int {
-                    return ((float) ($left['effectiveness_score'] ?? 0)) <=> ((float) ($right['effectiveness_score'] ?? 0));
-                });
-            }
-        }
+        $kba_audit_data = decorateKbaAuditRows($kba_audit_data, $threshold_config);
     }
 
     $trendRowsStmt = $mysql_reports->query("SELECT year, bird_richness, viirs_avg, ndvi_avg, lst_avg, precipitation_total
@@ -374,24 +508,32 @@ try {
         ];
     }
 
-    $modelMetrics = loadJsonAssocFile(__DIR__ . '/api_models/model_metrics.json');
-    $diagAverage = $modelMetrics['ensembleMetrics']['ensemble_average'] ?? [];
-    if (is_array($diagAverage) && isset($diagAverage['r2'], $diagAverage['rmse'], $diagAverage['mae'])) {
-        $diagnostics_context = [
-            'r2' => (float) $diagAverage['r2'],
-            'rmse' => (float) $diagAverage['rmse'],
-            'mae' => (float) $diagAverage['mae'],
-        ];
+    $diagPrecomputed = loadJsonAssocFile(__DIR__ . '/api_models/diagnostics_precomputed.json');
+    $diagnostics_context = extractDiagnosticsContext($diagPrecomputed, 'diagnostics_precomputed.json');
+    if (empty($diagnostics_context)) {
+        $modelMetrics = loadJsonAssocFile(__DIR__ . '/api_models/model_metrics.json');
+        $diagnostics_context = extractDiagnosticsContext($modelMetrics, 'model_metrics.json');
     }
 
-    $diagPrecomputed = loadJsonAssocFile(__DIR__ . '/api_models/diagnostics_precomputed.json');
     $allFeatures = $diagPrecomputed['xgboostFeatureImportance']['all'] ?? [];
     $labels = is_array($allFeatures['labels'] ?? null) ? $allFeatures['labels'] : [];
     $values = is_array($allFeatures['values'] ?? null) ? $allFeatures['values'] : [];
     if (!empty($labels) && !empty($values)) {
+        $allowedCovariates = [
+            'artificial light',
+            'ndvi',
+            'temperature',
+            'precipitation',
+            'seasonality',
+        ];
         $topIndex = null;
         $topValue = -1.0;
         foreach ($values as $idx => $value) {
+            $labelRaw = isset($labels[$idx]) ? (string) $labels[$idx] : '';
+            $labelNorm = strtolower(trim($labelRaw));
+            if (!in_array($labelNorm, $allowedCovariates, true)) {
+                continue;
+            }
             $numeric = (float) $value;
             if ($numeric > $topValue) {
                 $topValue = $numeric;
@@ -413,7 +555,8 @@ $kba_recommendations = buildRuleBasedRecommendations(
     $kba_audit_data,
     $trend_context,
     $diagnostics_context,
-    $feature_context
+    $feature_context,
+    $threshold_config
 );
 
 if (!in_array($selected_area, array_merge(['All Areas'], $available_areas), true)) {
@@ -1414,8 +1557,13 @@ require_once 'includes/header.php';
                         <div class="card-body">
                             <div class="chart-guidance" style="margin-bottom:12px;">
                                 <strong>Applied Effectiveness Weights:</strong>
-                                Richness 15%, Density 15%, Sensitive Ratio 15%, NDVI 15%, ALAN 15%, LST 15%, Precipitation 10%.
-                                <br><small>Note: These weights can be adjusted in Settings as calibration needs evolve. Displays: Latest Year</small>
+                                Richness <?php echo number_format((float) ($threshold_config['kba_richness_weight'] ?? 15.0), 1); ?>%,
+                                Sensitive Ratio <?php echo number_format((float) ($threshold_config['kba_sensitive_weight'] ?? 15.0), 1); ?>%,
+                                NDVI <?php echo number_format((float) ($threshold_config['kba_ndvi_weight'] ?? 15.0), 1); ?>%,
+                                ALAN <?php echo number_format((float) ($threshold_config['kba_alan_weight'] ?? 15.0), 1); ?>%,
+                                LST <?php echo number_format((float) ($threshold_config['kba_lst_weight'] ?? 15.0), 1); ?>%,
+                                Precipitation <?php echo number_format((float) ($threshold_config['kba_precip_weight'] ?? 10.0), 1); ?>%.
+                                <br><small>Note: These saved weights are applied live in the Reports table. Displays: Latest Year</small>
                             </div>
 
                             <div class="table-wrap kba-audit-table-wrap">
@@ -1425,9 +1573,7 @@ require_once 'includes/header.php';
                                             <th>Rank</th>
                                             <th>Area Name</th>
                                             <th>Type</th>
-                                            <th>Grid Cells</th>
                                             <th>Species Count</th>
-                                            <th>Density<br><small>(species/cell)</small></th>
                                             <th>Avg VIIRS<br><small>(nW)</small></th>
                                             <th>Mean NDVI</th>
                                             <th>Max LST<br><small>(°C)</small></th>
@@ -1452,30 +1598,29 @@ require_once 'includes/header.php';
                                                 $gridCells = max(1, (int) ($area['grid_cell_count'] ?? 0));
                                                 $speciesCount = (int) ($area['species_count'] ?? 0);
                                                 $sensitiveCount = (int) ($area['sensitive_species_count'] ?? 0);
-
+                                                $sensitivePercentDb = isset($area['sensitive_species_percent']) ? (float) $area['sensitive_species_percent'] : null;
                                                 $lightExposure = (float) ($area['light_exposure'] ?? 0);
-                                                $lightClass = $lightExposure > 40 ? 'danger' : ($lightExposure > 30 ? 'warning' : 'success');
+                                                $lightClass = $lightExposure >= (float) ($threshold_config['high_risk'] ?? 60.0) ? 'danger' : ($lightExposure >= (float) ($threshold_config['mod_risk'] ?? 40.0) ? 'warning' : 'success');
                                                 $meanNdvi = (float) ($area['mean_ndvi'] ?? 0);
-                                                $maxLst = (float) ($area['max_lst'] ?? 0);
-                                                $precipTotal = (float) ($area['precipitation_total'] ?? 0);
+                                                $maxLst = isset($area['max_lst']) && $area['max_lst'] !== null ? (float) $area['max_lst'] : null;
+                                                $precipTotal = isset($area['precipitation_total']) && $area['precipitation_total'] !== null ? (float) $area['precipitation_total'] : null;
 
-                                                $density = $speciesCount / $gridCells;
-                                                $scoreRichness = min(1.0, $speciesCount / 50.0);
-                                                $scoreDensity = min(1.0, $density / 3.0);
-                                                $scoreAlan = max(0.0, 1.0 - ($lightExposure / 60.0));
-                                                $scoreSensitive = $sensitiveCount / max(1, $speciesCount);
-                                                $scoreNdvi = min(1.0, $meanNdvi / 0.5);
-                                                $scoreLst = max(0.0, 1.0 - ($maxLst / 45.0));
-                                                $scorePrecip = min(1.0, $precipTotal / 300.0);
+                                                $scoreRichness = (float) ($area['score_richness'] ?? 0.0);
+                                                $scoreDensity = (float) ($area['score_density'] ?? 0.0);
+                                                $scoreSensitive = (float) ($area['score_sensitive'] ?? 0.0);
+                                                $scoreAlan = (float) ($area['score_alan'] ?? 0.0);
+                                                $scoreNdvi = (float) ($area['score_ndvi'] ?? 0.0);
+                                                $scoreLst = (float) ($area['score_lst'] ?? 0.0);
+                                                $scorePrecip = (float) ($area['score_precip'] ?? 0.0);
 
-                                                $contribRichness = $scoreRichness * 0.15 * 100.0;
-                                                $contribDensity = $scoreDensity * 0.15 * 100.0;
-                                                $contribSensitive = $scoreSensitive * 0.15 * 100.0;
-                                                $contribNdvi = $scoreNdvi * 0.15 * 100.0;
-                                                $contribAlan = $scoreAlan * 0.15 * 100.0;
-                                                $contribLst = $scoreLst * 0.15 * 100.0;
-                                                $contribPrecip = $scorePrecip * 0.10 * 100.0;
-                                                $contribTotal = $contribRichness + $contribDensity + $contribSensitive + $contribNdvi + $contribAlan + $contribLst + $contribPrecip;
+                                                $contribRichness = (float) ($area['contrib_richness'] ?? 0.0);
+                                                $contribDensity = (float) ($area['contrib_density'] ?? 0.0);
+                                                $contribSensitive = (float) ($area['contrib_sensitive'] ?? 0.0);
+                                                $contribNdvi = (float) ($area['contrib_ndvi'] ?? 0.0);
+                                                $contribAlan = (float) ($area['contrib_alan'] ?? 0.0);
+                                                $contribLst = (float) ($area['contrib_lst'] ?? 0.0);
+                                                $contribPrecip = (float) ($area['contrib_precip'] ?? 0.0);
+                                                $contribTotal = (float) ($area['contrib_total'] ?? 0.0);
 
                                                 $effectiveness = (float) ($area['effectiveness_score'] ?? 0);
                                                 $effectivenessClass = $effectiveness >= 75 ? 'success' : ($effectiveness >= 40 ? 'warning' : 'danger');
@@ -1499,17 +1644,15 @@ require_once 'includes/header.php';
                                                             <?php echo htmlspecialchars((string) ($area['type'] ?? '')); ?>
                                                         </span>
                                                     </td>
-                                                    <td><?php echo (int) ($area['grid_cell_count'] ?? 0); ?></td>
                                                     <td><?php echo $speciesCount; ?></td>
-                                                    <td><?php echo number_format($density, 2); ?></td>
                                                     <td>
                                                         <span class="badge badge-<?php echo $lightClass; ?>"><?php echo number_format($lightExposure, 1); ?></span>
                                                     </td>
                                                     <td><?php echo number_format($meanNdvi, 3); ?></td>
-                                                    <td><?php echo number_format($maxLst, 2); ?></td>
-                                                    <td><?php echo number_format($precipTotal, 1); ?></td>
+                                                    <td><?php echo $maxLst !== null ? number_format($maxLst, 2) : 'N/A'; ?></td>
+                                                    <td><?php echo $precipTotal !== null ? number_format($precipTotal, 1) : 'N/A'; ?></td>
                                                     <td><?php echo $sensitiveCount; ?></td>
-                                                    <td><?php echo number_format($scoreSensitive, 2); ?></td>
+                                                    <td title="<?php echo $sensitivePercentDb !== null ? number_format($sensitivePercentDb, 1) . '%' : 'Computed from counts'; ?>"><?php echo number_format($scoreSensitive, 2); ?></td>
                                                     <td><?php echo number_format($scoreRichness, 2); ?></td>
                                                     <td><?php echo number_format($scoreDensity, 2); ?></td>
                                                     <td><?php echo number_format($scoreSensitive, 2); ?></td>
@@ -1529,13 +1672,12 @@ require_once 'includes/header.php';
                                                                 <p class="pillar-tooltip-title">Pillar Score Breakdown (points)</p>
                                                                 <table class="pillar-tooltip-table">
                                                                     <tbody>
-                                                                        <tr><th>Richness (15%)</th><td><?php echo number_format($contribRichness, 1); ?></td></tr>
-                                                                        <tr><th>Density (15%)</th><td><?php echo number_format($contribDensity, 1); ?></td></tr>
-                                                                        <tr><th>Sensitive (15%)</th><td><?php echo number_format($contribSensitive, 1); ?></td></tr>
-                                                                        <tr><th>NDVI (15%)</th><td><?php echo number_format($contribNdvi, 1); ?></td></tr>
-                                                                        <tr><th>ALAN (15%)</th><td><?php echo number_format($contribAlan, 1); ?></td></tr>
-                                                                        <tr><th>LST (15%)</th><td><?php echo number_format($contribLst, 1); ?></td></tr>
-                                                                        <tr><th>Precip (10%)</th><td><?php echo number_format($contribPrecip, 1); ?></td></tr>
+                                                                        <tr><th>Richness (<?php echo number_format((float) ($threshold_config['kba_richness_weight'] ?? 15.0), 1); ?>%)</th><td><?php echo number_format($contribRichness, 1); ?></td></tr>
+                                                                        <tr><th>Sensitive (<?php echo number_format((float) ($threshold_config['kba_sensitive_weight'] ?? 15.0), 1); ?>%)</th><td><?php echo number_format($contribSensitive, 1); ?></td></tr>
+                                                                        <tr><th>NDVI (<?php echo number_format((float) ($threshold_config['kba_ndvi_weight'] ?? 15.0), 1); ?>%)</th><td><?php echo number_format($contribNdvi, 1); ?></td></tr>
+                                                                        <tr><th>ALAN (<?php echo number_format((float) ($threshold_config['kba_alan_weight'] ?? 15.0), 1); ?>%)</th><td><?php echo number_format($contribAlan, 1); ?></td></tr>
+                                                                        <tr><th>LST (<?php echo number_format((float) ($threshold_config['kba_lst_weight'] ?? 15.0), 1); ?>%)</th><td><?php echo number_format($contribLst, 1); ?></td></tr>
+                                                                        <tr><th>Precip (<?php echo number_format((float) ($threshold_config['kba_precip_weight'] ?? 10.0), 1); ?>%)</th><td><?php echo number_format($contribPrecip, 1); ?></td></tr>
                                                                         <tr><th>Total</th><td><?php echo number_format($contribTotal, 1); ?></td></tr>
                                                                     </tbody>
                                                                 </table>
@@ -1547,7 +1689,7 @@ require_once 'includes/header.php';
                                             <?php endforeach; ?>
                                         <?php else: ?>
                                             <tr>
-                                                <td colspan="21" style="text-align:center;color:var(--text-secondary);">KBA/PA audit data is unavailable.</td>
+                                                <td colspan="21" style="text-align:center;color:var(--text-secondary);">KBA/PA audit data is unavailable from database. Run the KBA/PA audit refresh from Admin to populate this table.</td>
                                             </tr>
                                         <?php endif; ?>
                                     </tbody>
@@ -1651,7 +1793,7 @@ require_once 'includes/header.php';
                             <button class="btn btn-sm diagnostic-filter-btn convlstm-filter-btn" type="button" data-filter="resident">Resident</button>
                         </div>
                         <div class="chart-guidance" style="margin-bottom: 10px;">
-                            <strong>Note:</strong> Because ConvLSTM used a time-series split, predicted richness covers only 2023 and 2024.
+                            <strong>Note:</strong> Actual richness comes from the dataset for all years; predicted richness covers 2023, 2024, and 2025 because we used a time-series split for ConvLSTM.
                         </div>
                         <div class="diagnostics-chart-wrap is-loading">
                             <div class="is-loading-overlay"></div>
@@ -1823,6 +1965,7 @@ var xgboostCurrentFilter = 'all';
 
 var convlstmPredictionsDataByFilter = {};
 var convlstmCurrentFilter = 'all';
+var trendHistoricalDataByFilter = {};
 var diagnosticsLoaded = false;
 var lastFilterKey = '';
 var scopeRequestSeq = {
@@ -2056,7 +2199,15 @@ function initTrendCharts() {
         type: 'bar',
         data: {
             labels: ['ALAN vs Richness', 'NDVI vs Richness', 'LST vs Richness', 'Precip vs Richness'],
-            datasets: [{ label: 'Pearson Correlation (r)', data: [0, 0, 0, 0], borderWidth: 1, borderRadius: 6 }]
+            datasets: [{
+                label: 'Pearson Correlation (r)',
+                data: [0, 0, 0, 0],
+                borderWidth: 1,
+                borderRadius: 6,
+                minBarLength: 8,
+                barThickness: 24,
+                maxBarThickness: 28
+            }]
         },
         options: {
             responsive: true,
@@ -2339,6 +2490,9 @@ function initTrendCharts() {
                     title: {
                         display: true,
                         text: 'Year'
+                    },
+                    ticks: {
+                        autoSkip: false
                     }
                 }
             }
@@ -2347,6 +2501,7 @@ function initTrendCharts() {
 }
 
 function updateSnapshotCharts(payload) {
+    var trend = payload && payload.trendHistoricalData ? payload.trendHistoricalData : {};
     var snap = payload && payload.snapshotDistributions ? payload.snapshotDistributions : {};
     var scatter = payload && payload.snapshotScatterData ? payload.snapshotScatterData : {};
     var topSites = payload && payload.topSitesRichnessData ? payload.topSitesRichnessData : {};
@@ -2363,9 +2518,7 @@ function updateSnapshotCharts(payload) {
     setFilterNote('migrationFilterNote', snapshotFilterText);
     setFilterNote('lightToleranceFilterNote', snapshotFilterText);
 
-    var topSitesYear = topSites && topSites.snapshot_year ? topSites.snapshot_year : filters.snapshot_year;
-    var topSitesMonth = topSites && topSites.snapshot_month ? topSites.snapshot_month : filters.snapshot_month;
-    setFilterNote('topSitesFilterNote', 'Displays: All Areas | Latest Month Snapshot, Last Updated: ' + topSitesYear + '-' + String(topSitesMonth).padStart(2, '0'));
+    setFilterNote('topSitesFilterNote', snapshotFilterText);
 
     if (charts.migrationStatus) {
         charts.migrationStatus.data.labels = Array.isArray(migration.labels) ? migration.labels : ['Migratory', 'Resident', 'Unclassified'];
@@ -2430,6 +2583,10 @@ function updateSnapshotCharts(payload) {
         setChartEmptyMessage('topSitesEmptyNote', topValues.length === 0);
     }
 
+    if (trend.labels || trend.richness) {
+        trendHistoricalDataByFilter = trend;
+    }
+
     if (Object.keys(xgboostData).length > 0) {
         xgboostFeatureImportanceDataByFilter = xgboostData;
         switchXGBoostFilter(xgboostCurrentFilter);
@@ -2474,8 +2631,8 @@ function getFilterValues() {
     return {
         selected_area: (document.getElementById('globalAreaFilter') || {}).value || 'All Areas',
         start_year: (document.getElementById('trendStartYear') || {}).value || '2014',
-        end_year: (document.getElementById('trendEndYear') || {}).value || '2024',
-        snapshot_year: (document.getElementById('snapshotYear') || {}).value || '2024',
+        end_year: (document.getElementById('trendEndYear') || {}).value || '2025',
+        snapshot_year: (document.getElementById('snapshotYear') || {}).value || '2025',
         snapshot_month: (document.getElementById('snapshotMonth') || {}).value || '1'
     };
 }
@@ -2483,6 +2640,7 @@ function getFilterValues() {
 function buildRequestByScope(scope, filters, includeDiagnostics) {
     var request = {
         scope: scope,
+        _ts: String(Date.now()),
         include_diagnostics: includeDiagnostics ? '1' : '0'
     };
 
@@ -2513,6 +2671,7 @@ function updateTrendCharts(payload) {
     var corr = payload && payload.trendCorrelationData ? payload.trendCorrelationData : {};
     var filters = getFilterValues();
     var trendFilterText = formatTrendFiltersText(filters);
+    trendHistoricalDataByFilter = trendData;
     setFilterNote('historicalFilterNote', trendFilterText);
     setFilterNote('correlationFilterNote', trendFilterText);
 
@@ -2651,8 +2810,9 @@ async function fetchReportData(scope, options) {
             setChartEmptyMessage('topSitesEmptyNote', true, snapshotErrMsg);
         }
         if (scope === 'diagnostics' || includeDiagnostics) {
-            setChartEmptyMessage('xgboostEmptyNote', true, 'Unable to load diagnostics for the filters applied.');
-            setChartEmptyMessage('convlstmEmptyNote', true, 'Unable to load diagnostics for the filters applied.');
+            var diagErrMsg = (err && err.message) ? err.message : 'Unable to load diagnostics for the filters applied.';
+            setChartEmptyMessage('xgboostEmptyNote', true, diagErrMsg);
+            setChartEmptyMessage('convlstmEmptyNote', true, diagErrMsg);
         }
         if (includeDiagnostics) {
             setScopeLoading('diagnostics', false);
@@ -2694,6 +2854,32 @@ function switchConvLSTMFilter(filterName) {
     var years = Array.isArray(data.years) ? data.years : [];
     var actual = Array.isArray(data.actual) ? data.actual : [];
     var predicted = Array.isArray(data.predicted) ? data.predicted : [];
+    var trendLabels = Array.isArray(trendHistoricalDataByFilter.labels) ? trendHistoricalDataByFilter.labels : [];
+    var trendRichness = Array.isArray(trendHistoricalDataByFilter.richness) ? trendHistoricalDataByFilter.richness : [];
+
+    if (years.length && trendLabels.length && trendRichness.length) {
+        var trendIndexByYear = {};
+        trendLabels.forEach(function (label, index) {
+            trendIndexByYear[String(label)] = index;
+        });
+        actual = years.map(function (year, index) {
+            var trendIndex = trendIndexByYear[String(year)];
+            if (typeof trendIndex === 'number' && trendIndex >= 0 && trendIndex < trendRichness.length) {
+                var trendValue = trendRichness[trendIndex];
+                if (trendValue !== null && trendValue !== undefined && trendValue !== '') {
+                    return Number(trendValue);
+                }
+            }
+            return index < actual.length ? actual[index] : null;
+        });
+    }
+
+    predicted = years.map(function (year, index) {
+        if (Number(year) < 2023) {
+            return null;
+        }
+        return index < predicted.length ? predicted[index] : null;
+    });
     
     if (charts.convlstmActualPredicted) {
         charts.convlstmActualPredicted.data.labels = years;
@@ -2886,6 +3072,12 @@ initTrendCharts();
 wireFilterButtons();
 fetchReportData('trend');
 fetchReportData('snapshot');
+
+window.addEventListener('storage', function (event) {
+    if (event && event.key === 'avilight-thresholds-updated') {
+        window.location.reload();
+    }
+});
 </script>
 HTML;
 

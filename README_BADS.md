@@ -4,7 +4,7 @@
 Run all commands from the project folder:
 
 ```powershell
-cd "c:\xampp\htdocs\avilight-main\avilight-main"
+cd "c:\laragon\www\avilight-main"
 ```
 
 ## 2) Python Environment
@@ -33,6 +33,8 @@ python -m uvicorn model:app --reload --port 5000
 ```
 
 Expected startup logs include model loading and a running server on port `5000`.
+
+If `meta_learner.joblib` is not present, the backend falls back to a deterministic blend of the XGBoost and ConvLSTM outputs so the service still starts.
 
 ## 4) Verify Backend Is Running
 
@@ -77,4 +79,3 @@ python -m pip install -r requirements.txt
   - `xgb_migrant.json`
   - `convlstm_classifier.keras`
   - `convlstm_regressor.keras`
-  - `meta_learner.joblib`

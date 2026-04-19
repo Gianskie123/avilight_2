@@ -267,6 +267,14 @@ $species_data = load_species_from_csv();
                     </div>
                     <div id="heatmapMeta" style="margin-top:6px; font-size:0.76rem; color:var(--text-secondary);">Select city and run BAU first, then load monthly SHAP driver patterns.</div>
                     <div id="monthlyHeatmapTable" style="margin-top:8px; overflow:auto;"></div>
+                    <div id="monthlyHeatmapLegend" style="margin-top:8px; border:1px solid var(--border-color); border-radius:8px; padding:8px 10px; background:rgba(2,12,42,0.45);">
+                        <div style="font-size:0.74rem; color:var(--text-secondary); margin-bottom:6px;">Heatmap legend: color intensity indicates local SHAP contribution strength for each monthly driver.</div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:0.72rem; color:var(--text-muted);">Lower impact</span>
+                            <div style="flex:1; height:10px; border-radius:999px; background:linear-gradient(90deg,#f1f5f9 0%, #cbd5e1 25%, #93c5fd 50%, #60a5fa 75%, #1d4ed8 100%);"></div>
+                            <span style="font-size:0.72rem; color:var(--text-muted);">Higher impact</span>
+                        </div>
+                    </div>
                 </div>
 
             </div>

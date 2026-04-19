@@ -12,8 +12,8 @@ function sanitize_filters(array $input): array {
     return [
         'selected_area' => trim((string) ($input['selected_area'] ?? 'All Areas')),
         'start_year' => (int) ($input['start_year'] ?? 2014),
-        'end_year' => (int) ($input['end_year'] ?? 2024),
-        'snapshot_year' => (int) ($input['snapshot_year'] ?? 2024),
+        'end_year' => (int) ($input['end_year'] ?? 2025),
+        'snapshot_year' => (int) ($input['snapshot_year'] ?? 2025),
         'snapshot_month' => (int) ($input['snapshot_month'] ?? 12),
     ];
 }
@@ -24,7 +24,9 @@ function get_cached_report_payload(array $filters): array {
         return [];
     }
 
+    $reportCacheVersion = 'v2';
     $cacheKey = 'reports:'
+        . $reportCacheVersion . ':'
         . $filters['selected_area'] . ':'
         . $filters['start_year'] . ':'
         . $filters['end_year'] . ':'

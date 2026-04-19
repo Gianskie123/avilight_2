@@ -1,5 +1,8 @@
 <?php
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -16,8 +19,8 @@ if (!is_logged_in()) {
 
 $selected_area = trim((string) ($_GET['selected_area'] ?? 'All Areas'));
 $start_year = (int) ($_GET['start_year'] ?? 2014);
-$end_year = (int) ($_GET['end_year'] ?? 2024);
-$snapshot_year = (int) ($_GET['snapshot_year'] ?? 2024);
+$end_year = (int) ($_GET['end_year'] ?? 2025);
+$snapshot_year = (int) ($_GET['snapshot_year'] ?? 2025);
 $snapshot_month = (int) ($_GET['snapshot_month'] ?? 12);
 $include_normalized = (string) ($_GET['include_normalized'] ?? '0') === '1';
 $scope = trim((string) ($_GET['scope'] ?? 'trend'));
@@ -52,8 +55,9 @@ $units = [
     'precipitation' => 'mm',
 ];
 
-$cacheTtlSeconds = $include_diagnostics ? 900 : 120;
+$cacheTtlSeconds = 30 * 24 * 60 * 60;
 $cacheDir = __DIR__ . '/../data/cache/reports';
+$reportCacheSchemaVersion = 'v3';
 
 /**
  * Build inline SQL table for Metro Manila city names.
@@ -390,6 +394,85 @@ function ensureSummaryTable(PDO $pdo): void {
 function logDataQuality(array $payload): void {
     $line = '[ecological-report-validation] ' . json_encode($payload, JSON_UNESCAPED_UNICODE);
     error_log($line ?: '[ecological-report-validation] failed-to-encode-log');
+}
+
+function ensureIndexExists(PDO $pdo, string $tableName, string $indexName, string $createSql): void {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = :table_name
+          AND index_name = :index_name");
+    $stmt->bindValue(':table_name', $tableName, PDO::PARAM_STR);
+    $stmt->bindValue(':index_name', $indexName, PDO::PARAM_STR);
+    $stmt->execute();
+
+    if ((int) $stmt->fetchColumn() === 0) {
+        $pdo->exec($createSql);
+    }
+}
+
+function ensureReportQueryIndexes(PDO $pdo): void {
+    ensureIndexExists(
+        $pdo,
+        'observation_city_map',
+        'idx_ocm_area_rbo',
+        'CREATE INDEX idx_ocm_area_rbo ON observation_city_map(area, rbo_id)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'city_grid_map',
+        'idx_cgm_area_lat_lon',
+        'CREATE INDEX idx_cgm_area_lat_lon ON city_grid_map(area, lat, lon)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'ecological_yearly_summary',
+        'idx_summary_year',
+        'CREATE INDEX idx_summary_year ON ecological_yearly_summary(year)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'raw_bird_observation',
+        'idx_rbo_year_month_species_id',
+        'CREATE INDEX idx_rbo_year_month_species_id ON raw_bird_observation(year, month, species_id, id)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'raw_bird_observation',
+        'idx_rbo_year_month_site_species',
+        'CREATE INDEX idx_rbo_year_month_site_species ON raw_bird_observation(year, month, site_name, species_id)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'viirs',
+        'idx_viirs_year_month_lat_lon',
+        'CREATE INDEX idx_viirs_year_month_lat_lon ON viirs(year, month, latitude, longitude)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'ndvi',
+        'idx_ndvi_year_month_lat_lon',
+        'CREATE INDEX idx_ndvi_year_month_lat_lon ON ndvi(year, month, latitude, longitude)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'land_temp',
+        'idx_land_temp_year_month_lat_lon',
+        'CREATE INDEX idx_land_temp_year_month_lat_lon ON land_temp(year, month, latitude, longitude)'
+    );
+
+    ensureIndexExists(
+        $pdo,
+        'precip',
+        'idx_precip_year_month_lat_lon',
+        'CREATE INDEX idx_precip_year_month_lat_lon ON precip(year, month, latitude, longitude)'
+    );
 }
 
 /**
@@ -791,18 +874,15 @@ function fetchSnapshotSpeciesDistributions(PDO $pdo, string $selectedArea, int $
 
 function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea, int $snapshotYear, int $snapshotMonth): array {
     $areaListSql = "'" . implode("','", array_map(static fn($c) => str_replace("'", "''", $c), $cities)) . "'";
-    $areaExpr = "COALESCE(NULLIF(TRIM(m.area), ''), NULLIF(TRIM(cg.area), ''))";
+    $areaExpr = "m.area";
     $richnessSql = "SELECT
             {$areaExpr} AS area,
             COUNT(DISTINCT r.species_id) AS bird_richness
         FROM raw_bird_observation r
         JOIN species_masterlist sm
             ON sm.species_id = r.species_id
-        LEFT JOIN observation_city_map m
+        JOIN observation_city_map m
             ON m.rbo_id = r.id
-        LEFT JOIN city_grid_map cg
-            ON ABS(cg.lat - r.latitude) < 0.000001
-           AND ABS(cg.lon - r.longitude) < 0.000001
         WHERE r.year = :snapshot_year
           AND r.month = :snapshot_month
           AND r.species_id IS NOT NULL
@@ -1134,89 +1214,53 @@ function emptySnapshotScatterData(): array {
 }
 
 function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea, int $snapshotYear, int $snapshotMonth, int $limit = 10): array {
-    $latestStmt = $pdo->query("SELECT year, month
-        FROM raw_bird_observation
-        WHERE year IS NOT NULL
-          AND month IS NOT NULL
-          AND species_id IS NOT NULL
-        ORDER BY year DESC, month DESC
-        LIMIT 1");
-    $latestRow = $latestStmt ? ($latestStmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
-    $snapshotYear = (int) ($latestRow['year'] ?? $snapshotYear);
-    $snapshotMonth = (int) ($latestRow['month'] ?? $snapshotMonth);
+    $areaClause = '';
+    if ($selectedArea !== 'All Areas') {
+        $areaClause = ' AND m.area = :selected_area';
+    }
 
     $sql = "SELECT
             COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site') AS site_name,
-            COUNT(DISTINCT r.species_id) AS bird_richness,
-            AVG(r.latitude) AS site_lat,
-            AVG(r.longitude) AS site_lon
+            m.area AS area,
+            COUNT(DISTINCT r.species_id) AS bird_richness
         FROM raw_bird_observation r
-        JOIN species_masterlist sm
-            ON sm.species_id = r.species_id
+        JOIN observation_city_map m
+            ON m.rbo_id = r.id
         WHERE r.year = :snapshot_year
           AND r.month = :snapshot_month
           AND r.species_id IS NOT NULL
-        GROUP BY site_name
+          {$areaClause}
+        GROUP BY m.area, COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site')
         HAVING bird_richness > 0
-        ORDER BY bird_richness DESC, site_name ASC";
+        ORDER BY bird_richness DESC, site_name ASC
+        LIMIT :lim";
 
     $params = [
         ':snapshot_year' => $snapshotYear,
         ':snapshot_month' => $snapshotMonth,
     ];
+    if ($selectedArea !== 'All Areas') {
+        $params[':selected_area'] = $selectedArea;
+    }
 
     $stmt = $pdo->prepare($sql);
     foreach ($params as $k => $v) {
         $stmt->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
     }
+    $stmt->bindValue(':lim', max(1, (int) $limit), PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $labels = [];
     $values = [];
     $details = [];
-    $cityPolygons = loadCityPolygons($cities);
-    $resolved = [];
-
+    $rank = 1;
     foreach ($rows as $row) {
         $siteName = trim((string) ($row['site_name'] ?? ''));
-        if ($siteName === '') {
+        $area = trim((string) ($row['area'] ?? ''));
+        if ($siteName === '' || $area === '') {
             continue;
         }
-
-        $lat = isset($row['site_lat']) ? (float) $row['site_lat'] : null;
-        $lon = isset($row['site_lon']) ? (float) $row['site_lon'] : null;
-        if ($lat === null || $lon === null || empty($cityPolygons)) {
-            continue;
-        }
-
-        $area = mapPointToCity($lat, $lon, $cityPolygons, $cities);
-        if ($area === null) {
-            continue;
-        }
-
-        $resolved[] = [
-            'site_name' => $siteName,
-            'area' => $area,
-            'bird_richness' => (int) ($row['bird_richness'] ?? 0),
-        ];
-    }
-
-    usort($resolved, static function (array $a, array $b): int {
-        if ($a['bird_richness'] === $b['bird_richness']) {
-            return strcmp((string) $a['site_name'], (string) $b['site_name']);
-        }
-        return $b['bird_richness'] <=> $a['bird_richness'];
-    });
-
-    if ($limit > 0 && count($resolved) > $limit) {
-        $resolved = array_slice($resolved, 0, $limit);
-    }
-
-    $rank = 1;
-    foreach ($resolved as $row) {
-        $siteName = (string) $row['site_name'];
-        $area = (string) $row['area'];
         $richness = (int) ($row['bird_richness'] ?? 0);
         $labels[] = $siteName;
         $values[] = $richness;
@@ -1233,8 +1277,8 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
         'labels' => $labels,
         'data' => $values,
         'rows' => $details,
-        'total_sites' => count($resolved),
-        'selected_area' => 'All Areas',
+        'total_sites' => count($details),
+        'selected_area' => $selectedArea,
         'snapshot_year' => $snapshotYear,
         'snapshot_month' => $snapshotMonth,
     ];
@@ -1243,8 +1287,30 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
 function fetchDiagnosticsYearlySeries(PDO $pdo, string $selectedArea, int $startYear, int $endYear): array {
     $envByYear = [];
     $classByYear = [];
+    $richnessByYear = [];
 
     if ($selectedArea === 'All Areas') {
+        $richnessStmt = $pdo->prepare("SELECT
+                r.year,
+                COUNT(DISTINCT r.species_id) AS bird_richness
+            FROM raw_bird_observation r
+            JOIN observation_city_map m
+                ON m.rbo_id = r.id
+            WHERE r.year BETWEEN :start_year AND :end_year
+              AND r.species_id IS NOT NULL
+            GROUP BY r.year
+            ORDER BY r.year ASC");
+        $richnessStmt->bindValue(':start_year', $startYear, PDO::PARAM_INT);
+        $richnessStmt->bindValue(':end_year', $endYear, PDO::PARAM_INT);
+        $richnessStmt->execute();
+
+        foreach (($richnessStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
+            $year = (int) ($row['year'] ?? 0);
+            if ($year > 0) {
+                $richnessByYear[$year] = isset($row['bird_richness']) ? (float) $row['bird_richness'] : null;
+            }
+        }
+
         $envStmt = $pdo->prepare("SELECT
                 year,
                 AVG(ndvi_avg) AS ndvi,
@@ -1278,6 +1344,29 @@ function fetchDiagnosticsYearlySeries(PDO $pdo, string $selectedArea, int $start
         $classStmt->bindValue(':end_year', $endYear, PDO::PARAM_INT);
         $classStmt->execute();
     } else {
+        $richnessStmt = $pdo->prepare("SELECT
+                r.year,
+                COUNT(DISTINCT r.species_id) AS bird_richness
+            FROM raw_bird_observation r
+            JOIN observation_city_map m
+                ON m.rbo_id = r.id
+            WHERE m.area = :area
+              AND r.year BETWEEN :start_year AND :end_year
+              AND r.species_id IS NOT NULL
+            GROUP BY r.year
+            ORDER BY r.year ASC");
+        $richnessStmt->bindValue(':area', $selectedArea, PDO::PARAM_STR);
+        $richnessStmt->bindValue(':start_year', $startYear, PDO::PARAM_INT);
+        $richnessStmt->bindValue(':end_year', $endYear, PDO::PARAM_INT);
+        $richnessStmt->execute();
+
+        foreach (($richnessStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
+            $year = (int) ($row['year'] ?? 0);
+            if ($year > 0) {
+                $richnessByYear[$year] = isset($row['bird_richness']) ? (float) $row['bird_richness'] : null;
+            }
+        }
+
         $envStmt = $pdo->prepare("SELECT
                 year,
                 ndvi_avg AS ndvi,
@@ -1358,6 +1447,7 @@ function fetchDiagnosticsYearlySeries(PDO $pdo, string $selectedArea, int $start
 
         $rows[] = [
             'year' => $y,
+            'bird_richness' => isset($richnessByYear[$y]) ? (float) $richnessByYear[$y] : null,
             'ndvi' => (float) $env['ndvi'],
             'lst_day' => (float) $env['lst_day'],
             'viirs_avg_rad' => (float) $env['viirs_avg_rad'],
@@ -1451,7 +1541,7 @@ function normalizeDiagnosticsPayloadShape(array $raw, array $fallback): array {
     ];
 }
 
-function buildDiagnosticsConvLstmSeries(array $seriesRows, array $sourcePredictions, int $startYear = 2014, int $endYear = 2024): array {
+function buildDiagnosticsConvLstmSeries(array $seriesRows, array $sourcePredictions, int $startYear = 2014, int $endYear = 2025): array {
     $years = [];
     for ($year = $startYear; $year <= $endYear; $year++) {
         $years[] = $year;
@@ -1485,11 +1575,16 @@ function buildDiagnosticsConvLstmSeries(array $seriesRows, array $sourcePredicti
             if (!isset($predictedByYear[$filter])) {
                 $predictedByYear[$filter] = [];
             }
-            $actualByYear[$filter][$year] = array_key_exists($index, $seriesActual) ? (float) $seriesActual[$index] : null;
+            if (array_key_exists($index, $seriesActual) && $seriesActual[$index] !== null && $seriesActual[$index] !== '') {
+                $actualByYear[$filter][$year] = (float) $seriesActual[$index];
+            } else {
+                $actualByYear[$filter][$year] = null;
+            }
 
-            // ConvLSTM test split is pinned to 2023-2024; keep predicted values scoped to those years.
-            if ($year >= 2023 && $year <= 2024) {
-                $predictedByYear[$filter][$year] = array_key_exists($index, $seriesPredicted) ? (float) $seriesPredicted[$index] : null;
+            if (array_key_exists($index, $seriesPredicted) && $seriesPredicted[$index] !== null && $seriesPredicted[$index] !== '') {
+                $predictedByYear[$filter][$year] = (float) $seriesPredicted[$index];
+            } else {
+                $predictedByYear[$filter][$year] = null;
             }
         }
     }
@@ -1501,6 +1596,7 @@ function buildDiagnosticsConvLstmSeries(array $seriesRows, array $sourcePredicti
         $predictedOut = [];
         foreach ($years as $year) {
             $row = $rowsByYear[$year] ?? null;
+            $birdRichness = (float) ($row['bird_richness'] ?? 0.0);
             $tolerant = (float) ($row['tolerant'] ?? 0.0);
             $sensitive = (float) ($row['sensitive'] ?? 0.0);
             $resident = (float) ($row['resident'] ?? 0.0);
@@ -1521,12 +1617,16 @@ function buildDiagnosticsConvLstmSeries(array $seriesRows, array $sourcePredicti
                     break;
                 case 'all':
                 default:
-                    $actualValue = (($tolerant + $sensitive) + ($resident + $migrant)) / 2.0;
+                    $actualValue = $birdRichness > 0 ? $birdRichness : (($tolerant + $sensitive) + ($resident + $migrant)) / 2.0;
                     break;
             }
 
             if (isset($actualByYear[$filter]) && array_key_exists($year, $actualByYear[$filter])) {
-                $actualOut[] = $actualByYear[$filter][$year] === null ? null : round((float) $actualByYear[$filter][$year], 4);
+                $sourceActual = $actualByYear[$filter][$year];
+                // If source artifact has null actual (common for latest year), use computed yearly actual fallback.
+                $actualOut[] = ($sourceActual === null)
+                    ? round((float) $actualValue, 4)
+                    : round((float) $sourceActual, 4);
             } else {
                 $actualOut[] = round((float) $actualValue, 4);
             }
@@ -1881,7 +1981,7 @@ function resolveDiagnosticsModelDir(PDO $pdo, string $defaultModelsDir): array {
 
 function computeModelDiagnostics(PDO $pdo, string $selectedArea, int $startYear, int $endYear, string $modelsDir): array {
     $diagStartYear = 2014;
-    $diagEndYear = 2024;
+    $diagEndYear = 2025;
     $diagArea = 'All Areas';
     $years = [];
     for ($y = $diagStartYear; $y <= $diagEndYear; $y++) {
@@ -1995,14 +2095,15 @@ try {
     $mysql = get_mysql_db();
 
     ensureSummaryTable($mysql);
+    ensureReportQueryIndexes($mysql);
     $spatialMapStats = refreshSpatialMaps($mysql, $metro_manila_cities, 86400);
 
     $yearRow = $mysql->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary')->fetch(PDO::FETCH_ASSOC) ?: [];
     $yearMin = (int) ($yearRow['min_year'] ?? 2014);
-    $yearMax = (int) ($yearRow['max_year'] ?? 2024);
+    $yearMax = (int) ($yearRow['max_year'] ?? 2025);
     if ($yearMin <= 0 || $yearMax <= 0 || $yearMin > $yearMax) {
         $yearMin = 2014;
-        $yearMax = 2024;
+        $yearMax = 2025;
     }
 
     $start_year = max($yearMin, min($yearMax, $start_year));
@@ -2031,7 +2132,7 @@ try {
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0775, true);
     }
-    $cacheKey = 'reports:' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_year . ':' . $snapshot_month . ':diag=' . ($include_diagnostics ? '1' : '0');
+    $cacheKey = 'reports:' . $reportCacheSchemaVersion . ':' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_year . ':' . $snapshot_month . ':diag=' . ($include_diagnostics ? '1' : '0');
     $cacheFile = $cacheDir . '/' . sha1($cacheKey) . '.json';
 
     $cached = $force_refresh ? null : cacheGet($cacheFile, $cacheTtlSeconds);
@@ -2067,27 +2168,20 @@ try {
     }
 
 
+    // Build historical data for selected area(s) using direct aggregation from raw_bird_observation
+    // This ensures we always get complete data, not just what's in ecological_yearly_summary
     $seriesRows = [];
-    if ($selected_area === 'All Areas') {
-        $areaListSql = "'" . implode("','", array_map(static fn($c) => str_replace("'", "''", $c), $metro_manila_cities)) . "'";
+    
+    try {
+        if ($selected_area === 'All Areas') {
+            $areaListSql = "'" . implode("','", array_map(static fn($c) => str_replace("'", "''", $c), $metro_manila_cities)) . "'";
+            $areaFilter = "m.area IN ({$areaListSql})";
+        } else {
+            $areaFilter = "m.area = :selected_area";
+        }
 
-        $envStmt = $mysql->prepare("SELECT
-                year,
-                AVG(viirs_avg) AS viirs,
-                AVG(ndvi_avg) AS ndvi,
-                AVG(lst_avg) AS lst,
-                AVG(precipitation_total) AS precipitation
-            FROM ecological_yearly_summary
-            WHERE year BETWEEN :start_year AND :end_year
-              AND area IN ({$areaListSql})
-            GROUP BY year
-            ORDER BY year ASC");
-        $envStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
-        $envStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
-        $envStmt->execute();
-        $envRows = $envStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        $richnessStmt = $mysql->prepare("SELECT
+        // Richness: use direct aggregation from raw_bird_observation (always fresh)
+        $richnessSql = "SELECT
                 r.year,
                 COUNT(DISTINCT r.species_id) AS bird_richness
             FROM raw_bird_observation r
@@ -2097,12 +2191,22 @@ try {
                 ON m.rbo_id = r.id
             WHERE r.year BETWEEN :start_year AND :end_year
               AND r.species_id IS NOT NULL
-              AND m.area IN ({$areaListSql})
+              AND {$areaFilter}
             GROUP BY r.year
-            ORDER BY r.year ASC");
+            ORDER BY r.year ASC";
+        
+        $richnessStmt = $mysql->prepare($richnessSql);
+        if (!$richnessStmt) {
+            throw new Exception("Failed to prepare richness query: " . implode(", ", $mysql->errorInfo()));
+        }
         $richnessStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
         $richnessStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
-        $richnessStmt->execute();
+        if ($selected_area !== 'All Areas') {
+            $richnessStmt->bindValue(':selected_area', $selected_area, PDO::PARAM_STR);
+        }
+        if (!$richnessStmt->execute()) {
+            throw new Exception("Failed to execute richness query: " . implode(", ", $richnessStmt->errorInfo()));
+        }
         $richnessRows = $richnessStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $richnessByYear = [];
@@ -2113,37 +2217,88 @@ try {
             }
         }
 
-        foreach ($envRows as $row) {
-            $year = (int) ($row['year'] ?? 0);
-            if ($year <= 0) {
-                continue;
+        // Environmental data: aggregate from ecological_yearly_summary
+        if ($selected_area === 'All Areas') {
+            $envStmt = $mysql->prepare("SELECT
+                    year,
+                    AVG(viirs_avg) AS viirs,
+                    AVG(ndvi_avg) AS ndvi,
+                    AVG(lst_avg) AS lst,
+                    AVG(precipitation_total) AS precipitation
+                FROM ecological_yearly_summary
+                WHERE year BETWEEN :start_year AND :end_year
+                  AND area IN ({$areaListSql})
+                GROUP BY year
+                ORDER BY year ASC");
+            if (!$envStmt) {
+                throw new Exception("Failed to prepare all-areas env query: " . implode(", ", $mysql->errorInfo()));
             }
-            $seriesRows[] = [
-                'year' => $year,
-                'bird_richness' => $richnessByYear[$year] ?? null,
-                'viirs' => isset($row['viirs']) ? (float) $row['viirs'] : null,
-                'ndvi' => isset($row['ndvi']) ? (float) $row['ndvi'] : null,
-                'lst' => isset($row['lst']) ? (float) $row['lst'] : null,
-                'precipitation' => isset($row['precipitation']) ? (float) $row['precipitation'] : null,
-            ];
+            $envStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
+            $envStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
+        } else {
+            // For specific area, use pre-computed summary table
+            $envStmt = $mysql->prepare("SELECT
+                    year,
+                    viirs_avg AS viirs,
+                    ndvi_avg AS ndvi,
+                    lst_avg AS lst,
+                    precipitation_total AS precipitation
+                FROM ecological_yearly_summary
+                WHERE area = :area
+                  AND year BETWEEN :start_year AND :end_year
+                ORDER BY year ASC");
+            if (!$envStmt) {
+                throw new Exception("Failed to prepare specific-area env query: " . implode(", ", $mysql->errorInfo()));
+            }
+            $envStmt->bindValue(':area', $selected_area, PDO::PARAM_STR);
+            $envStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
+            $envStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
         }
-    } else {
-        $seriesStmt = $mysql->prepare("SELECT
-                year,
-                bird_richness,
-                viirs_avg AS viirs,
-                ndvi_avg AS ndvi,
-                lst_avg AS lst,
-                precipitation_total AS precipitation
-            FROM ecological_yearly_summary
-            WHERE area = :area
-              AND year BETWEEN :start_year AND :end_year
-            ORDER BY year ASC");
-        $seriesStmt->bindValue(':area', $selected_area, PDO::PARAM_STR);
-        $seriesStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
-        $seriesStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
-        $seriesStmt->execute();
-        $seriesRows = $seriesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        
+        if (!$envStmt->execute()) {
+            throw new Exception("Failed to execute env query: " . implode(", ", $envStmt->errorInfo()));
+        }
+        $envRows = $envStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        // Merge: build data for all years in range
+        $envByYear = [];
+        foreach ($envRows as $envRow) {
+            $y = (int) ($envRow['year'] ?? 0);
+            if ($y > 0) {
+                $envByYear[$y] = $envRow;
+            }
+        }
+        
+        for ($year = $start_year; $year <= $end_year; $year++) {
+            $richness = $richnessByYear[$year] ?? null;
+            $envData = $envByYear[$year] ?? null;
+            
+            // Include year if we have richness OR env data
+            if ($richness !== null || $envData !== null) {
+                $seriesRows[] = [
+                    'year' => $year,
+                    'bird_richness' => $richness,
+                    'viirs' => $envData && isset($envData['viirs']) ? (float) $envData['viirs'] : null,
+                    'ndvi' => $envData && isset($envData['ndvi']) ? (float) $envData['ndvi'] : null,
+                    'lst' => $envData && isset($envData['lst']) ? (float) $envData['lst'] : null,
+                    'precipitation' => $envData && isset($envData['precipitation']) ? (float) $envData['precipitation'] : null,
+                ];
+            }
+        }
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Data aggregation failed: ' . $e->getMessage(),
+            'debug_filters' => [
+                'selected_area' => $selected_area,
+                'start_year' => $start_year,
+                'end_year' => $end_year,
+                'snapshot_year' => $snapshot_year,
+                'snapshot_month' => $snapshot_month,
+            ],
+        ]);
+        exit;
     }
 
     $unified = [];
@@ -2186,37 +2341,61 @@ try {
     }
 
     $corrInput = [];
-    if ($selected_area === 'All Areas') {
-        $corrStmt = $mysql->prepare("SELECT
-                bird_richness,
-                viirs_avg AS viirs,
-                ndvi_avg AS ndvi,
-                lst_avg AS lst,
-                precipitation_total AS precipitation
-            FROM ecological_yearly_summary
-            WHERE year BETWEEN :start_year AND :end_year
-              AND area IN ('" . implode("','", array_map(static fn($c) => str_replace("'", "''", $c), $metro_manila_cities)) . "')
-              AND bird_richness IS NOT NULL");
-        $corrStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
-        $corrStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
-        $corrStmt->execute();
-        $corrInput = $corrStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    } else {
-        $corrStmt = $mysql->prepare("SELECT
-                bird_richness,
-                viirs_avg AS viirs,
-                ndvi_avg AS ndvi,
-                lst_avg AS lst,
-                precipitation_total AS precipitation
-            FROM ecological_yearly_summary
-            WHERE area = :area
-              AND year BETWEEN :start_year AND :end_year
-              AND bird_richness IS NOT NULL");
-        $corrStmt->bindValue(':area', $selected_area, PDO::PARAM_STR);
-        $corrStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
-        $corrStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
-        $corrStmt->execute();
-        $corrInput = $corrStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    try {
+        if ($selected_area === 'All Areas') {
+            $corrStmt = $mysql->prepare("SELECT
+                    bird_richness,
+                    viirs_avg AS viirs,
+                    ndvi_avg AS ndvi,
+                    lst_avg AS lst,
+                    precipitation_total AS precipitation
+                FROM ecological_yearly_summary
+                WHERE year BETWEEN :start_year AND :end_year
+                  AND area IN ('" . implode("','", array_map(static fn($c) => str_replace("'", "''", $c), $metro_manila_cities)) . "')
+                  AND bird_richness IS NOT NULL");
+            if (!$corrStmt) {
+                throw new Exception("Failed to prepare all-areas correlation query: " . implode(", ", $mysql->errorInfo()));
+            }
+            $corrStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
+            $corrStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
+            if (!$corrStmt->execute()) {
+                throw new Exception("Failed to execute all-areas correlation query: " . implode(", ", $corrStmt->errorInfo()));
+            }
+            $corrInput = $corrStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } else {
+            $corrStmt = $mysql->prepare("SELECT
+                    bird_richness,
+                    viirs_avg AS viirs,
+                    ndvi_avg AS ndvi,
+                    lst_avg AS lst,
+                    precipitation_total AS precipitation
+                FROM ecological_yearly_summary
+                WHERE area = :area
+                  AND year BETWEEN :start_year AND :end_year
+                  AND bird_richness IS NOT NULL");
+            if (!$corrStmt) {
+                throw new Exception("Failed to prepare specific-area correlation query: " . implode(", ", $mysql->errorInfo()));
+            }
+            $corrStmt->bindValue(':area', $selected_area, PDO::PARAM_STR);
+            $corrStmt->bindValue(':start_year', $start_year, PDO::PARAM_INT);
+            $corrStmt->bindValue(':end_year', $end_year, PDO::PARAM_INT);
+            if (!$corrStmt->execute()) {
+                throw new Exception("Failed to execute specific-area correlation query: " . implode(", ", $corrStmt->errorInfo()));
+            }
+            $corrInput = $corrStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
+    } catch (Exception $corrEx) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Correlation data query failed: ' . $corrEx->getMessage(),
+            'debug_filters' => [
+                'selected_area' => $selected_area,
+                'start_year' => $start_year,
+                'end_year' => $end_year,
+            ],
+        ]);
+        exit;
     }
 
     $buildCorrRow = static function (array $rows, string $key): array {
@@ -2249,11 +2428,13 @@ try {
         ];
     };
 
+    // Build correlation rows (will return all zeros if insufficient data)
     $viirsRow = $buildCorrRow($corrInput, 'viirs');
     $ndviRow = $buildCorrRow($corrInput, 'ndvi');
     $lstRow = $buildCorrRow($corrInput, 'lst');
     $precRow = $buildCorrRow($corrInput, 'precipitation');
 
+    // Calculate correlations (returns 0.0 for insufficient data)
     $correlation = [
         'richness_viirs' => pearson($viirsRow, 'viirs'),
         'richness_ndvi' => pearson($ndviRow, 'ndvi'),
@@ -2261,7 +2442,19 @@ try {
         'richness_precip' => pearson($precRow, 'precipitation'),
     ];
 
-    $snapshotDistributions = fetchSnapshotSpeciesDistributions($mysql, $selected_area, $snapshot_year, $snapshot_month);
+    $snapshotDistributions = [];
+    $snapshotDistributionsError = '';
+    try {
+        $snapshotDistributions = fetchSnapshotSpeciesDistributions($mysql, $selected_area, $snapshot_year, $snapshot_month);
+    } catch (Throwable $distEx) {
+        $snapshotDistributionsError = $distEx->getMessage();
+        $snapshotDistributions = [
+            'migration_status' => ['labels' => [], 'data' => [], 'total_species' => 0],
+            'light_tolerance' => ['labels' => [], 'data' => [], 'total_species' => 0],
+        ];
+    }
+    
+    $snapshotScatterData = [];
     $snapshotScatterError = '';
     try {
         $snapshotScatterData = fetchSnapshotScatterData($mysql, $metro_manila_cities, $selected_area, $snapshot_year, $snapshot_month);
@@ -2269,7 +2462,15 @@ try {
         $snapshotScatterData = emptySnapshotScatterData();
         $snapshotScatterError = $scatterEx->getMessage();
     }
-    $topSitesRichnessData = fetchTopSitesRichnessData($mysql, $metro_manila_cities, $selected_area, $snapshot_year, $snapshot_month, 10);
+    
+    $topSitesRichnessData = [];
+    $topSitesError = '';
+    try {
+        $topSitesRichnessData = fetchTopSitesRichnessData($mysql, $metro_manila_cities, $selected_area, $snapshot_year, $snapshot_month, 10);
+    } catch (Throwable $topSitesEx) {
+        $topSitesError = $topSitesEx->getMessage();
+        $topSitesRichnessData = ['labels' => [], 'data' => [], 'rows' => []];
+    }
 
 
     $trendHistoricalData = [
@@ -2281,39 +2482,61 @@ try {
         'precip' => array_map(static fn($r) => $r['precipitation'], $unified),
     ];
 
+    $trendHistoricalData = [];
     $normalized = null;
-    if ($include_normalized) {
-        $keys = ['bird_richness', 'viirs', 'ndvi', 'lst', 'precipitation'];
-        $stats = [];
-        foreach ($keys as $key) {
-            $vals = array_values(array_filter(array_map(static fn($r) => $r[$key], $unified), static fn($v) => $v !== null));
-            $n = count($vals);
-            if ($n === 0) {
-                $stats[$key] = ['mean' => 0.0, 'std' => 0.0];
-                continue;
-            }
-            $mean = array_sum($vals) / $n;
-            $var = 0.0;
-            foreach ($vals as $v) {
-                $var += ($v - $mean) * ($v - $mean);
-            }
-            $std = $n > 1 ? sqrt($var / ($n - 1)) : 0.0;
-            $stats[$key] = ['mean' => $mean, 'std' => $std];
+    
+    // Build trend data with defensive checks
+    if (!empty($unified) && is_array($unified)) {
+        try {
+            $trendHistoricalData = [
+                'labels' => array_map(static fn($r) => (int) $r['year'], $unified),
+                'richness' => array_map(static fn($r) => $r['bird_richness'], $unified),
+                'viirs' => array_map(static fn($r) => $r['viirs'], $unified),
+                'ndvi' => array_map(static fn($r) => $r['ndvi'], $unified),
+                'lst' => array_map(static fn($r) => $r['lst'], $unified),
+                'precip' => array_map(static fn($r) => $r['precipitation'], $unified),
+            ];
+        } catch (Throwable $trendEx) {
+            $trendHistoricalData = ['labels' => [], 'richness' => [], 'viirs' => [], 'ndvi' => [], 'lst' => [], 'precip' => []];
         }
+    }
 
-        $normalized = array_map(static function ($r) use ($stats) {
-            $out = ['year' => $r['year']];
-            foreach (['bird_richness', 'viirs', 'ndvi', 'lst', 'precipitation'] as $key) {
-                $val = $r[$key];
-                $std = $stats[$key]['std'];
-                if ($val === null || $std <= 0) {
-                    $out[$key . '_z'] = null;
-                } else {
-                    $out[$key . '_z'] = round(($val - $stats[$key]['mean']) / $std, 6);
+    if ($include_normalized) {
+        try {
+            $keys = ['bird_richness', 'viirs', 'ndvi', 'lst', 'precipitation'];
+            $stats = [];
+            foreach ($keys as $key) {
+                $vals = array_values(array_filter(array_map(static fn($r) => $r[$key], $unified), static fn($v) => $v !== null));
+                $n = count($vals);
+                if ($n === 0) {
+                    $stats[$key] = ['mean' => 0.0, 'std' => 0.0];
+                    continue;
                 }
+                $mean = array_sum($vals) / $n;
+                $var = 0.0;
+                foreach ($vals as $v) {
+                    $var += ($v - $mean) * ($v - $mean);
+                }
+                $std = $n > 1 ? sqrt($var / ($n - 1)) : 0.0;
+                $stats[$key] = ['mean' => $mean, 'std' => $std];
             }
-            return $out;
-        }, $unified);
+
+            $normalized = array_map(static function ($r) use ($stats) {
+                $out = ['year' => $r['year']];
+                foreach (['bird_richness', 'viirs', 'ndvi', 'lst', 'precipitation'] as $key) {
+                    $val = $r[$key];
+                    $std = $stats[$key]['std'];
+                    if ($val === null || $std <= 0) {
+                        $out[$key . '_z'] = null;
+                    } else {
+                        $out[$key . '_z'] = round(($val - $stats[$key]['mean']) / $std, 6);
+                    }
+                }
+                return $out;
+            }, $unified);
+        } catch (Throwable $normEx) {
+            $normalized = null;
+        }
     }
 
     logDataQuality([
@@ -2350,6 +2573,8 @@ try {
             'diagnostics_source' => $diagnosticsSource,
             'diagnostics_error' => $diagnosticsError,
             'snapshot_scatter_error' => $snapshotScatterError,
+            'snapshot_distributions_error' => $snapshotDistributionsError ?? '',
+            'top_sites_error' => $topSitesError ?? '',
             'diagnostics_model_dir_source' => (string) ($resolvedModelDirInfo['source'] ?? 'unknown'),
             'diagnostics_model_dir_note' => (string) ($resolvedModelDirInfo['note'] ?? ''),
             'diagnostics_metrics_source' => $diagnosticsMetricsSource,

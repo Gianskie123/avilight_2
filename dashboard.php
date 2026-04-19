@@ -2,19 +2,300 @@
 $page_title = 'Dashboard';
 require_once 'includes/header.php';
 
-// Load sample data
-$kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
+require_once 'includes/db.php';
+
+function loadDashboardThresholdConfig(): array {
+    $defaults = [
+        'high_risk' => 60.0,
+        'mod_risk' => 40.0,
+        'low_risk' => 25.0,
+    ];
+
+    $path = __DIR__ . '/data/cache/thresholds.json';
+    if (!is_readable($path)) {
+        return $defaults;
+    }
+
+    $decoded = json_decode((string) file_get_contents($path), true);
+    if (!is_array($decoded)) {
+        return $defaults;
+    }
+
+    foreach ($defaults as $key => $value) {
+        if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
+            $defaults[$key] = (float) $decoded[$key];
+        }
+    }
+
+    return $defaults;
+}
+
+$dashboard_thresholds = loadDashboardThresholdConfig();
+$kba_data = [];
+$historical_env_yearly = [];
+$risk_site_yearly = [];
+$risk_snapshot_year = 2025;
+$risk_city_map = [
+    'Las Piñas-Parañaque Wetland Park' => 'Las Piñas',
+    'Ninoy Aquino Parks and Wildlife Center' => 'Quezon City',
+    'Manila Bay' => 'Manila',
+    'Manila Bay Beach Resort' => 'Parañaque',
+    'Luneta National Park' => 'Manila',
+];
+$risk_land_cover_map = [
+    'Las Piñas-Parañaque Wetland Park' => 11,
+    'Ninoy Aquino Parks and Wildlife Center' => 1,
+    'Manila Bay' => 17,
+    'Manila Bay Beach Resort' => 13,
+    'Luneta National Park' => 1,
+];
+$kba_coords = [
+    'Las Piñas-Parañaque Wetland Park' => ['lat' => 14.4500, 'lng' => 120.9833],
+    'Ninoy Aquino Parks and Wildlife Center' => ['lat' => 14.6537, 'lng' => 121.0499],
+    'Manila Bay' => ['lat' => 14.5700, 'lng' => 120.9800],
+    'Manila Bay Beach Resort' => ['lat' => 14.5200, 'lng' => 120.9700],
+    'Luneta National Park' => ['lat' => 14.5826, 'lng' => 120.9790],
+];
+
+$risk_city_map_json = json_encode($risk_city_map, JSON_UNESCAPED_UNICODE);
+try {
+    $mysql = get_mysql_db();
+    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month, grid_cells_json FROM kba_pa_audit_live ORDER BY area_name ASC");
+    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+
+    $risk_cells_by_area = [];
+
+    foreach ($rows as $row) {
+        $name = (string) ($row['area_name'] ?? '');
+        if ($name === '' || !isset($kba_coords[$name])) {
+            continue;
+        }
+        $coords = $kba_coords[$name];
+        $kba_data[] = [
+            'name' => $name,
+            'type' => (string) ($row['area_type'] ?? ''),
+            'latitude' => (float) $coords['lat'],
+            'longitude' => (float) $coords['lng'],
+            'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : 0.0,
+            'status' => (string) ($row['status'] ?? ''),
+            'snapshot_year' => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
+            'snapshot_month' => isset($row['snapshot_month']) ? (int) $row['snapshot_month'] : null,
+            'grid_cells_json' => (string) ($row['grid_cells_json'] ?? '[]'),
+            'land_cover' => (int) ($risk_land_cover_map[$name] ?? 11),
+        ];
+
+        if (isset($row['snapshot_year']) && is_numeric($row['snapshot_year'])) {
+            $risk_snapshot_year = max($risk_snapshot_year, (int) $row['snapshot_year']);
+        }
+
+        $cells = json_decode((string) ($row['grid_cells_json'] ?? '[]'), true);
+        if (is_array($cells)) {
+            foreach ($cells as $cell) {
+                if (!is_array($cell) || !isset($cell['lat'], $cell['lon'])) {
+                    continue;
+                }
+                $lat = round((float) $cell['lat'], 8);
+                $lon = round((float) $cell['lon'], 8);
+                $key = $lat . '|' . $lon;
+                if (!isset($risk_cells_by_area[$name])) {
+                    $risk_cells_by_area[$name] = [];
+                }
+                $risk_cells_by_area[$name][$key] = ['lat' => $lat, 'lon' => $lon];
+            }
+        }
+    }
+
+    if (!empty($risk_cells_by_area)) {
+        $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
+        $mysql->exec("CREATE TEMPORARY TABLE tmp_dashboard_risk_cells (
+            area_name VARCHAR(180) NOT NULL,
+            lat DECIMAL(10,8) NOT NULL,
+            lon DECIMAL(11,8) NOT NULL,
+            PRIMARY KEY (area_name, lat, lon)
+        ) ENGINE=MEMORY");
+
+        $insertCell = $mysql->prepare("INSERT IGNORE INTO tmp_dashboard_risk_cells (area_name, lat, lon) VALUES (:area_name, :lat, :lon)");
+        foreach ($risk_cells_by_area as $areaName => $cellsByKey) {
+            foreach ($cellsByKey as $cell) {
+                $insertCell->execute([
+                    ':area_name' => $areaName,
+                    ':lat' => $cell['lat'],
+                    ':lon' => $cell['lon'],
+                ]);
+            }
+        }
+
+        $siteYearStmt = $mysql->query("SELECT
+                c.area_name,
+                v.year,
+                AVG(NULLIF(v.viirs_avg_rad, 0)) AS site_viirs_year
+            FROM tmp_dashboard_risk_cells c
+            JOIN viirs v
+                ON v.latitude = c.lat
+               AND v.longitude = c.lon
+            WHERE v.year BETWEEN 2014 AND 2025
+            GROUP BY c.area_name, v.year
+            ORDER BY c.area_name ASC, v.year ASC");
+        $siteYearRows = $siteYearStmt ? ($siteYearStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        foreach ($siteYearRows as $siteYearRow) {
+            $areaName = (string) ($siteYearRow['area_name'] ?? '');
+            $year = (int) ($siteYearRow['year'] ?? 0);
+            $viirs = isset($siteYearRow['site_viirs_year']) ? (float) $siteYearRow['site_viirs_year'] : null;
+            if ($areaName === '' || $year < 2014 || $year > 2025 || $viirs === null) {
+                continue;
+            }
+            if (!isset($risk_site_yearly[$areaName])) {
+                $risk_site_yearly[$areaName] = [];
+            }
+            $risk_site_yearly[$areaName][$year] = $viirs;
+        }
+
+        $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
+    }
+
+    $histStmt = $mysql->query("SELECT area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total
+        FROM ecological_yearly_summary
+        WHERE year BETWEEN 2014 AND 2025
+          AND area IS NOT NULL
+        ORDER BY year ASC, area ASC");
+    $histRows = $histStmt ? ($histStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    foreach ($histRows as $histRow) {
+        $year = (int) ($histRow['year'] ?? 0);
+        $area = trim((string) ($histRow['area'] ?? ''));
+        if ($year < 2014 || $year > 2025 || $area === '') {
+            continue;
+        }
+        if (!isset($historical_env_yearly[$year])) {
+            $historical_env_yearly[$year] = [];
+        }
+        $historical_env_yearly[$year][$area] = [
+            'viirs' => isset($histRow['viirs_avg']) ? (float) $histRow['viirs_avg'] : null,
+            'ndvi' => isset($histRow['ndvi_avg']) ? (float) $histRow['ndvi_avg'] : null,
+            'lst' => isset($histRow['lst_avg']) ? (float) $histRow['lst_avg'] : null,
+            'precipitation' => isset($histRow['precipitation_total']) ? (float) $histRow['precipitation_total'] : null,
+        ];
+    }
+} catch (Throwable $e) {
+    $kba_data = json_decode((string) file_get_contents('data/sample_kba.json'), true) ?: [];
+}
 ?>
 
 <div class="alert alert-info" role="status">
-    📅 <strong>Dataset Period: 2014 – 2024</strong> | <strong>Monitoring Status: 2014 – 2024</strong> —
-    All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in 2024.
+    📅 <strong>Dataset Period: 2014 – 2025</strong> | <strong>Monitoring Status: 2014 – 2025</strong> —
+    All metrics, readings, and site analyses are loaded from the database for the selected period.
 </div>
 
 <div class="dashboard-layout">
     <!-- Left column: Map -->
     <div class="dashboard-map-col">
         <div style="position: relative; display: flex; flex-direction: column; height: 100%;">
+            <style>
+                .risk-site-panel {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 6px 10px;
+                    border-bottom: 1px solid var(--border-color);
+                    background: var(--bg-card-alt);
+                    color: var(--text-primary);
+                }
+                .risk-site-panel h4 {
+                    margin: 0;
+                    font-size: 0.74rem;
+                    letter-spacing: 0.03em;
+                    text-transform: uppercase;
+                    color: var(--text-muted);
+                }
+                .risk-site-panel .risk-site-summary {
+                    font-size: 0.7rem;
+                    color: var(--text-secondary);
+                    margin-right: 6px;
+                    line-height: 1.35;
+                }
+                .risk-threshold-note {
+                    font-size: 0.68rem;
+                    color: var(--text-muted);
+                    line-height: 1.35;
+                    margin-right: 8px;
+                }
+                .risk-site-list {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    align-items: center;
+                    min-width: 0;
+                }
+                .risk-site-item {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 5px;
+                    border: 1px solid var(--border-color);
+                    border-radius: 999px;
+                    padding: 4px 8px;
+                    background: var(--bg-card);
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    text-align: left;
+                    white-space: nowrap;
+                    box-shadow: none;
+                    transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+                }
+                .risk-site-item:hover,
+                .risk-site-item.is-selected {
+                    border-color: var(--accent-blue);
+                    background: var(--bg-card-alt);
+                }
+                .risk-site-dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 999px;
+                    flex: 0 0 9px;
+                    border: 2px solid rgba(255, 255, 255, 0.7);
+                }
+                .risk-site-item-name {
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    line-height: 1.2;
+                }
+                .risk-site-item-actions {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .risk-site-toggle {
+                    width: 13px;
+                    height: 13px;
+                    margin: 0;
+                    accent-color: #60a5fa;
+                }
+                .risk-site-focus {
+                    border: 1px solid var(--border-color);
+                    background: var(--bg-card-alt);
+                    color: var(--text-secondary);
+                    border-radius: 999px;
+                    width: 18px;
+                    height: 18px;
+                    line-height: 18px;
+                    padding: 0;
+                    cursor: pointer;
+                }
+                .risk-site-focus:hover {
+                    color: var(--text-primary);
+                    border-color: var(--accent-blue);
+                }
+                .risk-site-item.is-hidden {
+                    opacity: 0.55;
+                }
+                .risk-site-item.is-hidden .risk-site-item-name {
+                    text-decoration: line-through;
+                }
+                @media (max-width: 768px) {
+                    .risk-site-panel {
+                        padding: 6px 8px;
+                    }
+                }
+            </style>
             <!-- Map filter control bar -->
             <div id="dashMapControls" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-card-alt); border-bottom:1px solid var(--border-color); flex-shrink:0;">
                 <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">View:</span>
@@ -26,7 +307,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                     <div style="width:1px; height:24px; background:var(--border-color);"></div>
                     <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Year:</label>
                     <select id="histYearSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
-                        <?php for ($y = 2014; $y <= 2024; $y++): ?>
+                        <?php for ($y = 2014; $y <= 2025; $y++): ?>
                         <option value="<?= $y ?>"><?= $y ?></option>
                         <?php endfor; ?>
                     </select>
@@ -80,6 +361,13 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                         <option value="night">Land Temp: Night</option>
                     </select>
                 </div>
+            </div>
+
+            <div class="risk-site-panel" id="riskSitePanel" aria-label="Risk zone list" style="display:flex;">
+                <h4>Places</h4>
+                <div class="risk-site-summary">Toggle site visibility or focus a place.</div>
+                <div class="risk-threshold-note" id="riskThresholdNote"></div>
+                <div class="risk-site-list" id="riskSiteList"></div>
             </div>
 
             <div style="position: relative; flex: 1;">
@@ -159,9 +447,9 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                 <div class="bird-richness-controls">
                     <label class="slider-label" for="yearSlider">
                         <span>Year: <strong id="yearDisplay">2014</strong></span>
-                        <span style="font-size:0.75rem;color:var(--text-muted);">2014 – 2024</span>
+                        <span style="font-size:0.75rem;color:var(--text-muted);">2014 – 2025</span>
                     </label>
-                    <input type="range" id="yearSlider" class="slider" min="2014" max="2024" value="2014" step="1">
+                    <input type="range" id="yearSlider" class="slider" min="2014" max="2025" value="2014" step="1">
                 </div>
                 <canvas id="birdRichnessChart"></canvas>
                 <div class="dash-stat-desc" style="margin-top:8px;" id="birdTrendMeta">
@@ -172,7 +460,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 
             <!-- Recent Updates -->
             <div id="riskRecentUpdatesBlock">
-                <div class="section-title">Recent Updates</div>
+                <div class="section-title">Risk Zone Recent Updates</div>
                 <div class="activity-feed">
                     <div class="activity-item">
                         <div class="activity-icon red">⚠</div>
@@ -226,9 +514,9 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
             <div class="dash-stat-card" id="histObsCard" style="margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <div class="dash-stat-label" style="margin:0;">Observation Count Per Category</div>
-                    <span id="histObsHeaderBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2024 · All</span>
+                    <span id="histObsHeaderBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2025 · All</span>
                 </div>
-                <div id="histObsHeaderMeta" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px;">2024 · All · Metro Manila (0 sites)</div>
+                <div id="histObsHeaderMeta" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px;">2025 · All · Metro Manila (0 sites)</div>
                 <div id="histObsBars" style="display:flex; flex-direction:column; gap:6px;"></div>
                 <div id="histObsTotal" style="margin-top:8px; font-size:0.82rem; color:var(--text-secondary);">Total: 0 spp.</div>
             </div>
@@ -236,7 +524,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
             <div class="dash-stat-card" id="histEnvCard" style="display:none; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <div class="dash-stat-label" id="histEnvTitle" style="margin:0;">Environmental Data</div>
-                    <span id="histEnvBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2024 · All</span>
+                    <span id="histEnvBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2025 · All</span>
                 </div>
                 <div id="histEnvAvg" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px; display:none;"></div>
                 <div id="histEnvRows" style="display:flex; flex-direction:column; gap:4px;"></div>
@@ -245,28 +533,28 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 
             <div class="dash-stat-card" style="margin-bottom:0;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <div class="dash-stat-label" id="histRecentSectionTitle" style="margin:0;">Recent Updates</div>
-                    <span id="histRecentBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2024 vs 2023</span>
+                    <div class="dash-stat-label" id="histRecentSectionTitle" style="margin:0;">Historical Data Recent Updates</div>
+                    <span id="histRecentBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2025 vs 2024</span>
                 </div>
                 <div class="activity-feed" style="margin:0;">
                     <div class="activity-item">
                         <div class="activity-icon green">↗</div>
                         <div class="activity-text">
-                            <strong id="histRecentBird">Bird richness increase by 0.0% vs 2023</strong>
-                            <span id="histRecentBirdSub">2024 vs 2023 (annual)</span>
+                            <strong id="histRecentBird">Bird richness increase by 0.0% vs 2024</strong>
+                            <span id="histRecentBirdSub">2025 vs 2024 (annual)</span>
                         </div>
                     </div>
                     <div class="activity-item">
                         <div class="activity-icon" style="background:rgba(234,179,8,0.18); color:#facc15;">△</div>
                         <div class="activity-text">
-                            <strong id="histRecentViirs">Avg VIIRS increase by 0.0 nW vs 2023</strong>
-                            <span id="histRecentViirsSub">2024 vs 2023 (annual)</span>
+                            <strong id="histRecentViirs">Avg VIIRS increase by 0.0 nW vs 2024</strong>
+                            <span id="histRecentViirsSub">2025 vs 2024 (annual)</span>
                         </div>
                     </div>
                     <div class="activity-item">
                         <div class="activity-icon blue">i</div>
                         <div class="activity-text">
-                            <strong id="histRecentMonitor">Monitoring period: 2023–2024 comparison active</strong>
+                            <strong id="histRecentMonitor">Monitoring period: 2024–2025 comparison active</strong>
                             <span id="histRecentMonitorSub">Annual summary</span>
                         </div>
                     </div>
@@ -279,12 +567,14 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 <?php
 // Build risk zones JSON from Metro Manila KBA/PA data
 $risk_zones = [];
+$highRiskThreshold = (float) ($dashboard_thresholds['high_risk'] ?? 60.0);
+$modRiskThreshold = (float) ($dashboard_thresholds['mod_risk'] ?? 40.0);
 if ($kba_data) {
     foreach ($kba_data as $area) {
         $light = isset($area['light_exposure']) ? $area['light_exposure'] : 30;
-        if ($light > 40) {
+        if ($light >= $highRiskThreshold) {
             $risk = 'high';
-        } elseif ($light > 30) {
+        } elseif ($light >= $modRiskThreshold) {
             $risk = 'medium';
         } else {
             $risk = 'low';
@@ -294,19 +584,32 @@ if ($kba_data) {
             'lng' => $area['longitude'],
             'name' => $area['name'],
             'risk' => $risk,
+            'light_exposure' => (float) $light,
+            'snapshot_year' => isset($area['snapshot_year']) ? (int) $area['snapshot_year'] : $risk_snapshot_year,
+            'snapshot_month' => isset($area['snapshot_month']) ? (int) $area['snapshot_month'] : null,
+            'land_cover' => (int) ($risk_land_cover_map[$area['name']] ?? 13),
         ];
     }
 }
 // Risk zones are scoped to Metro Manila KBA/PA sites only
 $risk_zones_json = json_encode($risk_zones);
+$dashboard_thresholds_json = json_encode($dashboard_thresholds, JSON_UNESCAPED_UNICODE);
+$historical_env_yearly_json = json_encode($historical_env_yearly, JSON_UNESCAPED_UNICODE);
+$risk_site_yearly_json = json_encode($risk_site_yearly, JSON_UNESCAPED_UNICODE);
+$risk_snapshot_year_json = json_encode($risk_snapshot_year);
 
 $extra_scripts = <<<SCRIPTS
 <script>
 // Risk zone data
 var riskZones = {$risk_zones_json};
+var dashboardThresholds = {$dashboard_thresholds_json};
+var historicalEnvYearly = {$historical_env_yearly_json};
+var riskSiteYearly = {$risk_site_yearly_json};
+var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
-var DASHBOARD_MAX_YEAR = 2024;
-var selectedRiskYear = DASHBOARD_MIN_YEAR;
+var DASHBOARD_MAX_YEAR = 2025;
+var riskSnapshotYear = {$risk_snapshot_year_json};
+var selectedRiskYear = riskSnapshotYear;
 
 // ── Tile layers (dark for Risk Zones, light for Historical Data) ───────────
 var darkTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -318,8 +621,8 @@ var lightTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}
     maxZoom: 19
 });
 
-// Initialize map centered on Philippines with dark tile layer
-var map = L.map('map').setView([12.5, 121.5], 6);
+// Initialize map centered on Metro Manila with dark tile layer
+var map = L.map('map').setView([14.5995, 121.0], 10);
 darkTile.addTo(map);
 
 // Risk zone colors
@@ -329,22 +632,145 @@ var riskColors = {
     high:   {color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.25, weight: 1.5}
 };
 
-var riskBaseLight = { low: 24, medium: 33, high: 42 };
+var riskZoneVisibility = [];
+var riskSiteListEl = null;
+var selectedRiskZoneIndex = 0;
+
+function getRiskZoneStyle(risk) {
+    return riskColors[risk] || riskColors.low;
+}
+
+function getRiskZoneMeta(zoneData, year) {
+    var label = zoneData.risk.charAt(0).toUpperCase() + zoneData.risk.slice(1);
+    var periodLabel = year === riskSnapshotYear ? ('Snapshot ' + riskSnapshotYear) : ('Year ' + year);
+    return periodLabel + ' · ' + label + ' · ' + zoneData.light.toFixed(1) + ' nW/cm²/sr';
+}
+
+function getDashboardThresholdNote() {
+    var highRisk = Number(dashboardThresholds.high_risk || 60);
+    var modRisk = Number(dashboardThresholds.mod_risk || 40);
+    var lowRisk = Number(dashboardThresholds.low_risk || 25);
+    return 'Applied thresholds: Low < ' + lowRisk.toFixed(1) + ' nW, Moderate >= ' + modRisk.toFixed(1) + ' nW, High >= ' + highRisk.toFixed(1) + ' nW.';
+}
+
+function renderDashboardThresholdNote() {
+    var note = document.getElementById('riskThresholdNote');
+    if (note) {
+        note.textContent = getDashboardThresholdNote();
+    }
+}
+
+function updateRiskSiteListHighlight() {
+    if (!riskSiteListEl) return;
+    var items = riskSiteListEl.querySelectorAll('[data-risk-index]');
+    Array.prototype.forEach.call(items, function(item) {
+        var idx = Number(item.getAttribute('data-risk-index'));
+        var isSelected = idx === selectedRiskZoneIndex;
+        var isVisible = riskZoneVisibility[idx] !== false;
+        item.classList.toggle('is-selected', isSelected);
+        item.classList.toggle('is-hidden', !isVisible);
+        var toggle = item.querySelector('input[type="checkbox"]');
+        if (toggle) toggle.checked = isVisible;
+    });
+}
+
+function setRiskZoneVisible(index, visible) {
+    riskZoneVisibility[index] = visible;
+    var layer = riskZoneLayers[index];
+    if (!layer) return;
+    if (visible) {
+        if (!map.hasLayer(layer)) {
+            layer.addTo(map);
+        }
+        layer.bringToFront();
+    } else if (map.hasLayer(layer)) {
+        map.removeLayer(layer);
+    }
+    updateRiskSiteListHighlight();
+}
+
+function focusRiskZone(index) {
+    var circle = riskZoneLayers[index];
+    if (!circle) return;
+    selectedRiskZoneIndex = index;
+    updateRiskSiteListHighlight();
+    map.flyTo(circle.getLatLng(), Math.max(map.getZoom(), 11), { duration: 0.7 });
+    if (map.hasLayer(circle)) {
+        circle.openPopup();
+    } else {
+        circle.addTo(map);
+        circle.openPopup();
+    }
+}
+
+function renderRiskSiteList() {
+    riskSiteListEl = document.getElementById('riskSiteList');
+    if (!riskSiteListEl) return;
+    var summary = summarizeRiskYear(selectedRiskYear);
+
+    var listHtml = riskZones.map(function(zone, index) {
+        var zoneData = summary.zones[index] || zone;
+        var style = getRiskZoneStyle(zoneData.risk);
+        var metaText = getRiskZoneMeta({ risk: zoneData.risk, light: Number(zoneData.light || 0) }, selectedRiskYear);
+        return '' +
+            '<button class="risk-site-item" type="button" data-risk-index="' + index + '" title="' + metaText.replace(/"/g, '&quot;') + '" onclick="focusRiskZone(' + index + ')">' +
+                '<span class="risk-site-dot" style="background:' + style.fillColor + '; border-color:' + style.color + '; width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0;"></span>' +
+                '<span class="risk-site-item-name">' + zone.name + '</span>' +
+                '<span class="risk-site-item-actions" onclick="event.stopPropagation();">' +
+                    '<input class="risk-site-toggle" type="checkbox" checked aria-label="Toggle ' + zone.name.replace(/"/g, '&quot;') + '" onchange="setRiskZoneVisible(' + index + ', this.checked)">' +
+                    '<button class="risk-site-focus" type="button" aria-label="Focus ' + zone.name.replace(/"/g, '&quot;') + '" onclick="event.stopPropagation(); focusRiskZone(' + index + ')">⌖</button>' +
+                '</span>' +
+            '</button>';
+    }).join('');
+
+    riskSiteListEl.innerHTML = listHtml;
+    updateRiskSiteListHighlight();
+}
+
+function syncRiskSitePanelVisibility() {
+    var panel = document.getElementById('riskSitePanel');
+    if (!panel) return;
+    panel.style.display = currentMapView === 'risk' ? 'flex' : 'none';
+}
+
+function getRiskViewPadding() {
+    return {
+        paddingTopLeft: [24, 24],
+        paddingBottomRight: [24, 24]
+    };
+}
 
 function classifyRiskByLight(lightValue) {
-    if (lightValue > 40) return 'high';
-    if (lightValue > 30) return 'medium';
+    var highRisk = Number(dashboardThresholds.high_risk || 60);
+    var modRisk = Number(dashboardThresholds.mod_risk || 40);
+    if (lightValue >= highRisk) return 'high';
+    if (lightValue >= modRisk) return 'medium';
     return 'low';
 }
 
 function computeZoneLight(zone, zoneIndex, year) {
-    var yearOffset = year - DASHBOARD_MIN_YEAR;
-    var base = riskBaseLight[zone.risk] || 30;
-    var trendBoost = yearOffset * 0.95;
-    var geoAdjustment = ((Math.abs(zone.lat) + Math.abs(zone.lng)) * 0.07) % 2.4;
-    var oscillation = Math.sin((zoneIndex + 1) * 1.63 + yearOffset * 0.55) * 2.6;
-    var computed = base + trendBoost + geoAdjustment + oscillation;
-    return Math.max(16, Math.min(55, computed));
+    var yearlyBySite = riskSiteYearly && riskSiteYearly[zone.name] ? riskSiteYearly[zone.name] : null;
+    if (yearlyBySite && yearlyBySite[String(year)] !== undefined && yearlyBySite[String(year)] !== null) {
+        return Math.max(0, Number(yearlyBySite[String(year)]));
+    }
+
+    // Use site-footprint snapshot values for the snapshot year so Dashboard matches Reports.
+    if (year === Number(zone.snapshot_year || riskSnapshotYear)) {
+        return Math.max(0, Number(zone.light_exposure || 0));
+    }
+
+    // Get city for this zone from mapping
+    var city = riskCityMap[zone.name] || null;
+    if (!city) return Math.max(0, Number(zone.light_exposure || 0));
+
+    // Look up viirs_avg from ecological_yearly_summary for this city and year
+    var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)] ? historicalEnvYearly[String(year)] : null;
+    if (!yearBucket || !yearBucket[city]) {
+        return Math.max(0, Number(zone.light_exposure || 0));
+    }
+
+    var viirs = yearBucket[city].viirs;
+    return viirs !== null && viirs !== undefined ? Math.max(0, Number(viirs)) : Math.max(0, Number(zone.light_exposure || 0));
 }
 
 function deriveRiskZoneData(year) {
@@ -411,7 +837,10 @@ riskZones.forEach(function(zone, index) {
     );
     circle._zoneIndex = index;
     riskZoneLayers.push(circle);
+    riskZoneVisibility.push(true);
 });
+
+renderRiskSiteList();
 
 function applyRiskZonesForYear(year) {
     selectedRiskYear = year;
@@ -419,7 +848,7 @@ function applyRiskZonesForYear(year) {
 
     riskZoneLayers.forEach(function(circle, index) {
         var zoneData = summary.zones[index];
-        var style = riskColors[zoneData.risk] || riskColors.low;
+        var style = getRiskZoneStyle(zoneData.risk);
         var radius = 6200 + Math.round(zoneData.light * 90);
         circle.setStyle({
             color: style.color,
@@ -436,8 +865,18 @@ function applyRiskZonesForYear(year) {
         );
     });
 
+    renderRiskSiteList();
+
     return summary;
 }
+
+renderDashboardThresholdNote();
+
+window.addEventListener('storage', function(event) {
+    if (event && event.key === 'avilight-thresholds-updated') {
+        window.location.reload();
+    }
+});
 
 // Metro Manila focus bounds (fallback before GeoJSON loads)
 var metroManilaBounds = L.latLngBounds([[14.35, 120.90], [14.82, 121.22]]);
@@ -502,7 +941,18 @@ fetch('MM_Cities_WGS84.geojson')
             },
             onEachFeature: function(feature, layer) {
                 var cityName = getMunicipalityName(feature);
-                layer.bindPopup('<strong>' + cityName + '</strong><br>Metro Manila monitoring area');
+                layer.on('click', function() {
+                    if (currentMapView !== 'historical') {
+                        layer.bindPopup('<strong>' + cityName + '</strong><br>Metro Manila monitoring area').openPopup();
+                        return;
+                    }
+
+                    var context = latestHistoricalContext || {};
+                    var popupSelections = context.selections || getHistoricalSelections();
+                    var popupRows = context.rows || latestHistoricalRows || [];
+                    var popupEnvRows = context.envRows || [];
+                    layer.bindPopup(getHistoricalBoundaryPopupContent(cityName, popupRows, popupEnvRows, popupSelections)).openPopup();
+                });
             }
         });
 
@@ -537,8 +987,13 @@ function playRiskViewAnimation() {
     clearRiskZonesFromMap();
     addMetroManilaLayerIfNeeded();
 
+    var padding = getRiskViewPadding();
+
     map.flyToBounds(metroManilaBounds, {
+        paddingTopLeft: padding.paddingTopLeft,
+        paddingBottomRight: padding.paddingBottomRight,
         padding: [20, 20],
+        maxZoom: 10,
         duration: 1.4
     });
 
@@ -547,7 +1002,9 @@ function playRiskViewAnimation() {
         riskZoneLayers.forEach(function(circle, index) {
             var timer = setTimeout(function() {
                 if (token !== riskAnimationToken || currentMapView !== 'risk') return;
-                circle.addTo(map);
+                if (riskZoneVisibility[index] !== false) {
+                    circle.addTo(map);
+                }
             }, 120 * index);
             riskAnimationTimers.push(timer);
         });
@@ -972,8 +1429,9 @@ function showHistoricalSiteDetail(site) {
     var municipalityEnv = null;
 
     if (hasEnvSelection && envRows.length) {
+        var cityNorm = normalizeAreaKey(cityName || '');
         municipalityEnv = envRows.find(function(item) {
-            return String(item.city || '').toLowerCase() === String(cityName || '').toLowerCase();
+            return normalizeAreaKey(item.city || '') === cityNorm;
         }) || null;
     }
 
@@ -1007,6 +1465,30 @@ function getHistoricalSelections() {
         selectedLandCoverTypes: selectedLandCoverTypes,
         landTempPeriod: document.getElementById('landTempPeriod').value
     };
+}
+
+function normalizeAreaKey(name) {
+    if (!name) return '';
+    return String(name)
+        .toLowerCase()
+        .replace(/\s+city$/g, '')
+        .replace(/ñ/g, 'n')
+        .replace(/[^a-z0-9]/g, '');
+}
+
+function getHistoricalEnvConfig(envType, landTempPeriod) {
+    if (envType === 'viirs') return { key: 'viirs', label: 'VIIRS', decimals: 1, unit: ' nW' };
+    if (envType === 'ndvi') return { key: 'ndvi', label: 'NDVI', decimals: 2, unit: '' };
+    if (envType === 'land_temp') {
+        return {
+            key: 'lst',
+            label: landTempPeriod === 'night' ? 'Land Temp (Night)' : 'Land Temp (Day)',
+            decimals: 1,
+            unit: ' °C'
+        };
+    }
+    if (envType === 'precip') return { key: 'precipitation', label: 'Precip', decimals: 0, unit: ' mm' };
+    return null;
 }
 
 function getHistoricalObservationKey(selections) {
@@ -1152,6 +1634,31 @@ function getCoverageFeaturesForSelections(selections) {
 }
 
 function buildMunicipalityEnvRows(selections, coverageFeatures) {
+    if (selections.envType !== 'land_cover') {
+        var envConfig = getHistoricalEnvConfig(selections.envType, selections.landTempPeriod);
+        var yearBucket = historicalEnvYearly && historicalEnvYearly[String(selections.year)] ? historicalEnvYearly[String(selections.year)] : null;
+        if (!envConfig || !yearBucket) return [];
+
+        var rowsFromSummary = Object.keys(yearBucket).map(function(cityName) {
+            var record = yearBucket[cityName] || {};
+            var numeric = record[envConfig.key];
+            if (numeric == null || !Number.isFinite(Number(numeric))) {
+                return null;
+            }
+            var value = Number(numeric);
+            return {
+                city: cityName,
+                label: envConfig.label,
+                valueText: value.toFixed(envConfig.decimals) + envConfig.unit,
+                numericValue: value,
+                color: getEnvColor(selections.envType, { value: value }, '')
+            };
+        }).filter(function(row) { return row !== null; });
+
+        rowsFromSummary.sort(function(a, b) { return a.city.localeCompare(b.city); });
+        return rowsFromSummary;
+    }
+
     if (!municipalityGeoData || !municipalityGeoData.features || !coverageFeatures.length) return [];
 
     var perMunicipality = {};
@@ -1229,9 +1736,74 @@ function buildMunicipalityEnvRows(selections, coverageFeatures) {
     return rows;
 }
 
+function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
+    var cityNorm = normalizeAreaKey(cityName || '');
+    var cityRows = (rows || []).filter(function(site) {
+        return normalizeAreaKey(getHistoricalSiteCity(site)) === cityNorm;
+    });
+
+    var summary = {
+        city: cityName || 'Metro Manila',
+        dateLabel: selections ? (selections.year + ' · ' + getMonthName(selections.month)) : 'Not applied',
+        envLabel: null,
+        envValueText: null,
+        richness: 0,
+        resident: 0,
+        migrant: 0,
+        tolerant: 0,
+        sensitive: 0
+    };
+
+    cityRows.forEach(function(site) {
+        summary.richness += toNumber(site.total_unique);
+        summary.resident += toNumber(site.total_resident);
+        summary.migrant += toNumber(site.total_migrant);
+        summary.tolerant += toNumber(site.total_tolerant);
+        summary.sensitive += toNumber(site.total_sensitive);
+    });
+
+    if (selections && selections.envType && Array.isArray(envRows) && envRows.length) {
+        var cityEnv = envRows.find(function(item) {
+            return normalizeAreaKey(item.city || '') === cityNorm;
+        }) || null;
+
+        if (cityEnv) {
+            summary.envLabel = cityEnv.label;
+            summary.envValueText = cityEnv.valueText;
+        }
+    }
+
+    return summary;
+}
+
+function getHistoricalBoundaryPopupContent(cityName, rows, envRows, selections) {
+    var summary = buildHistoricalBoundarySummary(cityName, rows, envRows, selections);
+    var envText = summary.envLabel && summary.envValueText
+        ? (escapeHtml(summary.envLabel) + ' ' + escapeHtml(summary.envValueText))
+        : 'Not selected';
+    var richnessText = summary.richness > 0 ? summary.richness.toLocaleString() + ' spp.' : 'No observation data';
+
+    return '<div style="min-width:220px; line-height:1.45;">' +
+        '<strong>' + escapeHtml(summary.city) + '</strong>' +
+        '<div style="margin-top:6px;">Environmental data: <strong>' + envText + '</strong></div>' +
+        '<div>Bird richness: <strong>' + escapeHtml(richnessText) + '</strong></div>' +
+        '<div style="margin-top:4px; font-size:0.78rem; color:var(--text-secondary);">' +
+            'Sensitive: <strong>' + summary.sensitive.toLocaleString() + '</strong> · ' +
+            'Tolerant: <strong>' + summary.tolerant.toLocaleString() + '</strong><br>' +
+            'Migrant: <strong>' + summary.migrant.toLocaleString() + '</strong> · ' +
+            'Resident: <strong>' + summary.resident.toLocaleString() + '</strong>' +
+        '</div>' +
+        '<div style="margin-top:6px; font-size:0.78rem; color:var(--text-secondary);">' +
+            'Date filter: <strong>' + escapeHtml(summary.dateLabel) + '</strong>' +
+        '</div>' +
+    '</div>';
+}
+
 function renderHistoricalMap(rows, selections, options) {
     options = options || {};
     var preserveObservation = !!options.preserveObservation;
+
+    latestHistoricalContext = { rows: rows, selections: selections, envRows: [] };
 
     clearHistoricalEnvLayers();
     if (!selections.showObservation) {
@@ -1256,6 +1828,7 @@ function renderHistoricalMap(rows, selections, options) {
             interactive: false
         }).addTo(map);
         historicalEnvLayers.push(envLayer);
+        latestHistoricalContext.envRows = buildMunicipalityEnvRows(selections, coverageFeatures);
     }
 
     if (selections.showObservation && !preserveObservation) {
@@ -1502,30 +2075,67 @@ function renderHistoricalRecentUpdates(selections) {
     var currentYear = selections.year;
     var previousYear = currentYear - 1;
     var hasPrev = previousYear >= DASHBOARD_MIN_YEAR;
+    var monthLabel = selections.month > 0 ? getMonthName(selections.month) : 'Annual';
+    var currentPeriodLabel = selections.month > 0 ? (currentYear + ' · ' + monthLabel) : String(currentYear);
+    var previousPeriodLabel = selections.month > 0 ? (previousYear + ' · ' + monthLabel) : String(previousYear);
 
-    var currentBirdStats = getBirdYearStats(currentYear);
-    var previousBirdStats = hasPrev ? getBirdYearStats(previousYear) : null;
-    var birdDelta = previousBirdStats ? getPctDelta(currentBirdStats.avg, previousBirdStats.avg) : 0;
+    var currentRows = Array.isArray(latestHistoricalRows) ? latestHistoricalRows : [];
+    var currentEnvRows = latestHistoricalContext && latestHistoricalContext.selections &&
+        latestHistoricalContext.selections.year === selections.year &&
+        latestHistoricalContext.selections.month === selections.month &&
+        latestHistoricalContext.selections.envType === selections.envType
+        ? (latestHistoricalContext.envRows || [])
+        : buildMunicipalityEnvRows(selections, getCoverageFeaturesForSelections(selections));
 
-    var currentRisk = summarizeRiskYear(currentYear);
-    var previousRisk = hasPrev ? summarizeRiskYear(previousYear) : null;
-    var viirsDelta = previousRisk ? (currentRisk.avgViirs - previousRisk.avgViirs) : 0;
+    var currentSummary = buildHistoricalSectionSummary(currentRows, selections, currentEnvRows);
+    var previousSelections = hasPrev ? {
+        year: previousYear,
+        month: selections.month,
+        envType: selections.envType,
+        landTempPeriod: selections.landTempPeriod,
+        selectedLandCoverTypes: selections.selectedLandCoverTypes
+    } : null;
+    var previousEnvRows = previousSelections ? buildMunicipalityEnvRows(previousSelections, getCoverageFeaturesForSelections(previousSelections)) : [];
+    var previousSummary = previousSelections ? buildHistoricalSectionSummary([], previousSelections, previousEnvRows) : null;
 
-    document.getElementById('histRecentBadge').textContent = hasPrev ? (currentYear + ' vs ' + previousYear) : (currentYear + ' baseline');
+    var birdDelta = 0;
+    if (selections.month > 0) {
+        var currentBirdMonth = birdRichnessData[currentYear] && birdRichnessData[currentYear][selections.month - 1] != null
+            ? birdRichnessData[currentYear][selections.month - 1]
+            : null;
+        var previousBirdMonth = hasPrev && birdRichnessData[previousYear] && birdRichnessData[previousYear][selections.month - 1] != null
+            ? birdRichnessData[previousYear][selections.month - 1]
+            : null;
+        birdDelta = (currentBirdMonth != null && previousBirdMonth != null)
+            ? getPctDelta(currentBirdMonth, previousBirdMonth)
+            : 0;
+    } else {
+        var currentBirdStats = getBirdYearStats(currentYear);
+        var previousBirdStats = hasPrev ? getBirdYearStats(previousYear) : null;
+        birdDelta = previousBirdStats ? getPctDelta(currentBirdStats.avg, previousBirdStats.avg) : 0;
+    }
+
+    document.getElementById('histRecentBadge').textContent = hasPrev ? (currentPeriodLabel + ' vs ' + previousPeriodLabel) : (currentPeriodLabel + ' baseline');
     document.getElementById('histRecentBird').textContent = hasPrev
         ? formatChangeStatement('Bird richness', birdDelta, '%', 2)
-        : 'Bird richness baseline year selected (no previous-year comparison)';
-    document.getElementById('histRecentBirdSub').textContent = hasPrev ? (currentYear + ' vs ' + previousYear + ' (annual)') : (currentYear + ' baseline');
+        : 'Bird richness baseline period selected (no previous comparison)';
+    document.getElementById('histRecentBirdSub').textContent = hasPrev ? (currentPeriodLabel + ' vs ' + previousPeriodLabel) : (currentPeriodLabel + ' baseline');
 
-    document.getElementById('histRecentViirs').textContent = hasPrev
-        ? formatChangeStatement('Avg VIIRS', viirsDelta, ' nW', 1)
-        : 'Avg VIIRS baseline year selected (no previous-year comparison)';
-    document.getElementById('histRecentViirsSub').textContent = hasPrev ? (currentYear + ' vs ' + previousYear + ' (annual)') : (currentYear + ' baseline');
+    if (selections.envType && currentSummary.envAverage !== null) {
+        if (hasPrev && previousSummary && previousSummary.envAverage !== null) {
+            document.getElementById('histRecentViirs').textContent = formatChangeStatement(currentSummary.envLabel || 'Environmental overlay', currentSummary.envAverage - previousSummary.envAverage, currentSummary.envUnit, currentSummary.envDecimals);
+        } else {
+            document.getElementById('histRecentViirs').textContent = (currentSummary.envLabel || 'Environmental overlay') + ': ' + currentSummary.envAverage.toFixed(currentSummary.envDecimals) + currentSummary.envUnit;
+        }
+    } else {
+        document.getElementById('histRecentViirs').textContent = 'Environmental overlay not selected';
+    }
+    document.getElementById('histRecentViirsSub').textContent = hasPrev ? (currentPeriodLabel + ' vs ' + previousPeriodLabel) : (currentPeriodLabel + ' baseline');
 
     document.getElementById('histRecentMonitor').textContent = hasPrev
-        ? ('Monitoring period: ' + previousYear + '–' + currentYear + ' comparison active')
-        : ('Monitoring period: ' + currentYear + ' baseline year active');
-    document.getElementById('histRecentMonitorSub').textContent = 'Annual summary';
+        ? ('Monitoring period: ' + currentPeriodLabel + ' comparison active')
+        : ('Monitoring period: ' + currentPeriodLabel + ' baseline active');
+    document.getElementById('histRecentMonitorSub').textContent = selections.month > 0 ? 'Selected month comparison' : 'Annual summary';
 }
 
 function loadHistoricalData() {
@@ -1608,6 +2218,7 @@ function setMapView(view) {
     // Show/hide legends
     document.getElementById('legendRiskZones').style.display  = isHist ? 'none'  : 'block';
     document.getElementById('legendHistorical').style.display = isHist ? 'block' : 'none';
+    syncRiskSitePanelVisibility();
     if (!isHist) {
         updateEnvironmentalLegend({ envType: '' });
     }
@@ -1630,6 +2241,7 @@ function setMapView(view) {
         addMetroManilaLayerIfNeeded();
         updateMetroLayerStyle('risk');
         clearRiskZonesFromMap();
+        renderRiskSiteList();
     }
 
     if (isHist) {
@@ -1664,7 +2276,7 @@ if (histSiteDetailCloseEl) {
     });
 }
 
-// Bird Richness data per year (2014–2024), monthly values
+// Bird Richness fallback data per year (2014-2025), monthly values
 var birdRichnessData = {
     2014: [120, 135, 128, 142, 155, 148, 160, 158, 145, 138, 130, 125],
     2015: [128, 140, 135, 150, 162, 155, 168, 165, 152, 144, 136, 130],
@@ -1676,7 +2288,8 @@ var birdRichnessData = {
     2021: [148, 161, 153, 170, 184, 175, 188, 185, 172, 161, 152, 146],
     2022: [155, 169, 161, 178, 193, 184, 197, 194, 180, 169, 160, 153],
     2023: [162, 176, 168, 186, 201, 192, 205, 202, 188, 176, 167, 160],
-    2024: [168, 183, 174, 193, 208, 199, 212, 209, 195, 183, 174, 167]
+    2024: [168, 183, 174, 193, 208, 199, 212, 209, 195, 183, 174, 167],
+    2025: [170, 185, 176, 195, 210, 201, 214, 211, 197, 185, 176, 169]
 };
 
 var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1942,6 +2555,14 @@ function updateChartForYear(year) {
     var currentStats = getBirdYearStats(year);
     var previousStats = (year > DASHBOARD_MIN_YEAR) ? getBirdYearStats(year - 1) : null;
 
+    var minVal = Math.min.apply(null, yearData);
+    var maxVal = Math.max.apply(null, yearData);
+    if (Number.isFinite(minVal) && Number.isFinite(maxVal) && birdChart && birdChart.options && birdChart.options.scales && birdChart.options.scales.y) {
+        var pad = Math.max(5, Math.round((maxVal - minVal) * 0.2));
+        birdChart.options.scales.y.min = Math.max(0, Math.floor(minVal - pad));
+        birdChart.options.scales.y.max = Math.ceil(maxVal + pad);
+    }
+
     var peakMarkers = new Array(yearData.length).fill(null);
     peakMarkers[currentStats.peakIndex] = currentStats.peak;
 
@@ -1963,6 +2584,60 @@ function applyYearDrivenUpdates(year) {
             }
         });
     }
+}
+
+function buildHistoricalSectionSummary(rows, selections, envRows) {
+    var summary = {
+        speciesTotal: 0,
+        resident: 0,
+        migrant: 0,
+        tolerant: 0,
+        sensitive: 0,
+        envAverage: null,
+        envLabel: null,
+        envUnit: '',
+        envDecimals: 1,
+        siteCount: rows.length
+    };
+
+    rows.forEach(function(site) {
+        summary.resident += toNumber(site.total_resident);
+        summary.migrant += toNumber(site.total_migrant);
+        summary.tolerant += toNumber(site.total_tolerant);
+        summary.sensitive += toNumber(site.total_sensitive);
+        summary.speciesTotal += toNumber(site.total_unique);
+    });
+
+    if (selections && selections.envType && Array.isArray(envRows) && envRows.length) {
+        var envConfig = getHistoricalEnvConfig(selections.envType, selections.landTempPeriod);
+        if (envConfig) {
+            var envSum = 0;
+            envRows.forEach(function(item) {
+                envSum += toNumber(item.numericValue);
+            });
+            summary.envAverage = envSum / envRows.length;
+            summary.envLabel = envConfig.label;
+            summary.envUnit = envConfig.unit || '';
+            summary.envDecimals = envConfig.decimals;
+        }
+    }
+
+    return summary;
+}
+
+function fetchHistoricalRowsForSelections(selections) {
+    var url = 'api/get_historical_data.php?year=' + selections.year + (selections.month > 0 ? '&month=' + selections.month : '');
+    return fetch(url)
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            if (!data || !data.success || !Array.isArray(data.data)) {
+                return [];
+            }
+            return data.data;
+        })
+        .catch(function() {
+            return [];
+        });
 }
 
 // Bird Richness Trend Chart
@@ -2021,7 +2696,6 @@ var birdChart = new Chart(ctx, {
     }
 });
 
-// Year slider interactivity
 var yearSlider = document.getElementById('yearSlider');
 var yearDisplay = document.getElementById('yearDisplay');
 yearSlider.addEventListener('input', function() {
@@ -2031,8 +2705,40 @@ yearSlider.addEventListener('input', function() {
 
 document.getElementById('histYearSelect').value = String(DASHBOARD_MIN_YEAR);
 document.getElementById('histMonthSelect').value = '0';
+if (yearSlider) {
+    yearSlider.value = String(riskSnapshotYear);
+}
+
+function loadBirdRichnessTrendFromDb() {
+    fetch('api/get_dashboard_bird_trend.php', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+    })
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            if (!data || !data.success || !data.series) return;
+            Object.keys(data.series).forEach(function(yearKey) {
+                var yearNum = Number(yearKey);
+                if (!Number.isInteger(yearNum)) return;
+                if (yearNum < DASHBOARD_MIN_YEAR || yearNum > DASHBOARD_MAX_YEAR) return;
+                var values = data.series[yearKey];
+                if (!Array.isArray(values) || values.length !== 12) return;
+                birdRichnessData[yearNum] = values.map(function(v) {
+                    var n = Number(v);
+                    return Number.isFinite(n) ? n : 0;
+                });
+            });
+
+            applyYearDrivenUpdates(getSelectedDashboardYear());
+        })
+        .catch(function() {
+            // Keep fallback trend values when API is unavailable.
+        });
+}
 
 applyYearDrivenUpdates(getSelectedDashboardYear());
+syncRiskSitePanelVisibility();
+loadBirdRichnessTrendFromDb();
 playRiskViewAnimation();
 prepareRiskSidebarAutoReveal();
 applyAvpStaggerReveal('#dashMapControls, #legendRiskZones, #legendHistorical', 80, 70);

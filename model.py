@@ -71,6 +71,16 @@ VIIRS_INTERACTION_SEASONAL = 0.15
 VIIRS_LAG_INTERACTION_ALPHA = 0.25
 VIIRS_LAG_INTERACTION_SEASONAL = 0.10
 
+
+class FallbackMetaModel:
+    def predict(self, features):
+        values = np.asarray(features, dtype=float)
+        if values.ndim == 1:
+            values = values.reshape(1, -1)
+        xgb_values = values[:, 0:4]
+        lstm_values = values[:, 4:8]
+        return (xgb_values + lstm_values) / 2.0
+
 try:
     # A. Load XGBoost Base Models
     xgb_models = {
@@ -86,12 +96,15 @@ try:
     
     # C. Load Meta-Learner
     meta_model = joblib.load(str(MODEL_DIR / "meta_learner.joblib"))
+    meta_warning = None
 
     print("[OK] All models loaded successfully!")
 except Exception as e:
     print(f"[ERROR] Error loading models: {e}")
     print(f"Model directory: {MODEL_DIR}")
     print("Make sure your 'api_models' folder is in the avilight-main directory.")
+    meta_model = FallbackMetaModel()
+    meta_warning = f"Meta learner fallback used: {e}"
 
 # =====================================================================
 # 3. DATA STRUCTURES & MATH FUNCTIONS
@@ -492,6 +505,7 @@ async def predict_scenario(data: ScenarioRequest):
             "xgb_predictions": xgb_reconciled,
             "lstm_predictions": lstm_reconciled,
             "lstm_warning": lstm_warning,
+            "meta_warning": meta_warning,
             "shap_warning": shap_warning,
             "shap_source": shap_source,
             "attribution_mode": requested_attr_mode,

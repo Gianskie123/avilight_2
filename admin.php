@@ -446,36 +446,19 @@ require_once 'includes/header.php';
             <div>
                 <h4>Danger Zone Color Scales</h4>
                 <div class="form-group">
-                    <label class="form-label">Low Risk Ceiling <small style="color:#666;">(nW/cm²/sr — ≤ this value = Low)</small></label>
-                    <input type="number" class="form-control" value="25" min="0" id="lowRiskThreshold">
+                    <label class="form-label">High Risk Threshold (Light Intensity):</label>
+                    <input type="number" class="form-control" value="60" min="0" max="100" id="highRiskThreshold">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Moderate Risk Ceiling <small style="color:#666;">(nW/cm²/sr — above Low up to this = Medium; above this = High)</small></label>
-                    <input type="number" class="form-control" value="40" min="0" id="modRiskThreshold">
+                    <label class="form-label">Moderate Risk Threshold:</label>
+                    <input type="number" class="form-control" value="40" min="0" max="100" id="modRiskThreshold">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">High Risk Absolute Max <small style="color:#666;">(nW/cm²/sr — scale ceiling for visualization)</small></label>
-                    <input type="number" class="form-control" value="60" min="0" id="highRiskThreshold">
+                    <label class="form-label">Low Risk Threshold:</label>
+                    <input type="number" class="form-control" value="25" min="0" max="100" id="lowRiskThreshold">
                 </div>
             </div>
-            
-            <div>
-                <h4>SHAP Alert Thresholds</h4>
-                <div class="form-group">
-                    <label class="form-label">Critical Negative Impact:</label>
-                    <input type="number" class="form-control" value="-5" step="0.1" id="criticalShap">
-                    <small style="color: #666;">Cells turn red when SHAP value below this</small>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Warning Threshold:</label>
-                    <input type="number" class="form-control" value="-3" step="0.1" id="warningShap">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Positive Impact Threshold:</label>
-                    <input type="number" class="form-control" value="2" step="0.1" id="positiveShap">
-                    <small style="color: #666;">Cells turn green when above this</small>
-                </div>
-            </div>
+
         </div>
 
         <hr style="margin: 20px 0;">
@@ -1268,9 +1251,6 @@ function saveThresholds() {
         high_risk:     document.getElementById('highRiskThreshold').value,
         mod_risk:      document.getElementById('modRiskThreshold').value,
         low_risk:      document.getElementById('lowRiskThreshold').value,
-        critical_shap: document.getElementById('criticalShap').value,
-        warning_shap:  document.getElementById('warningShap').value,
-        positive_shap: document.getElementById('positiveShap').value,
         kba_richness_weight: document.getElementById('kbaRichnessWeight').value,
         kba_density_weight: document.getElementById('kbaDensityWeight').value,
         kba_sensitive_weight: document.getElementById('kbaSensitiveWeight').value,
