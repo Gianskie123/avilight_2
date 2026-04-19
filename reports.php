@@ -6,6 +6,7 @@ $start_year = (int) ($_GET['start_year'] ?? 2014);
 $end_year = (int) ($_GET['end_year'] ?? 2025);
 $snapshot_year = (int) ($_GET['snapshot_year'] ?? 2025);
 $snapshot_month = (int) ($_GET['snapshot_month'] ?? 1);
+$kba_audit_data_json = '[]';
 
 $available_areas = [
     'Caloocan',
@@ -558,6 +559,11 @@ $kba_recommendations = buildRuleBasedRecommendations(
     $feature_context,
     $threshold_config
 );
+
+$kba_audit_data_json = json_encode($kba_audit_data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+if ($kba_audit_data_json === false) {
+    $kba_audit_data_json = '[]';
+}
 
 if (!in_array($selected_area, array_merge(['All Areas'], $available_areas), true)) {
     $selected_area = 'All Areas';
@@ -1946,6 +1952,69 @@ function formatFilterLabel(filterName) {
         .replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
 }
 
+function clonePlainObject(value) {
+    if (Array.isArray(value)) {
+        return JSON.parse(JSON.stringify(value));
+    }
+    if (!value || typeof value !== 'object') {
+        return {};
+    }
+    return JSON.parse(JSON.stringify(value));
+}
+
+function updateReportsExportState(payload, scope) {
+    payload = payload || {};
+    reportsExportState.filters = clonePlainObject(getFilterValues());
+    reportsExportState.meta = clonePlainObject(payload.meta || reportsExportState.meta || {});
+
+    if (payload.trendHistoricalData) {
+        reportsExportState.trendHistoricalData = clonePlainObject(payload.trendHistoricalData);
+    }
+    if (payload.trendCorrelationData) {
+        reportsExportState.trendCorrelationData = clonePlainObject(payload.trendCorrelationData);
+    }
+    if (payload.snapshotDistributions) {
+        reportsExportState.snapshotDistributions = clonePlainObject(payload.snapshotDistributions);
+    }
+    if (payload.snapshotScatterData) {
+        reportsExportState.snapshotScatterData = clonePlainObject(payload.snapshotScatterData);
+    }
+    if (payload.topSitesRichnessData) {
+        reportsExportState.topSitesRichnessData = clonePlainObject(payload.topSitesRichnessData);
+    }
+    if (payload.xgboostFeatureImportance) {
+        reportsExportState.xgboostFeatureImportance = clonePlainObject(payload.xgboostFeatureImportance);
+    }
+    if (payload.convlstmPredictions) {
+        reportsExportState.convlstmPredictions = clonePlainObject(payload.convlstmPredictions);
+    }
+    if (payload.ensembleMetrics) {
+        reportsExportState.ensembleMetrics = clonePlainObject(payload.ensembleMetrics);
+    }
+    if (Array.isArray(payload.kbaPaAuditRows)) {
+        reportsExportState.kbaPaAuditRows = clonePlainObject(payload.kbaPaAuditRows);
+    }
+
+    reportsExportState.meta.last_scope = scope || reportsExportState.meta.last_scope || '';
+}
+
+function buildExportPayload() {
+    return {
+        success: true,
+        filters: clonePlainObject(getFilterValues()),
+        meta: clonePlainObject(reportsExportState.meta || {}),
+        trendHistoricalData: clonePlainObject(reportsExportState.trendHistoricalData || {}),
+        trendCorrelationData: clonePlainObject(reportsExportState.trendCorrelationData || {}),
+        snapshotDistributions: clonePlainObject(reportsExportState.snapshotDistributions || {}),
+        snapshotScatterData: clonePlainObject(reportsExportState.snapshotScatterData || {}),
+        topSitesRichnessData: clonePlainObject(reportsExportState.topSitesRichnessData || {}),
+        xgboostFeatureImportance: clonePlainObject(reportsExportState.xgboostFeatureImportance || {}),
+        convlstmPredictions: clonePlainObject(reportsExportState.convlstmPredictions || {}),
+        ensembleMetrics: clonePlainObject(reportsExportState.ensembleMetrics || {}),
+        kbaPaAuditRows: clonePlainObject(reportsExportState.kbaPaAuditRows || [])
+    };
+}
+
 var charts = {
     historical: null,
     correlation: null,
@@ -1969,6 +2038,19 @@ var trendHistoricalDataByFilter = {};
 var diagnosticsTrendHistoricalDataByFilter = {};
 var diagnosticsLoaded = false;
 var lastFilterKey = '';
+var reportsExportState = {
+    filters: {},
+    meta: {},
+    trendHistoricalData: {},
+    trendCorrelationData: {},
+    snapshotDistributions: {},
+    snapshotScatterData: {},
+    topSitesRichnessData: {},
+    xgboostFeatureImportance: {},
+    convlstmPredictions: {},
+    ensembleMetrics: {},
+    kbaPaAuditRows: {$kba_audit_data_json}
+};
 var scopeRequestSeq = {
     trend: 0,
     snapshot: 0,
@@ -2812,6 +2894,7 @@ async function fetchReportData(scope, options) {
         } else if (scope === 'diagnostics') {
             updateSnapshotCharts(data, 'diagnostics');
         }
+        updateReportsExportState(data, scope);
         if (data && data.meta && data.meta.diagnostics_source && data.meta.diagnostics_source !== 'live_model_inference_db') {
             console.warn('Diagnostics source is not live model inference:', data.meta.diagnostics_source, data.meta.diagnostics_error || '');
         }
@@ -2991,9 +3074,13 @@ function exportReport(format) {
 
     var isPdf = format === 'pdf';
     var formatUpper = isPdf ? 'PDF' : 'CSV';
-    var filters = getFilterValues();
-    var params = new URLSearchParams(filters);
-    params.set('format', format);
+    var exportPayload = buildExportPayload();
+    var requestBody = Object.assign({}, exportPayload.filters || {}, {
+        format: format,
+        export_live: '0',
+        filters: exportPayload.filters,
+        report_payload: exportPayload
+    });
 
     var overlay = document.getElementById('exportLoadingOverlay');
     var titleEl = document.getElementById('exportLoadingTitle');
@@ -3038,9 +3125,13 @@ function exportReport(format) {
         cancelBtn.addEventListener('click', onCancel, { once: true });
     }
 
-    fetch('api/export_handler.php?' + params.toString(), {
-        method: 'GET',
-        headers: { 'Accept': isPdf ? 'application/pdf' : 'text/csv' },
+    fetch('api/export_handler.php', {
+        method: 'POST',
+        headers: {
+            'Accept': isPdf ? 'application/pdf' : 'text/csv',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
         credentials: 'same-origin',
         signal: controller.signal
     })
@@ -3111,6 +3202,8 @@ window.addEventListener('storage', function (event) {
 });
 </script>
 HTML;
+
+$extra_scripts = str_replace('{$kba_audit_data_json}', $kba_audit_data_json, $extra_scripts);
 
 require_once 'includes/footer.php';
 ?>
