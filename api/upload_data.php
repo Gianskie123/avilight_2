@@ -38,6 +38,9 @@
  *                               Plain INSERT (no IGNORE) — a duplicate observation_id
  *                               already in the database aborts the entire upload and
  *                               rolls back the transaction.
+ *
+ * All upload attempts (after header validation) are recorded in upload_log.
+ * Per-row rejection reasons are stored in upload_rejection_log.
  */
 
 // Buffer ALL output so nothing (warnings, notices, include newlines) can
@@ -48,19 +51,29 @@ ini_set('display_errors', '0');
 ini_set('memory_limit', '512M');
 error_reporting(E_ALL);
 
+// Global references used by json_error() and error handlers to close the upload log
+// entry even when the pipeline exits via exception or fatal error.
+$g_pdo            = null;
+$g_upload_log_id  = null;
+
 set_exception_handler(function (Throwable $e) {
+    global $g_pdo, $g_upload_log_id;
     ob_end_clean();
+    _close_upload_log_on_error($g_pdo, $g_upload_log_id, 'Unhandled error: ' . $e->getMessage());
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'error' => 'Unhandled error: ' . $e->getMessage()]);
     exit;
 });
 
 register_shutdown_function(function () {
+    global $g_pdo, $g_upload_log_id;
     $err = error_get_last();
     if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
         ob_end_clean();
+        $msg = 'Fatal error: ' . $err['message'] . ' in ' . $err['file'] . ' on line ' . $err['line'];
+        _close_upload_log_on_error($g_pdo, $g_upload_log_id, $msg);
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'Fatal error: ' . $err['message'] . ' in ' . $err['file'] . ' on line ' . $err['line']]);
+        echo json_encode(['success' => false, 'error' => $msg]);
     }
 });
 
@@ -78,8 +91,20 @@ require_once __DIR__ . '/../includes/db.php';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+/** Mark an in-progress upload_log row as failed. Safe to call with nulls. */
+function _close_upload_log_on_error(?PDO $pdo, ?int $log_id, string $reason): void {
+    if ($pdo === null || $log_id === null) return;
+    try {
+        $pdo->prepare(
+            "UPDATE upload_log SET status='failed', fail_reason=? WHERE id=?"
+        )->execute([mb_substr($reason, 0, 500), $log_id]);
+    } catch (Throwable $_) {}
+}
+
 function json_error(string $msg): void {
+    global $g_pdo, $g_upload_log_id;
     ob_end_clean();
+    _close_upload_log_on_error($g_pdo, $g_upload_log_id, $msg);
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'error' => $msg]);
     exit;
@@ -347,15 +372,47 @@ foreach ($required as $src => $_alias) {
     $idx[$src] = $col_index[$src];
 }
 
+// ── Open DB and create upload_log entry (status=failed until proven otherwise) ─
+// Done here, after all header-level checks pass, so every genuine upload attempt
+// (valid file structure) gets an audit record attributed to the logged-in user.
+
+$pdo            = null;
+$upload_log_id  = null;
+$uploaded_by    = get_logged_user() ?? 'unknown';
+$ip_address     = $_SERVER['REMOTE_ADDR'] ?? '';
+
+try {
+    $pdo    = get_mysql_db();
+    $g_pdo  = $pdo;
+} catch (Throwable $e) {
+    json_error('Database connection failed: ' . $e->getMessage());
+}
+
+try {
+    $pdo->prepare(
+        "INSERT INTO upload_log
+             (uploaded_by, filename, file_size_bytes, file_type, status, ip_address)
+         VALUES (?, ?, ?, ?, 'failed', ?)"
+    )->execute([$uploaded_by, $file['name'], $file['size'], $ext, $ip_address]);
+    $upload_log_id   = (int) $pdo->lastInsertId();
+    $g_upload_log_id = $upload_log_id;
+} catch (Throwable $e) {
+    // Non-fatal: proceed without an audit record rather than aborting the upload.
+}
+
 // ── Phase A: Clean rows ───────────────────────────────────────────────────────
 // Consume the generator one row at a time — no full row array ever in memory.
 
-$cleaned = [];
-$skipped = 0;
+$cleaned    = [];
+$rejections = [];  // per-row rejection details for upload_rejection_log
+$skipped    = 0;
+$row_num    = 0;   // 1-based data-row counter (header row excluded)
 
 while ($row_gen->valid()) {
     $row = $row_gen->current();
     $row_gen->next();
+    $row_num++;
+
     $obs_id      = trim($row[$idx['GLOBAL UNIQUE IDENTIFIER']] ?? '');
     $site        = trim($row[$idx['LOCALITY']]                 ?? '');
     $lat_raw     = trim($row[$idx['LATITUDE']]                 ?? '');
@@ -366,6 +423,14 @@ while ($row_gen->valid()) {
 
     // Drop rows missing the primary key or species name
     if ($obs_id === '' || $common_name === '') {
+        $rejections[] = [
+            'row_num'     => $row_num,
+            'obs_id'      => $obs_id,
+            'common_name' => $common_name,
+            'latitude'    => $lat_raw,
+            'longitude'   => $lon_raw,
+            'reason'      => 'missing_fields',
+        ];
         $skipped++;
         continue;
     }
@@ -373,6 +438,14 @@ while ($row_gen->valid()) {
     // ── 6. Drop uncertain species records ────────────────────────────────────
     // Reject " sp." (with leading space) or "/" anywhere in the name
     if (stripos($common_name, ' sp.') !== false || strpos($common_name, '/') !== false) {
+        $rejections[] = [
+            'row_num'     => $row_num,
+            'obs_id'      => $obs_id,
+            'common_name' => $common_name,
+            'latitude'    => $lat_raw,
+            'longitude'   => $lon_raw,
+            'reason'      => 'uncertain_species',
+        ];
         $skipped++;
         continue;
     }
@@ -386,7 +459,15 @@ while ($row_gen->valid()) {
     }
     $ts = strtotime($date_raw);
     if ($ts === false) {
-        $skipped++;   // unparseable date – drop row
+        $rejections[] = [
+            'row_num'     => $row_num,
+            'obs_id'      => $obs_id,
+            'common_name' => $common_name,
+            'latitude'    => $lat_raw,
+            'longitude'   => $lon_raw,
+            'reason'      => 'invalid_date',
+        ];
+        $skipped++;
         continue;
     }
 
@@ -396,11 +477,20 @@ while ($row_gen->valid()) {
     $lat = (float) $lat_raw;
     $lon = (float) $lon_raw;
     if ($lat < 14.3 || $lat > 14.8 || $lon < 120.9 || $lon > 121.15) {
+        $rejections[] = [
+            'row_num'     => $row_num,
+            'obs_id'      => $obs_id,
+            'common_name' => $common_name,
+            'latitude'    => $lat_raw,
+            'longitude'   => $lon_raw,
+            'reason'      => 'out_of_bounds',
+        ];
         $skipped++;
         continue;
     }
 
     $cleaned[] = [
+        'orig_row'    => $row_num,
         'obs_id'      => $obs_id,
         'site'        => $site,
         'lat'         => $lat,
@@ -419,17 +509,34 @@ if (count($cleaned) === 0) {
 }
 
 // ── 8. Duplicate observation_id guard (within the file) ───────────────────────
+// Keep the first occurrence of each obs_id; log subsequent duplicates.
 
-$obs_id_counts = array_count_values(array_column($cleaned, 'obs_id'));
-$dup_ids       = array_keys(array_filter($obs_id_counts, fn($c) => $c > 1));
-if ($dup_ids) {
-    $preview = array_slice($dup_ids, 0, 10);
-    $suffix  = count($dup_ids) > 10 ? ' … and ' . (count($dup_ids) - 10) . ' more.' : '.';
-    json_error(
-        'Duplicate GLOBAL UNIQUE IDENTIFIER values found within the file (' . count($dup_ids) . ' duplicates). '
-        . 'Fix the file and re-upload. Duplicates: ' . implode(', ', $preview) . $suffix
-    );
+$seen_obs_ids  = [];
+$deduped       = [];
+foreach ($cleaned as $r) {
+    if (isset($seen_obs_ids[$r['obs_id']])) {
+        $rejections[] = [
+            'row_num'     => $r['orig_row'],
+            'obs_id'      => $r['obs_id'],
+            'common_name' => $r['common_name'],
+            'latitude'    => (string) $r['lat'],
+            'longitude'   => (string) $r['lon'],
+            'reason'      => 'duplicate_in_file',
+        ];
+        $skipped++;
+    } else {
+        $seen_obs_ids[$r['obs_id']] = true;
+        $deduped[] = $r;
+    }
 }
+
+if (count($deduped) === 0) {
+    json_error('The file contains no valid content after removing in-file duplicates.');
+}
+
+// Promote deduplicated list
+$cleaned = $deduped;
+unset($deduped, $seen_obs_ids);
 
 // ── 9-10. Resolve species & batch-insert observations ────────────────────────
 
@@ -460,13 +567,33 @@ function insert_observation_batch(PDO $pdo, array $batch): void {
     $pdo->prepare($sql)->execute($values);
 }
 
+/** Bulk-insert rejection rows in batches of 500. */
+function insert_rejection_batch(PDO $pdo, int $log_id, array $rejections): void {
+    $chunk_size = 500;
+    foreach (array_chunk($rejections, $chunk_size) as $chunk) {
+        $placeholders = implode(',', array_fill(0, count($chunk), '(?,?,?,?,?,?,?)'));
+        $sql = "INSERT INTO upload_rejection_log
+                    (upload_log_id, row_number, observation_id, common_name, latitude, longitude, reason)
+                VALUES {$placeholders}";
+        $params = [];
+        foreach ($chunk as $rej) {
+            $params[] = $log_id;
+            $params[] = $rej['row_num'];
+            $params[] = mb_substr((string) $rej['obs_id'],      0, 255);
+            $params[] = mb_substr((string) $rej['common_name'], 0, 255);
+            $params[] = $rej['latitude'];
+            $params[] = $rej['longitude'];
+            $params[] = $rej['reason'];
+        }
+        $pdo->prepare($sql)->execute($params);
+    }
+}
+
 $inserted      = 0;
 $new_species   = 0;
 $species_cache = [];
 
 try {
-    $pdo = get_mysql_db();
-
     $stmt_find_species = $pdo->prepare(
         'SELECT species_id FROM species_masterlist WHERE species_name = :name LIMIT 1'
     );
@@ -513,6 +640,25 @@ try {
 
     $pdo->commit();
 
+    // ── Write audit trail (outside the observation transaction) ───────────────
+    if ($upload_log_id !== null) {
+        $rows_total = $inserted + $skipped;
+        $status     = ($skipped > 0 && $inserted > 0) ? 'partial'
+                    : ($inserted > 0                  ? 'success' : 'failed');
+        try {
+            $pdo->prepare(
+                "UPDATE upload_log
+                    SET status=?, rows_total=?, rows_inserted=?, rows_skipped=?,
+                        new_species=?, fail_reason=NULL
+                  WHERE id=?"
+            )->execute([$status, $rows_total, $inserted, $skipped, $new_species, $upload_log_id]);
+
+            if (!empty($rejections)) {
+                insert_rejection_batch($pdo, $upload_log_id, $rejections);
+            }
+        } catch (Throwable $_) { /* non-fatal — don't break the response */ }
+    }
+
 } catch (PDOException $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
@@ -531,7 +677,7 @@ ob_end_clean();
 header('Content-Type: application/json');
 echo json_encode([
     'success'     => true,
-    'message'     => "Upload complete. Inserted: {$inserted} | Skipped (cleaned out): {$skipped} | New species added: {$new_species}.",
+    'message'     => "Upload complete. Inserted: {$inserted} | Skipped: {$skipped} | New species added: {$new_species}.",
     'inserted'    => $inserted,
     'skipped'     => $skipped,
     'new_species' => $new_species,

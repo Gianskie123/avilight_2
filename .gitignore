@@ -18,6 +18,7 @@ vendor/
 # Cache files
 /cache/
 *.cache
+data/cache/
 
 # Environment files
 .env
@@ -64,6 +65,7 @@ __pycache__/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
