@@ -63,151 +63,7 @@ try {
     $model_error = $e->getMessage();
 }
 
-// ── Validation & rejection log summary ───────────────────────────────────
-// One row per (upload, reason) — gives a count of how many rows were rejected
-// for each reason in each upload so the table can show a natural-language issue.
-$validation_log_rows = [];
-try {
-    $vl_db = get_mysql_db();
-    $validation_log_rows = $vl_db->query(
-        "SELECT ul.uploaded_at, ul.uploaded_by, ul.filename,
-                url.reason,
-                COUNT(*) AS cnt
-           FROM upload_rejection_log url
-           JOIN upload_log ul ON ul.id = url.upload_log_id
-          WHERE ul.uploaded_at >= NOW() - INTERVAL 1 HOUR
-          GROUP BY url.upload_log_id, url.reason
-          ORDER BY ul.uploaded_at DESC, url.reason
-          LIMIT 5"
-    )->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) {
-    // Non-fatal — tables may not exist yet
-}
-
-// ── Spatial integrity checks against live DB ─────────────────────────────
-// Runs on every admin page load — all queries are indexed COUNT(*) so they
-// are fast even on large tables. Checks cover raw_bird_observation and
-// aggregated_bird_observation only; land_cover is intentionally excluded
-// (null cells are expected and filled during the merge step).
-$spatial_checks  = [];
-$spatial_db_ok   = false;
-$LAT_MIN = 14.3; $LAT_MAX = 14.8;
-$LON_MIN = 120.9; $LON_MAX = 121.15;
-
-try {
-    $sp_db = get_mysql_db();
-    $spatial_db_ok = true;
-
-    // ── raw_bird_observation ──────────────────────────────────────────────
-    $raw_total = (int) $sp_db->query('SELECT COUNT(*) FROM raw_bird_observation')->fetchColumn();
-
-    // 1. Null coordinates
-    $null_coords = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM raw_bird_observation WHERE latitude IS NULL OR longitude IS NULL'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'No null coordinates in raw observations',
-        'pass'   => $null_coords === 0,
-        'detail' => $null_coords > 0 ? "{$null_coords} row(s) have NULL latitude or longitude" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 2. Zero coordinates (often a GPS/export artifact)
-    $zero_coords = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM raw_bird_observation WHERE latitude = 0 OR longitude = 0'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'No zero-value coordinates in raw observations',
-        'pass'   => $zero_coords === 0,
-        'detail' => $zero_coords > 0 ? "{$zero_coords} row(s) have lat=0 or lon=0 (likely missing GPS fix)" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 3. Latitude within Metro Manila range
-    $oob_lat = (int) $sp_db->query(
-        "SELECT COUNT(*) FROM raw_bird_observation
-          WHERE latitude IS NOT NULL AND (latitude < {$LAT_MIN} OR latitude > {$LAT_MAX})"
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => "Latitude within {$LAT_MIN}°–{$LAT_MAX}° N (Metro Manila)",
-        'pass'   => $oob_lat === 0,
-        'detail' => $oob_lat > 0 ? "{$oob_lat} observation(s) outside latitude range {$LAT_MIN}°–{$LAT_MAX}° N" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 4. Longitude within Metro Manila range
-    $oob_lon = (int) $sp_db->query(
-        "SELECT COUNT(*) FROM raw_bird_observation
-          WHERE longitude IS NOT NULL AND (longitude < {$LON_MIN} OR longitude > {$LON_MAX})"
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => "Longitude within {$LON_MIN}°–{$LON_MAX}° E (Metro Manila)",
-        'pass'   => $oob_lon === 0,
-        'detail' => $oob_lon > 0 ? "{$oob_lon} observation(s) outside longitude range {$LON_MIN}°–{$LON_MAX}° E" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 5. No duplicate observation IDs in raw table
-    $dup_obs = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM (
-             SELECT observation_id FROM raw_bird_observation
-             GROUP BY observation_id HAVING COUNT(*) > 1
-         ) AS d'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'No duplicate observation IDs in raw observations',
-        'pass'   => $dup_obs === 0,
-        'detail' => $dup_obs > 0 ? "{$dup_obs} observation ID(s) appear more than once" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // ── aggregated_bird_observation ───────────────────────────────────────
-    $agg_total = (int) $sp_db->query('SELECT COUNT(*) FROM aggregated_bird_observation')->fetchColumn();
-
-    // 6. All aggregated rows snapped to a grid cell
-    $unsnapped = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM aggregated_bird_observation WHERE grid_lat IS NULL OR grid_lon IS NULL'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'All aggregated observations snapped to a grid cell',
-        'pass'   => $unsnapped === 0,
-        'detail' => $unsnapped > 0 ? "{$unsnapped} aggregated row(s) have no grid_lat/grid_lon — re-run aggregation to fix" : null,
-        'table'  => 'aggregated_bird_observation',
-    ];
-
-    // 7. Aggregated grid coordinates within Metro Manila
-    $agg_oob = (int) $sp_db->query(
-        "SELECT COUNT(*) FROM aggregated_bird_observation
-          WHERE grid_lat IS NOT NULL AND grid_lon IS NOT NULL
-            AND (grid_lat < {$LAT_MIN} OR grid_lat > {$LAT_MAX}
-              OR grid_lon < {$LON_MIN} OR grid_lon > {$LON_MAX})"
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'All aggregated grid cells within Metro Manila bounds',
-        'pass'   => $agg_oob === 0,
-        'detail' => $agg_oob > 0 ? "{$agg_oob} aggregated row(s) have grid coordinates outside Metro Manila bounding box" : null,
-        'table'  => 'aggregated_bird_observation',
-    ];
-
-    // 8. Coordinates are realistic (within Philippines — catch gross errors)
-    $non_ph = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM raw_bird_observation
-          WHERE latitude  IS NOT NULL AND (latitude  < 4.5  OR latitude  > 21.5)
-             OR longitude IS NOT NULL AND (longitude < 116.0 OR longitude > 127.0)'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'All coordinates within Philippines extent (4.5°–21.5° N, 116°–127° E)',
-        'pass'   => $non_ph === 0,
-        'detail' => $non_ph > 0 ? "{$non_ph} observation(s) fall outside the Philippines entirely" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-} catch (Throwable $e) {
-    $spatial_db_ok = false;
-}
-
-$spatial_all_pass = $spatial_db_ok && !empty($spatial_checks)
-    && count(array_filter($spatial_checks, fn($c) => !$c['pass'])) === 0;
+// Validation log and spatial checks are loaded asynchronously via JS on DOMContentLoaded.
 
 // ── Security logs from MySQL ──────────────────────────────────────────────
 $recent_access    = [];
@@ -262,16 +118,6 @@ require_once 'includes/header.php';
         
         <div id="uploadStatus" style="margin-top: 15px;"></div>
 
-        <hr style="margin: 20px 0;">
-
-        <h4>Analytics Cache</h4>
-        <p style="margin: 0 0 10px 0; color: #666;">
-            Rebuild precomputed analytics summaries used by the Analytics tab for faster loading.
-        </p>
-        <button type="button" class="btn btn-secondary" id="rebuildAnalyticsBtn" onclick="rebuildAnalyticsCache()">
-            Rebuild Analytics Cache
-        </button>
-        <div id="analyticsCacheStatus" style="margin-top: 10px;"></div>
     </div>
 </div>
 
@@ -513,17 +359,6 @@ require_once 'includes/header.php';
     <h2 class="card-header">Validation & Error Logs</h2>
     <div class="card-body">
         <h4>Recent Data Quality Issues</h4>
-        <?php
-        // Maps rejection reason → [type badge class, type label, issue template, status label, status badge class]
-        $reason_meta = [
-            'out_of_bounds'     => ['warning',   'Spatial',   '%d observation(s) outside Metro Manila bounding box (lat 14.3–14.8 / lon 120.9–121.15) in "%s"',              'Rejected', 'danger'],
-            'missing_fields'    => ['info',      'Format',    '%d row(s) missing GLOBAL UNIQUE IDENTIFIER or COMMON NAME in "%s"',                                            'Rejected', 'danger'],
-            'uncertain_species' => ['warning',   'Species',   '%d uncertain species record(s) (contains " sp." or "/") in "%s"',                                             'Rejected', 'danger'],
-            'invalid_date'      => ['info',      'Format',    '%d row(s) with unparseable OBSERVATION DATE in "%s"',                                                          'Resolved', 'success'],
-            'duplicate_in_file' => ['secondary', 'Duplicate', '%d duplicate GLOBAL UNIQUE IDENTIFIER(s) removed within file "%s"',                                           'Cleaned',  'success'],
-            'duplicate_in_db'   => ['danger',    'Duplicate', '%d observation ID(s) already exist in the database — upload from "%s" was aborted and rolled back',           'Aborted',  'danger'],
-        ];
-        ?>
         <table>
             <thead>
                 <tr>
@@ -535,28 +370,7 @@ require_once 'includes/header.php';
                 </tr>
             </thead>
             <tbody id="validationLogBody">
-                <?php if (empty($validation_log_rows)): ?>
-                <tr>
-                    <td colspan="5" style="text-align:center; color:#888; padding: 16px;">
-                        No validation issues in the last hour. Issues are logged automatically when CSV/XLSX files are uploaded.
-                    </td>
-                </tr>
-                <?php else: ?>
-                <?php foreach ($validation_log_rows as $vl):
-                    $reason  = $vl['reason'] ?? 'unknown';
-                    $meta    = $reason_meta[$reason] ?? ['secondary', ucwords(str_replace('_',' ',$reason)), '%d issue(s) in "%s"', 'Rejected', 'danger'];
-                    [$type_badge, $type_label, $issue_tpl, $status_label, $status_badge] = $meta;
-                    $issue_text = sprintf($issue_tpl, (int)$vl['cnt'], basename($vl['filename'] ?? ''));
-                ?>
-                <tr>
-                    <td style="white-space:nowrap;"><?php echo htmlspecialchars($vl['uploaded_at'] ?? '—'); ?></td>
-                    <td><?php echo htmlspecialchars($vl['uploaded_by'] ?? '—'); ?></td>
-                    <td><span class="badge badge-<?php echo $type_badge; ?>"><?php echo $type_label; ?></span></td>
-                    <td><?php echo htmlspecialchars($issue_text); ?></td>
-                    <td><span class="badge badge-<?php echo $status_badge; ?>"><?php echo $status_label; ?></span></td>
-                </tr>
-                <?php endforeach; ?>
-                <?php endif; ?>
+                <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
             </tbody>
         </table>
     </div>
@@ -566,56 +380,7 @@ require_once 'includes/header.php';
 <div class="card">
     <h2 class="card-header">Spatial Integrity Checks</h2>
     <div class="card-body" id="spatialChecksBody">
-        <?php if (!$spatial_db_ok): ?>
-        <div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>
-        <?php elseif (empty($spatial_checks)): ?>
-        <div class="alert alert-info">No observation data found. Upload bird observation data to run spatial checks.</div>
-        <?php else: ?>
-
-        <?php if ($spatial_all_pass): ?>
-        <div style="padding: 12px 16px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; margin-bottom: 14px;">
-            <strong style="color:#4ade80;">✓ All spatial integrity checks passed.</strong>
-        </div>
-        <?php else:
-            $fail_count = count(array_filter($spatial_checks, fn($c) => !$c['pass']));
-        ?>
-        <div style="padding: 12px 16px; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); border-radius: 8px; margin-bottom: 14px;">
-            <strong style="color:#f87171;">⚠ <?php echo $fail_count; ?> check(s) failed — review the issues below.</strong>
-        </div>
-        <?php endif; ?>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Check</th>
-                    <th>Table</th>
-                    <th>Result</th>
-                    <th>Detail</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php foreach ($spatial_checks as $chk): ?>
-                <tr>
-                    <td><?php echo htmlspecialchars($chk['label']); ?></td>
-                    <td><code style="font-size:0.8rem;"><?php echo htmlspecialchars($chk['table']); ?></code></td>
-                    <td>
-                        <?php if ($chk['pass']): ?>
-                        <span class="badge badge-success">✓ Pass</span>
-                        <?php else: ?>
-                        <span class="badge badge-danger">✗ Fail</span>
-                        <?php endif; ?>
-                    </td>
-                    <td style="font-size:0.875rem; color:<?php echo $chk['pass'] ? '#4ade80' : '#f87171'; ?>;">
-                        <?php echo $chk['pass']
-                            ? 'OK'
-                            : htmlspecialchars($chk['detail'] ?? 'Issue detected'); ?>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <?php endif; ?>
+        <div style="text-align:center;color:#888;padding:16px;">Loading…</div>
     </div>
 </div>
 
@@ -891,7 +656,11 @@ function loadCovariateStatus() {
 }
 
 // Load on page ready, then refresh every 60 seconds
-document.addEventListener('DOMContentLoaded', loadCovariateStatus);
+document.addEventListener('DOMContentLoaded', () => {
+    loadCovariateStatus();
+    loadValidationLog();
+    loadSpatialChecks();
+});
 setInterval(loadCovariateStatus, 60000);
 
 // ── Data upload form ──────────────────────────────────────────────────────────
@@ -940,7 +709,6 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
             if (data.success) {
                 const added = Number(data.inserted || 0).toLocaleString();
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
-                rebuildAnalyticsCache(true);
                 loadValidationLog();
                 loadSpatialChecks();
             } else {
@@ -953,45 +721,6 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
             statusDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${err.message}</div>`;
         });
 });
-
-function rebuildAnalyticsCache(silent = false) {
-    const btn = document.getElementById('rebuildAnalyticsBtn');
-    const statusEl = document.getElementById('analyticsCacheStatus');
-
-    btn.disabled = true;
-    if (!silent) {
-        statusEl.innerHTML = '<div class="alert alert-info">Rebuilding analytics cache...</div>';
-    }
-
-    fetch('api/rebuild_analytics_cache.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope: 'metro' })
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (!data.success) {
-                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Cache rebuild failed.'}</div>`;
-                return;
-            }
-            const rows = Number(data.row_count || 0);
-            const refreshedAt = data.refreshed_at || 'n/a';
-            const bau = data.bau_cache || {};
-            const bauRows = Number(bau.rows || 0);
-            const bauRefreshed = bau.refreshed_at || 'n/a';
-            const bauOk = Number(bau.prewarm_ok || 0);
-            const bauFailed = Number(bau.prewarm_failed || 0);
-            const bauScope = bau.scope || 'metro';
-            const targetCities = Number(bau.target_cities || 0);
-            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Analytics cache rebuilt.'}<br><small>Latest Sites: ${rows} | Refreshed: ${refreshedAt}<br>BAU Scope: ${bauScope} | Target Cities: ${targetCities}<br>BAU Baselines: ${bauRows} | Prewarm OK: ${bauOk} | Failed: ${bauFailed} | Refreshed: ${bauRefreshed}</small></div>`;
-        })
-        .catch(() => {
-            statusEl.innerHTML = '<div class="alert alert-danger">Cache rebuild request failed. Check server connection.</div>';
-        })
-        .finally(() => {
-            btn.disabled = false;
-        });
-}
 
 // Model upload form
 document.getElementById('modelUploadForm').addEventListener('submit', function(e) {
