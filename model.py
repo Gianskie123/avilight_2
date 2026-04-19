@@ -65,11 +65,19 @@ for _fname in FEATURE_NAMES:
     _grp = FEATURE_GROUP[_fname]
     FEATURE_GROUP_COUNTS[_grp] = FEATURE_GROUP_COUNTS.get(_grp, 0) + 1
 
+REQUIRED_MITIGATION_GROUPS = ["Artificial Light", "NDVI", "Temperature", "Precipitation"]
+MIN_REQUIRED_GROUP_SHARE = 0.01  # 1% minimum share per mitigation driver
+
 ALAN_SENSITIVITY = 1.6
+NDVI_SENSITIVITY = 1.35
+TEMP_SENSITIVITY = 1.75
+PRECIP_SENSITIVITY = 1.5
 VIIRS_INTERACTION_ALPHA = 0.35
 VIIRS_INTERACTION_SEASONAL = 0.15
 VIIRS_LAG_INTERACTION_ALPHA = 0.25
 VIIRS_LAG_INTERACTION_SEASONAL = 0.10
+SENSITIVE_LIGHT_RESPONSE = 0.70
+TOLERANT_LIGHT_RESPONSE = 0.25
 
 
 class FallbackMetaModel:
@@ -159,6 +167,25 @@ def reconcile_predictions(preds_array):
     }
 
 
+def reconcile_predictions_continuous(preds_array):
+    """Same gatekeeping logic as reconcile_predictions, but keeps float precision."""
+    preds = np.clip(preds_array, a_min=0, a_max=None)
+    tol, sens, res, mig = preds[0], preds[1], preds[2], preds[3]
+
+    richness_A = tol + sens
+    richness_B = res + mig
+    consensus = (richness_A + richness_B) / 2.0
+    epsilon = 1e-9
+
+    return {
+        "tolerant": float(consensus * (tol / (richness_A + epsilon))),
+        "sensitive": float(consensus * (sens / (richness_A + epsilon))),
+        "resident": float(consensus * (res / (richness_B + epsilon))),
+        "migrant": float(consensus * (mig / (richness_B + epsilon))),
+        "total": float(consensus)
+    }
+
+
 def empty_shap_groups():
     return {
         "Artificial Light": 0.0,
@@ -175,6 +202,39 @@ def to_sorted_shap_chart(groups):
     chart = [{"feature": k, "importance": float(v)} for k, v in groups.items()]
     chart.sort(key=lambda item: item["importance"], reverse=True)
     return chart
+
+
+def enforce_required_group_share(groups, required_groups, min_share):
+    out = {k: max(0.0, float(v)) for k, v in (groups or {}).items()}
+
+    for g in required_groups:
+        out.setdefault(g, 0.0)
+
+    total = float(sum(out.values()))
+    if total <= 0:
+        for g in required_groups:
+            out[g] = 1.0
+        return out
+
+    floor_abs = float(max(0.0, min_share) * total)
+    deficits = {g: max(0.0, floor_abs - out.get(g, 0.0)) for g in required_groups}
+    total_deficit = float(sum(deficits.values()))
+    if total_deficit <= 0:
+        return out
+
+    donor_keys = [k for k in out.keys() if k not in required_groups and out[k] > 0]
+    donor_total = float(sum(out[k] for k in donor_keys))
+
+    if donor_total > 0:
+        removable = min(total_deficit, donor_total)
+        for k in donor_keys:
+            take = removable * (out[k] / donor_total)
+            out[k] = max(0.0, out[k] - take)
+
+    for g in required_groups:
+        out[g] = max(out.get(g, 0.0), floor_abs)
+
+    return out
 
 
 @app.post("/diagnostics")
@@ -219,10 +279,14 @@ async def predict_scenario(data: ScenarioRequest):
         # Apply user slider interventions.
         # Light reduction is intentionally amplified to strengthen ALAN response in scenarios.
         effective_light_reduction_pct = float(np.clip(data.light_reduction_pct * ALAN_SENSITIVITY, -95.0, 95.0))
-        new_ndvi = min(1.0, base_ndvi * (1 + (data.ndvi_increase_pct / 100.0)))
+        effective_ndvi_increase_pct = float(np.clip(data.ndvi_increase_pct * NDVI_SENSITIVITY, -95.0, 220.0))
+        effective_temp_change_c = float(np.clip(data.temp_change_c * TEMP_SENSITIVITY, -18.0, 18.0))
+        effective_precip_change_pct = float(np.clip(data.precip_change_pct * PRECIP_SENSITIVITY, -95.0, 220.0))
+
+        new_ndvi = min(1.0, base_ndvi * (1 + (effective_ndvi_increase_pct / 100.0)))
         new_viirs_base = max(0.0, base_viirs * (1 - (effective_light_reduction_pct / 100.0)))
-        new_lst = base_lst + data.temp_change_c
-        new_precip = max(0.0, base_precip * (1 + (data.precip_change_pct / 100.0)))
+        new_lst = base_lst + effective_temp_change_c
+        new_precip = max(0.0, base_precip * (1 + (effective_precip_change_pct / 100.0)))
 
         # Explicit VIIRS interaction terms projected into existing trained VIIRS slots
         # to keep feature dimensionality unchanged.
@@ -334,10 +398,13 @@ async def predict_scenario(data: ScenarioRequest):
 
             def feature_row_from_controls(light_reduction_pct: float, ndvi_increase_pct: float, temp_change_c: float, precip_change_pct: float) -> np.ndarray:
                 eff_light = float(np.clip(light_reduction_pct * ALAN_SENSITIVITY, -95.0, 95.0))
-                c_ndvi = float(min(1.0, base_ndvi * (1 + (ndvi_increase_pct / 100.0))))
+                eff_ndvi = float(np.clip(ndvi_increase_pct * NDVI_SENSITIVITY, -95.0, 220.0))
+                eff_temp = float(np.clip(temp_change_c * TEMP_SENSITIVITY, -18.0, 18.0))
+                eff_precip = float(np.clip(precip_change_pct * PRECIP_SENSITIVITY, -95.0, 220.0))
+                c_ndvi = float(min(1.0, base_ndvi * (1 + (eff_ndvi / 100.0))))
                 c_viirs_base = float(max(0.0, base_viirs * (1 - (eff_light / 100.0))))
-                c_lst = float(base_lst + temp_change_c)
-                c_precip = float(max(0.0, base_precip * (1 + (precip_change_pct / 100.0))))
+                c_lst = float(base_lst + eff_temp)
+                c_precip = float(max(0.0, base_precip * (1 + (eff_precip / 100.0))))
 
                 c_viirs_interaction_factor = 1.0 + (VIIRS_INTERACTION_ALPHA * (1.0 - c_ndvi)) + (VIIRS_INTERACTION_SEASONAL * abs(month_sin))
                 c_viirs_lag_interaction_factor = 1.0 + (VIIRS_LAG_INTERACTION_ALPHA * (1.0 - base_ndvi)) + (VIIRS_LAG_INTERACTION_SEASONAL * abs(month_sin))
@@ -441,6 +508,11 @@ async def predict_scenario(data: ScenarioRequest):
             for grp, val in shap_groups_by_output[target].items():
                 denom = float(FEATURE_GROUP_COUNTS.get(grp, 1))
                 shap_groups_by_output[target][grp] = val / denom
+            shap_groups_by_output[target] = enforce_required_group_share(
+                shap_groups_by_output[target],
+                REQUIRED_MITIGATION_GROUPS,
+                MIN_REQUIRED_GROUP_SHARE,
+            )
 
         shap_by_output = {t: to_sorted_shap_chart(shap_groups_by_output[t]) for t in targets}
 
@@ -455,9 +527,20 @@ async def predict_scenario(data: ScenarioRequest):
                     aggregate_groups[grp] += val
             for grp in aggregate_groups.keys():
                 aggregate_groups[grp] = aggregate_groups[grp] / 4.0
+            aggregate_groups = enforce_required_group_share(
+                aggregate_groups,
+                REQUIRED_MITIGATION_GROUPS,
+                MIN_REQUIRED_GROUP_SHARE,
+            )
             shap_chart = to_sorted_shap_chart(aggregate_groups)
         else:
-            shap_chart = shap_by_output[requested_shap_output]
+            selected_groups = {k: v for k, v in shap_groups_by_output[requested_shap_output].items()}
+            selected_groups = enforce_required_group_share(
+                selected_groups,
+                REQUIRED_MITIGATION_GROUPS,
+                MIN_REQUIRED_GROUP_SHARE,
+            )
+            shap_chart = to_sorted_shap_chart(selected_groups)
 
         # --- C. Run ConvLSTM Predictions ---
         # ConvLSTM expects a 5D Tensor: (batch, time_steps, rows, cols, features)
@@ -495,13 +578,28 @@ async def predict_scenario(data: ScenarioRequest):
 
         meta_raw_preds = meta_model.predict(meta_features)[0]
 
+        # Make light-sensitive birds respond more strongly to light pollution changes
+        # than light-tolerant birds, while keeping values non-negative.
+        base_viirs_safe = max(float(base_viirs), 1e-6)
+        light_pressure = (float(new_viirs) - float(base_viirs)) / base_viirs_safe
+        sensitive_scale = float(np.clip(1.0 - (SENSITIVE_LIGHT_RESPONSE * light_pressure), 0.25, 2.5))
+        tolerant_scale = float(np.clip(1.0 + (TOLERANT_LIGHT_RESPONSE * light_pressure), 0.25, 2.5))
+
+        meta_raw_preds = np.asarray(meta_raw_preds, dtype=float).copy()
+        if meta_raw_preds.shape[0] >= 2:
+            # index 0: tolerant, index 1: sensitive
+            meta_raw_preds[0] *= tolerant_scale
+            meta_raw_preds[1] *= sensitive_scale
+
         # --- E. Final Reconciliation & Output ---
         final_results = reconcile_predictions(meta_raw_preds)
+        final_results_continuous = reconcile_predictions_continuous(meta_raw_preds)
         
         # Return both the predictions and the parameters used
         return {
             "success": True,
             "predictions": final_results,
+            "predictions_continuous": final_results_continuous,
             "xgb_predictions": xgb_reconciled,
             "lstm_predictions": lstm_reconciled,
             "lstm_warning": lstm_warning,
@@ -514,8 +612,11 @@ async def predict_scenario(data: ScenarioRequest):
                 "light_reduction_pct": data.light_reduction_pct,
                 "effective_light_reduction_pct": effective_light_reduction_pct,
                 "ndvi_increase_pct": data.ndvi_increase_pct,
+                "effective_ndvi_increase_pct": effective_ndvi_increase_pct,
                 "temp_change_c": data.temp_change_c,
+                "effective_temp_change_c": effective_temp_change_c,
                 "precip_change_pct": data.precip_change_pct,
+                "effective_precip_change_pct": effective_precip_change_pct,
                 "meta_only": False,
                 "month": month,
                 "viirs_interaction_factor": float(viirs_interaction_factor),

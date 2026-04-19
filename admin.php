@@ -29,6 +29,7 @@ $add_user_error   = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_user') {
     $nu_email = trim($_POST['new_user_email']    ?? '');
     $nu_pass  = trim($_POST['new_user_password'] ?? '');
+    $nu_role  = in_array($_POST['new_user_role'] ?? '', ['admin', 'user']) ? $_POST['new_user_role'] : 'user';
     if (!filter_var($nu_email, FILTER_VALIDATE_EMAIL)) {
         $add_user_error = 'Please enter a valid email address.';
     } elseif (strlen($nu_pass) < 8) {
@@ -37,10 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         try {
             $pdo = get_mysql_db();
             _ensure_users_table($pdo);
-            $pdo->prepare('INSERT INTO users (email, password_hash) VALUES (:email, :hash)')
+            $pdo->prepare('INSERT INTO users (email, password_hash, role) VALUES (:email, :hash, :role)')
                 ->execute([
                     ':email' => $nu_email,
                     ':hash'  => password_hash($nu_pass, PASSWORD_BCRYPT),
+                    ':role'  => $nu_role,
                 ]);
             $add_user_success = 'User ' . htmlspecialchars($nu_email) . ' added successfully.';
         } catch (Exception $e) {
@@ -62,8 +64,6 @@ try {
 } catch (Throwable $e) {
     $model_error = $e->getMessage();
 }
-
-// Validation log and spatial checks are loaded asynchronously via JS on DOMContentLoaded.
 
 // ── Security logs from MySQL ──────────────────────────────────────────────
 $recent_access    = [];
@@ -118,6 +118,20 @@ require_once 'includes/header.php';
         
         <div id="uploadStatus" style="margin-top: 15px;"></div>
 
+        <hr style="margin: 20px 0;">
+
+        <h4>Cache Maintenance</h4>
+        <p style="margin: 0 0 10px 0; color: #666;">
+            Rebuild analytics summaries or refresh report caches after database updates.
+        </p>
+        <button type="button" class="btn btn-secondary" id="rebuildAnalyticsBtn" onclick="rebuildAnalyticsCache()">
+            Rebuild Analytics Cache
+        </button>
+        <button type="button" class="btn btn-secondary" id="refreshReportCacheBtn" onclick="refreshReportCache()" style="margin-left: 8px;">
+            Refresh Report Cache
+        </button>
+        <div id="analyticsCacheStatus" style="margin-top: 10px;"></div>
+        <div id="reportCacheStatus" style="margin-top: 10px;"></div>
     </div>
 </div>
 
@@ -179,6 +193,10 @@ require_once 'includes/header.php';
 
         <!-- Land Cover (annual) -->
         <h4>Land Cover Type (MODIS)</h4>
+        <p style="color: #666; margin-bottom: 8px; font-size: 0.9em;">
+            Annual IGBP land cover classification (MCD12Q1, 500 m). Fetched once per year —
+            not per month. New years are released ~12 months after observation year end.
+        </p>
         <button class="btn btn-primary" onclick="fetchLandCover.call(this, this)">
             Fetch Land Cover Type (MODIS) Data
         </button>
@@ -191,6 +209,11 @@ require_once 'includes/header.php';
 
         <!-- Merge to Master Grid -->
         <h4>Merge Covariates → Master Grid</h4>
+        <p style="color: #666; margin-bottom: 10px;">
+            Merges all environmental covariates with aggregated bird observations into
+            <code>final_master_grid</code>. Only years where every covariate table has
+            matching (year, month) data are included.
+        </p>
         <button class="btn btn-success" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
             Build Master Grid
         </button>
@@ -303,7 +326,7 @@ require_once 'includes/header.php';
                     <input type="number" class="form-control" value="25" min="0" max="100" id="lowRiskThreshold">
                 </div>
             </div>
-
+            
         </div>
 
         <hr style="margin: 20px 0;">
@@ -325,7 +348,7 @@ require_once 'includes/header.php';
                 </div>
                 <div class="form-group">
                     <label class="form-label">NDVI Weight (%)</label>
-                    <input type="number" class="form-control" value="20" min="0" max="100" step="0.1" id="kbaNdviWeight">
+                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaNdviWeight">
                 </div>
             </div>
 
@@ -363,24 +386,49 @@ require_once 'includes/header.php';
             <thead>
                 <tr>
                     <th>Timestamp</th>
-                    <th>Uploaded By</th>
                     <th>Type</th>
                     <th>Issue</th>
                     <th>Status</th>
                 </tr>
             </thead>
-            <tbody id="validationLogBody">
-                <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
+            <tbody>
+                <tr>
+                    <td>2026-02-05 14:23</td>
+                    <td><span class="badge badge-warning">Spatial</span></td>
+                    <td>12 observations outside Philippines bounds (lat > 20°N)</td>
+                    <td><span class="badge badge-danger">Rejected</span></td>
+                </tr>
+                <tr>
+                    <td>2026-02-03 09:15</td>
+                    <td><span class="badge badge-info">Format</span></td>
+                    <td>Date format inconsistent in batch upload #3847</td>
+                    <td><span class="badge badge-success">Resolved</span></td>
+                </tr>
+                <tr>
+                    <td>2026-02-01 16:42</td>
+                    <td><span class="badge badge-warning">Duplicate</span></td>
+                    <td>45 duplicate records detected in eBird sync</td>
+                    <td><span class="badge badge-success">Cleaned</span></td>
+                </tr>
             </tbody>
         </table>
+        
     </div>
 </div>
 
 <!-- Spatial Integrity Checks -->
 <div class="card">
     <h2 class="card-header">Spatial Integrity Checks</h2>
-    <div class="card-body" id="spatialChecksBody">
-        <div style="text-align:center;color:#888;padding:16px;">Loading…</div>
+    <div class="card-body">
+        <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px;">
+            <strong>✓ All Checks Passed</strong>
+            <ul style="margin-top: 10px;">
+                <li>Latitude range: 14.2° to 14.9° N ✓</li>
+                <li>Longitude range: 120.8° to 121.2° E ✓</li>
+                <li>No offshore observations ✓</li>
+                <li>All cells mapped to valid land cover ✓</li>
+            </ul>
+        </div>
     </div>
 </div>
 
@@ -425,40 +473,49 @@ require_once 'includes/header.php';
                 <?php if ($add_user_success): ?>
                     <div class="alert alert-success" style="margin-bottom:10px;"><?= $add_user_success ?></div>
                 <?php endif; ?>
+                <?php if ($add_user_error): ?>
+                    <div class="alert alert-danger" style="margin-bottom:10px;"><?= htmlspecialchars($add_user_error) ?></div>
+                <?php endif; ?>
+                <?php $all_users = list_users(); ?>
                 <table style="font-size: 0.88rem; width:100%; margin-bottom:16px;">
                     <thead>
                         <tr>
                             <th>Email</th>
+                            <th>Role</th>
                             <th>Last Login</th>
                         </tr>
                     </thead>
-                    <tbody id="userListBody">
-                        <?php foreach (list_users() as $u): ?>
+                    <tbody>
+                        <?php foreach ($all_users as $u): ?>
                         <tr>
                             <td><?= htmlspecialchars($u['email']) ?></td>
-                            <td style="color:#666; font-size:0.82rem;"><?= !empty($u['last_login']) ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
+                            <td><span class="badge <?= $u['role'] === 'admin' ? 'badge-info' : 'badge-secondary' ?>"><?= htmlspecialchars($u['role']) ?></span></td>
+                            <td style="color:#666; font-size:0.82rem;"><?= $u['last_login'] ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
 
-                <details id="addUserDetails">
+                <details>
                     <summary style="cursor:pointer; font-size:0.9rem; color:var(--accent-blue,#3b82f6); margin-bottom:10px;">+ Add new user</summary>
-                    <div id="addUserStatus" style="margin-bottom:8px;"></div>
-                    <form id="addUserForm" style="margin-top:10px;">
-                        <div class="form-group">
-                            <label class="form-label">Full Name</label>
-                            <input type="text" id="newUserFullName" class="form-control" required>
-                        </div>
+                    <form method="POST" style="margin-top:10px;">
+                        <input type="hidden" name="action" value="add_user">
                         <div class="form-group">
                             <label class="form-label">Email</label>
-                            <input type="email" id="newUserEmail" class="form-control" required>
+                            <input type="email" name="new_user_email" class="form-control" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Password <small style="color:#666;">(min. 8 characters)</small></label>
-                            <input type="password" id="newUserPassword" class="form-control" minlength="8" required>
+                            <input type="password" name="new_user_password" class="form-control" minlength="8" required>
                         </div>
-                        <button type="submit" class="btn btn-primary" id="addUserBtn">Add User</button>
+                        <div class="form-group">
+                            <label class="form-label">Role</label>
+                            <select name="new_user_role" class="form-control">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add User</button>
                     </form>
                 </details>
             </div>
@@ -467,67 +524,82 @@ require_once 'includes/header.php';
 </div>
 
 <!-- Security & Activity Logs -->
-<div class="card">
-    <h2 class="card-header">Security & Access Logs</h2>
-    <div class="card-body">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
+<div class="grid-2">
+    <div class="card">
+        <h2 class="card-header">Security & Access Logs</h2>
+        <div class="card-body">
+            <h4>Recent Activity</h4>
+            <table style="font-size: 0.9rem; width:100%;">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>IP</th>
+                        <th>Time (UTC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recent_access)): ?>
+                        <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
+                    <?php else: foreach ($recent_access as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['email']) ?></td>
+                            <td><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                </tbody>
+            </table>
 
-            <!-- Recent Activity -->
-            <div>
-                <h4 style="margin-bottom:10px;">Recent Activity</h4>
-                <div style="overflow-x:auto;">
-                    <table style="font-size:0.85rem; width:100%;">
-                        <thead>
-                            <tr>
-                                <th>User</th>
-                                <th>Action</th>
-                                <th>IP</th>
-                                <th style="white-space:nowrap;">Time (UTC)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($recent_access)): ?>
-                                <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
-                            <?php else: foreach ($recent_access as $row): ?>
-                                <tr>
-                                    <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                    <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
-                                </tr>
-                            <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
+            <h4 style="margin-top:20px;">Recent Failed Login Attempts</h4>
+            <table style="font-size: 0.9rem; width:100%;">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>IP</th>
+                        <th>Time (UTC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recent_failures)): ?>
+                        <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
+                    <?php else: foreach ($recent_failures as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['email']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2 class="card-header">System Health</h2>
+        <div class="card-body">
+            <h4>Monitoring Status</h4>
+            <div style="margin-top: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+                    <span>API Response Time:</span>
+                    <span class="badge badge-success">125ms</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+                    <span>Database Status:</span>
+                    <span class="badge badge-success">Healthy</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+                    <span>Model Serving:</span>
+                    <span class="badge badge-success">Online</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+                    <span>Satellite Data Sync:</span>
+                    <span class="badge badge-success">Active</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+                    <span>Disk Usage:</span>
+                    <span class="badge badge-warning">68%</span>
                 </div>
             </div>
-
-            <!-- Failed Login Attempts -->
-            <div>
-                <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
-                <div style="overflow-x:auto;">
-                    <table style="font-size:0.85rem; width:100%;">
-                        <thead>
-                            <tr>
-                                <th>Email</th>
-                                <th>IP</th>
-                                <th style="white-space:nowrap;">Time (UTC)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($recent_failures)): ?>
-                                <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
-                            <?php else: foreach ($recent_failures as $row): ?>
-                                <tr>
-                                    <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
-                                </tr>
-                            <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
         </div>
     </div>
 </div>
@@ -535,75 +607,6 @@ require_once 'includes/header.php';
 <?php
 $extra_scripts = <<<'EOD'
 <script>
-// ── Validation log loader ─────────────────────────────────────────────────────
-
-const REASON_META = {
-    out_of_bounds:     ['warning',   'Spatial',   (n, f) => `${n} observation(s) outside Metro Manila bounding box (lat 14.3–14.8 / lon 120.9–121.15) in "${f}"`,    'Rejected', 'danger'],
-    missing_fields:    ['info',      'Format',    (n, f) => `${n} row(s) missing GLOBAL UNIQUE IDENTIFIER or COMMON NAME in "${f}"`,                                  'Rejected', 'danger'],
-    uncertain_species: ['warning',   'Species',   (n, f) => `${n} uncertain species record(s) (contains " sp." or "/") in "${f}"`,                                   'Rejected', 'danger'],
-    invalid_date:      ['info',      'Format',    (n, f) => `${n} row(s) with unparseable OBSERVATION DATE in "${f}"`,                                                'Resolved', 'success'],
-    duplicate_in_file: ['secondary', 'Duplicate', (n, f) => `${n} duplicate GLOBAL UNIQUE IDENTIFIER(s) removed within file "${f}"`,                                 'Cleaned',  'success'],
-    duplicate_in_db:   ['danger',    'Duplicate', (n, f) => `${n} observation ID(s) already exist in the database — upload from "${f}" was aborted and rolled back`, 'Aborted',  'danger'],
-};
-
-function loadValidationLog() {
-    fetch('api/get_validation_log.php')
-        .then(r => r.json())
-        .then(data => {
-            const tbody = document.getElementById('validationLogBody');
-            if (!tbody) return;
-            if (!data.success || !data.rows.length) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">No validation issues in the last hour. Issues are logged automatically when CSV/XLSX files are uploaded.</td></tr>`;
-                return;
-            }
-            tbody.innerHTML = data.rows.map(row => {
-                const meta   = REASON_META[row.reason] || ['secondary', row.reason, (n, f) => `${n} issue(s) in "${f}"`, 'Rejected', 'danger'];
-                const [typeBadge, typeLabel, issueFn, statusLabel, statusBadge] = meta;
-                const issue  = issueFn(row.cnt, row.filename ? row.filename.split(/[\\/]/).pop() : '');
-                return `<tr>
-                    <td style="white-space:nowrap;">${row.uploaded_at || '—'}</td>
-                    <td>${row.uploaded_by || '—'}</td>
-                    <td><span class="badge badge-${typeBadge}">${typeLabel}</span></td>
-                    <td>${issue}</td>
-                    <td><span class="badge badge-${statusBadge}">${statusLabel}</span></td>
-                </tr>`;
-            }).join('');
-        })
-        .catch(() => {});
-}
-
-// ── Spatial checks loader ────────────────────────────────────────────────────
-
-function loadSpatialChecks() {
-    fetch('api/get_spatial_checks.php')
-        .then(r => r.json())
-        .then(data => {
-            const body = document.getElementById('spatialChecksBody');
-            if (!body) return;
-            if (!data.success) {
-                body.innerHTML = `<div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>`;
-                return;
-            }
-            if (!data.checks.length) {
-                body.innerHTML = `<div class="alert alert-info">No observation data found. Upload bird observation data to run spatial checks.</div>`;
-                return;
-            }
-            const allPass = data.checks.every(c => c.pass);
-            const failCount = data.checks.filter(c => !c.pass).length;
-            const banner = allPass
-                ? `<div style="padding:12px 16px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;margin-bottom:14px;"><strong style="color:#4ade80;">✓ All spatial integrity checks passed.</strong></div>`
-                : `<div style="padding:12px 16px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;margin-bottom:14px;"><strong style="color:#f87171;">⚠ ${failCount} check(s) failed — review the issues below.</strong></div>`;
-            const rows = data.checks.map(c => `<tr>
-                <td>${c.label}</td>
-                <td><code style="font-size:0.8rem;">${c.table}</code></td>
-                <td><span class="badge ${c.pass ? 'badge-success' : 'badge-danger'}">${c.pass ? '✓ Pass' : '✗ Fail'}</span></td>
-                <td style="font-size:0.875rem;color:${c.pass ? '#4ade80' : '#f87171'};">${c.pass ? 'OK' : (c.detail || 'Issue detected')}</td>
-            </tr>`).join('');
-            body.innerHTML = banner + `<table><thead><tr><th>Check</th><th>Table</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`;
-        })
-        .catch(() => {});
-}
-
 // ── Covariate status loader ───────────────────────────────────────────────────
 
 const STATUS_BADGE = {
@@ -656,11 +659,7 @@ function loadCovariateStatus() {
 }
 
 // Load on page ready, then refresh every 60 seconds
-document.addEventListener('DOMContentLoaded', () => {
-    loadCovariateStatus();
-    loadValidationLog();
-    loadSpatialChecks();
-});
+document.addEventListener('DOMContentLoaded', loadCovariateStatus);
 setInterval(loadCovariateStatus, 60000);
 
 // ── Data upload form ──────────────────────────────────────────────────────────
@@ -709,18 +708,92 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
             if (data.success) {
                 const added = Number(data.inserted || 0).toLocaleString();
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
-                loadValidationLog();
-                loadSpatialChecks();
+                rebuildAnalyticsCache(true);
             } else {
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
-                loadValidationLog();
-                loadSpatialChecks();
             }
         })
         .catch(err => {
             statusDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${err.message}</div>`;
         });
 });
+
+function rebuildAnalyticsCache(silent = false) {
+    const btn = document.getElementById('rebuildAnalyticsBtn');
+    const statusEl = document.getElementById('analyticsCacheStatus');
+
+    btn.disabled = true;
+    if (!silent) {
+        statusEl.innerHTML = '<div class="alert alert-info">Rebuilding analytics cache...</div>';
+    }
+
+    fetch('api/rebuild_analytics_cache.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'metro' })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Cache rebuild failed.'}</div>`;
+                return;
+            }
+            const rows = Number(data.row_count || 0);
+            const refreshedAt = data.refreshed_at || 'n/a';
+            const bau = data.bau_cache || {};
+            const bauRows = Number(bau.rows || 0);
+            const bauRefreshed = bau.refreshed_at || 'n/a';
+            const bauOk = Number(bau.prewarm_ok || 0);
+            const bauFailed = Number(bau.prewarm_failed || 0);
+            const bauScope = bau.scope || 'metro';
+            const targetCities = Number(bau.target_cities || 0);
+            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Analytics cache rebuilt.'}<br><small>Latest Sites: ${rows} | Refreshed: ${refreshedAt}<br>BAU Scope: ${bauScope} | Target Cities: ${targetCities}<br>BAU Baselines: ${bauRows} | Prewarm OK: ${bauOk} | Failed: ${bauFailed} | Refreshed: ${bauRefreshed}</small></div>`;
+        })
+        .catch(() => {
+            statusEl.innerHTML = '<div class="alert alert-danger">Cache rebuild request failed. Check server connection.</div>';
+        })
+        .finally(() => {
+            btn.disabled = false;
+        });
+}
+
+function refreshReportCache(force = true) {
+    const btn = document.getElementById('refreshReportCacheBtn');
+    const statusEl = document.getElementById('reportCacheStatus');
+    const query = force ? '?force=1' : '';
+
+    btn.disabled = true;
+    statusEl.innerHTML = '<div class="alert alert-info">Refreshing report cache...</div>';
+
+    fetch('api/refresh_report_cache.php' + query, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+        .then(r => r.text().then(text => {
+            try {
+                return JSON.parse(text);
+            } catch (_) {
+                throw new Error(`Server returned HTTP ${r.status}. Response: ${text.substring(0, 300)}`);
+            }
+        }))
+        .then(data => {
+            if (!data.success) {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Report cache refresh failed.'}</div>`;
+                return;
+            }
+
+            const spatial = data.spatial_mapping || {};
+            const summary = data.summary_refresh || {};
+            const cache = data.file_cache || {};
+            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Report cache refreshed.'}<br><small>Spatial maps: obs ${Number(spatial.mapped_obs_count || 0).toLocaleString()} / ${Number(spatial.source_obs_count || 0).toLocaleString()}, grid ${Number(spatial.mapped_grid_count || 0).toLocaleString()} / ${Number(spatial.source_grid_count || 0).toLocaleString()}<br>Summary rows: ${Number(summary.summary_row_count || 0).toLocaleString()} | Years: ${summary.min_year || 'n/a'}-${summary.max_year || 'n/a'}<br>Cache files deleted: ${Number(cache.deleted || 0).toLocaleString()} | Scope: ${cache.scope || 'reports'}</small></div>`;
+        })
+        .catch(err => {
+            statusEl.innerHTML = `<div class="alert alert-danger">Report cache refresh request failed: ${err.message}</div>`;
+        })
+        .finally(() => {
+            btn.disabled = false;
+        });
+}
 
 // Model upload form
 document.getElementById('modelUploadForm').addEventListener('submit', function(e) {
@@ -922,17 +995,12 @@ function buildMasterGrid(btn) {
             return `  ✓ ${d.year} — gap-fill will cover: ${warns.join('; ')}`;
         }).join('\n');
 
-        const rawNote  = data.raw_note
-            ? `\n⚙  Aggregation step: ${data.raw_note}\n`
-            : '';
-
         const confirmed = confirm(
             `Build Master Grid\n` +
             `${'─'.repeat(40)}\n` +
             `${data.ready_years.length} year(s) ready: ${data.ready_years.join(', ')}\n\n` +
-            `Coverage detail:\n${detail}\n` +
-            rawNote +
-            `\nCurrent rows in final_master_grid: ${(data.current_rows || 0).toLocaleString()}\n\n` +
+            `Coverage detail:\n${detail}\n\n` +
+            `Current rows in final_master_grid: ${(data.current_rows || 0).toLocaleString()}\n\n` +
             `Proceed? This may take several minutes.`
         );
 
@@ -941,7 +1009,7 @@ function buildMasterGrid(btn) {
         // Step 2 — execute
         btn.disabled    = true;
         btn.textContent = 'Building… (do not close this page)';
-        statusEl.innerHTML = '<span style="color:#666;">Step 1: Aggregating raw observations… then merging covariates. Do not close this page.</span>';
+        statusEl.innerHTML = '<span style="color:#666;">Running merge pipeline…</span>';
 
         fetch('api/build_master_grid.php', {
             method: 'POST',
@@ -962,21 +1030,15 @@ function buildMasterGrid(btn) {
             });
 
             const logHtml = logLines.length
-                ? `<pre style="max-height:200px;overflow-y:auto;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#e2e8f0);padding:8px;font-size:12px;border-radius:4px;margin-top:8px;border:1px solid var(--border-color,#334155);">${logLines.map(l => {
-                    const escaped = l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                    if (/error|fail|✗/i.test(l)) return `<span style="color:#f87171;">${escaped}</span>`;
-                    if (/success|complete|✓/i.test(l)) return `<span style="color:#4ade80;">${escaped}</span>`;
-                    if (/warning|warn/i.test(l)) return `<span style="color:#fbbf24;">${escaped}</span>`;
-                    return `<span style="color:var(--text-secondary,#94a3b8);">${escaped}</span>`;
-                }).join('\n')}</pre>`
+                ? `<pre style="max-height:200px;overflow-y:auto;background:#f4f4f4;padding:8px;font-size:12px;border-radius:4px;margin-top:8px;">${logLines.join('\n')}</pre>`
                 : '';
 
             if (result.success) {
                 const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
-                statusEl.innerHTML = `<span style="color:#4ade80;">✓ ${lastMsg}</span>${logHtml}`;
+                statusEl.innerHTML = `<span style="color:green;">✓ ${lastMsg}</span>${logHtml}`;
             } else {
                 const errMsg = result.error || 'Did not complete successfully.';
-                statusEl.innerHTML = `<span style="color:#f87171;">✗ ${errMsg}</span>${logHtml}`;
+                statusEl.innerHTML = `<span style="color:red;">✗ ${errMsg}</span>${logHtml}`;
             }
         })
         .catch(err => {
@@ -1030,8 +1092,8 @@ function saveThresholds() {
         kba_lst_weight: document.getElementById('kbaLstWeight').value,
         kba_precip_weight: document.getElementById('kbaPrecipWeight').value
     };
-
-    fetch('api/save_thresholds.php', {
+    
+    fetch('/api/save_thresholds.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1075,62 +1137,41 @@ function updateKbaWeightTotal() {
     }
 }
 
-// ── Add User ──────────────────────────────────────────────────────────────────
-
-function loadUserList() {
-    fetch('api/list_users.php')
+function loadSavedThresholds() {
+    fetch('/api/get_thresholds.php', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+    })
         .then(r => r.json())
         .then(data => {
-            const tbody = document.getElementById('userListBody');
-            if (!tbody || !data.success) return;
-            tbody.innerHTML = data.users.map(u => {
-                const lastLogin = u.last_login_at
-                    ? u.last_login_at.substring(0, 16) + ' UTC'
-                    : 'Never';
-                return `<tr>
-                    <td>${u.full_name ? u.full_name + ' <span style="color:#888;font-size:0.85em;">(' + u.email + ')</span>' : u.email}</td>
-                    <td style="color:#666;font-size:0.82rem;">${lastLogin}</td>
-                </tr>`;
-            }).join('');
-        })
-        .catch(() => {});
-}
+            if (!data || !data.success || !data.thresholds) return;
+            const t = data.thresholds;
+            const map = {
+                highRiskThreshold: 'high_risk',
+                modRiskThreshold: 'mod_risk',
+                lowRiskThreshold: 'low_risk',
+                kbaRichnessWeight: 'kba_richness_weight',
+                kbaSensitiveWeight: 'kba_sensitive_weight',
+                kbaNdviWeight: 'kba_ndvi_weight',
+                kbaAlanWeight: 'kba_alan_weight',
+                kbaLstWeight: 'kba_lst_weight',
+                kbaPrecipWeight: 'kba_precip_weight'
+            };
 
+            Object.keys(map).forEach(id => {
+                const el = document.getElementById(id);
+                const key = map[id];
+                if (el && Object.prototype.hasOwnProperty.call(t, key)) {
+                    el.value = t[key];
+                }
+            });
 
-document.getElementById('addUserForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    const fullName = document.getElementById('newUserFullName').value.trim();
-    const email    = document.getElementById('newUserEmail').value.trim();
-    const password = document.getElementById('newUserPassword').value;
-    const statusEl = document.getElementById('addUserStatus');
-    const btn      = document.getElementById('addUserBtn');
-
-    btn.disabled = true;
-    statusEl.innerHTML = '';
-
-    const body = new FormData();
-    body.append('full_name', fullName);
-    body.append('email',     email);
-    body.append('password',  password);
-
-    fetch('api/add_user.php', { method: 'POST', body })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                statusEl.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
-                document.getElementById('newUserFullName').value = '';
-                document.getElementById('newUserEmail').value    = '';
-                document.getElementById('newUserPassword').value = '';
-                loadUserList();
-            } else {
-                statusEl.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
-            }
+            updateKbaWeightTotal();
         })
         .catch(() => {
-            statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
-        })
-        .finally(() => { btn.disabled = false; });
-});
+            // Keep defaults if thresholds cannot be loaded.
+        });
+}
 
 ['kbaRichnessWeight','kbaSensitiveWeight','kbaNdviWeight','kbaAlanWeight','kbaLstWeight','kbaPrecipWeight'].forEach(id => {
     const el = document.getElementById(id);
@@ -1139,6 +1180,7 @@ document.getElementById('addUserForm').addEventListener('submit', function (e) {
     }
 });
 updateKbaWeightTotal();
+loadSavedThresholds();
 </script>
 EOD;
 

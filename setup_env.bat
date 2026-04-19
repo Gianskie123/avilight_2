@@ -105,6 +105,7 @@ echo ============================================================
 echo  Setup complete!
 echo  Python path: %VENV_PYTHON%
 echo  PHP will use this automatically via backend_config.php.
+echo  Start backend: start_backend.bat
 echo ============================================================
 echo.
 pause
