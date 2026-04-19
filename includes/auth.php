@@ -21,19 +21,12 @@ function require_admin() {
         header('Location: login.php');
         exit;
     }
-    if (($_SESSION['user_role'] ?? 'user') !== 'admin') {
-        header('Location: home.php');
-        exit;
-    }
 }
 
 function get_logged_user() {
     return $_SESSION['user_email'] ?? null;
 }
 
-function get_logged_role() {
-    return $_SESSION['user_role'] ?? 'user';
-}
 
 function logout() {
     if (is_logged_in()) {
@@ -144,7 +137,7 @@ function list_users(): array {
     try {
         $pdo = get_mysql_db();
         _ensure_users_table($pdo);
-        return $pdo->query('SELECT user_id, email, role, created_at, last_login_at FROM users ORDER BY user_id')
+        return $pdo->query('SELECT id, email, created_at, last_login FROM users ORDER BY id')
                    ->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         return [];
@@ -194,7 +187,6 @@ function _ensure_users_table(PDO $pdo): void {
         id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
         email         VARCHAR(255) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        role          ENUM('admin','user') NOT NULL DEFAULT 'user',
         created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_login    DATETIME NULL,
         PRIMARY KEY (id),
@@ -206,11 +198,10 @@ function _ensure_users_table(PDO $pdo): void {
     if ((int)$count === 0) {
         $default_pass = getenv('AVILIGHT_ADMIN_PASS') ?: 'avilight2024!';
         $pdo->prepare(
-            'INSERT INTO users (email, password_hash, role) VALUES (:email, :hash, :role)'
+            'INSERT INTO users (email, password_hash) VALUES (:email, :hash)'
         )->execute([
             ':email' => 'admin@avilight.ph',
             ':hash'  => password_hash($default_pass, PASSWORD_BCRYPT),
-            ':role'  => 'admin',
         ]);
     }
 }

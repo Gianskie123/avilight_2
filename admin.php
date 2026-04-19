@@ -29,7 +29,6 @@ $add_user_error   = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_user') {
     $nu_email = trim($_POST['new_user_email']    ?? '');
     $nu_pass  = trim($_POST['new_user_password'] ?? '');
-    $nu_role  = in_array($_POST['new_user_role'] ?? '', ['admin', 'user']) ? $_POST['new_user_role'] : 'user';
     if (!filter_var($nu_email, FILTER_VALIDATE_EMAIL)) {
         $add_user_error = 'Please enter a valid email address.';
     } elseif (strlen($nu_pass) < 8) {
@@ -38,11 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         try {
             $pdo = get_mysql_db();
             _ensure_users_table($pdo);
-            $pdo->prepare('INSERT INTO users (email, password_hash, role) VALUES (:email, :hash, :role)')
+            $pdo->prepare('INSERT INTO users (email, password_hash) VALUES (:email, :hash)')
                 ->execute([
                     ':email' => $nu_email,
                     ':hash'  => password_hash($nu_pass, PASSWORD_BCRYPT),
-                    ':role'  => $nu_role,
                 ]);
             $add_user_success = 'User ' . htmlspecialchars($nu_email) . ' added successfully.';
         } catch (Exception $e) {
@@ -481,7 +479,6 @@ require_once 'includes/header.php';
                     <thead>
                         <tr>
                             <th>Email</th>
-                            <th>Role</th>
                             <th>Last Login</th>
                         </tr>
                     </thead>
@@ -489,8 +486,7 @@ require_once 'includes/header.php';
                         <?php foreach ($all_users as $u): ?>
                         <tr>
                             <td><?= htmlspecialchars($u['email']) ?></td>
-                            <td><span class="badge <?= $u['role'] === 'admin' ? 'badge-info' : 'badge-secondary' ?>"><?= htmlspecialchars($u['role']) ?></span></td>
-                            <td style="color:#666; font-size:0.82rem;"><?= $u['last_login'] ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
+                            <td style="color:#666; font-size:0.82rem;"><?= !empty($u['last_login']) ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -507,13 +503,6 @@ require_once 'includes/header.php';
                         <div class="form-group">
                             <label class="form-label">Password <small style="color:#666;">(min. 8 characters)</small></label>
                             <input type="password" name="new_user_password" class="form-control" minlength="8" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Role</label>
-                            <select name="new_user_role" class="form-control">
-                                <option value="user">User</option>
-                                <option value="admin">Admin</option>
-                            </select>
                         </div>
                         <button type="submit" class="btn btn-primary">Add User</button>
                     </form>
