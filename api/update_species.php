@@ -48,9 +48,26 @@ define('IMG_H', 300);
 define('IMG_DIR', __DIR__ . '/../assets/species_images/');
 define('IMG_WEB', 'assets/species_images/');
 
-$image_path = null;   // null = no change; string = new path to store
+$remove_image = ($_POST['remove_image'] ?? '0') === '1';
+$image_path   = null;   // null = no change; string = new path; '' = remove
 
-if (!empty($_FILES['image_file']['tmp_name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
+if ($remove_image) {
+    // Fetch and delete the existing file, then clear the DB column
+    try {
+        $existing = get_mysql_db()
+            ->prepare('SELECT image_path FROM species_masterlist WHERE species_id = ?');
+        $existing->execute([$species_id]);
+        $old_path = $existing->fetchColumn();
+        if ($old_path) {
+            $abs         = realpath(__DIR__ . '/../' . $old_path);
+            $allowed_dir = realpath(IMG_DIR);
+            if ($abs && $allowed_dir && str_starts_with($abs, $allowed_dir)) {
+                @unlink($abs);
+            }
+        }
+    } catch (Throwable $e) { /* non-fatal */ }
+    $image_path = '';  // empty string signals "set NULL in DB"
+} elseif (!empty($_FILES['image_file']['tmp_name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
     $tmp  = $_FILES['image_file']['tmp_name'];
     $mime = mime_content_type($tmp);
 
@@ -115,7 +132,7 @@ if (!empty($_FILES['image_file']['tmp_name']) && $_FILES['image_file']['error'] 
     imagedestroy($dst);
 
     $image_path = IMG_WEB . $filename;
-}
+} // end elseif upload
 
 // ── Database update ───────────────────────────────────────────────────────────
 $sets   = [
@@ -131,8 +148,8 @@ $params = [
 ];
 
 if ($image_path !== null) {
-    $sets[]       = 'image_path = :img';
-    $params[':img'] = $image_path;
+    $sets[]         = 'image_path = :img';
+    $params[':img'] = $image_path === '' ? null : $image_path;
 }
 
 try {

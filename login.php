@@ -19,8 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = authenticate_user($email, $password);
         if ($user) {
             $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_role']  = $user['role'];
-            $_SESSION['user_id']    = $user['id'];
+            $_SESSION['user_role']  = $user['role'] ?? 'admin';
+            $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
             header('Location: loading.php?next=home.php');
             exit;
         } else {

@@ -65,6 +65,26 @@ try {
 
 // Validation log and spatial checks are loaded asynchronously via JS on DOMContentLoaded.
 
+// ── Load saved thresholds ─────────────────────────────────────────────────
+$thresholds_file = __DIR__ . '/data/cache/thresholds.json';
+$thresholds = [
+    'high_risk'            => 60,
+    'mod_risk'             => 40,
+    'low_risk'             => 25,
+    'kba_richness_weight'  => 15,
+    'kba_sensitive_weight' => 15,
+    'kba_ndvi_weight'      => 20,
+    'kba_alan_weight'      => 15,
+    'kba_lst_weight'       => 15,
+    'kba_precip_weight'    => 10,
+];
+if (file_exists($thresholds_file)) {
+    $saved = json_decode(file_get_contents($thresholds_file), true);
+    if (is_array($saved)) {
+        $thresholds = array_merge($thresholds, $saved);
+    }
+}
+
 // ── Security logs from MySQL ──────────────────────────────────────────────
 $recent_access    = [];
 $recent_failures  = [];
@@ -94,6 +114,9 @@ try {
 
 require_once 'includes/header.php';
 ?>
+
+<!-- Toast notification container -->
+<div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:380px;"></div>
 
 <div class="page-header">
     <h1 class="page-title">Admin & Staff Controls</h1>
@@ -287,70 +310,68 @@ require_once 'includes/header.php';
 <div class="card">
     <h2 class="card-header">Threshold Configuration</h2>
     <div class="card-body">
-        <div class="grid-2">
-            <div>
-                <h4>Danger Zone Color Scales</h4>
-                <div class="form-group">
-                    <label class="form-label">High Risk Threshold (Light Intensity):</label>
-                    <input type="number" class="form-control" value="60" min="0" max="100" id="highRiskThreshold">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Moderate Risk Threshold:</label>
-                    <input type="number" class="form-control" value="40" min="0" max="100" id="modRiskThreshold">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Low Risk Threshold:</label>
-                    <input type="number" class="form-control" value="25" min="0" max="100" id="lowRiskThreshold">
-                </div>
-            </div>
 
+        <h4 style="margin-bottom:14px;">Danger Zone Color Scales</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">High Risk Threshold</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['high_risk']) ?>" min="0" max="100" id="highRiskThreshold">
+                <small style="color:#666;">Light intensity above this = high risk</small>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Moderate Risk Threshold</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['mod_risk']) ?>" min="0" max="100" id="modRiskThreshold">
+                <small style="color:#666;">Above this = moderate risk</small>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Low Risk Threshold</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['low_risk']) ?>" min="0" max="100" id="lowRiskThreshold">
+                <small style="color:#666;">Above this = low risk</small>
+            </div>
         </div>
 
-        <hr style="margin: 20px 0;">
+        <hr style="margin:20px 0;">
 
-        <h4>KBA/PA Audit Effectiveness Weights</h4>
-        <p style="margin: 0 0 14px 0; color: #666;">
-            Suggested weights for the 6-pillar KBA/PA audit score. The total may be kept at 100% for the current formula.
+        <h4 style="margin-bottom:6px;">KBA/PA Audit Effectiveness Weights</h4>
+        <p style="margin:0 0 14px 0;color:#666;font-size:0.875rem;">
+            Weights for the 6-pillar KBA/PA audit score. Total should equal 100%.
         </p>
 
-        <div class="grid-2">
-            <div>
-                <div class="form-group">
-                    <label class="form-label">Richness Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaRichnessWeight">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Sensitive Species Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaSensitiveWeight">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">NDVI Weight (%)</label>
-                    <input type="number" class="form-control" value="20" min="0" max="100" step="0.1" id="kbaNdviWeight">
-                </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Richness Weight (%)</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['kba_richness_weight']) ?>" min="0" max="100" step="0.1" id="kbaRichnessWeight">
             </div>
-
-            <div>
-                <div class="form-group">
-                    <label class="form-label">ALAN Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaAlanWeight">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">LST Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaLstWeight">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Precipitation Weight (%)</label>
-                    <input type="number" class="form-control" value="10" min="0" max="100" step="0.1" id="kbaPrecipWeight">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Total Weight (%)</label>
-                    <input type="text" class="form-control" id="kbaWeightTotal" value="100.0" readonly>
-                    <small style="color: #666;">A total of 100% is suggested for the current scoring model.</small>
-                </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Sensitive Species Weight (%)</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['kba_sensitive_weight']) ?>" min="0" max="100" step="0.1" id="kbaSensitiveWeight">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">NDVI Weight (%)</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['kba_ndvi_weight']) ?>" min="0" max="100" step="0.1" id="kbaNdviWeight">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">ALAN Weight (%)</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['kba_alan_weight']) ?>" min="0" max="100" step="0.1" id="kbaAlanWeight">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">LST Weight (%)</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['kba_lst_weight']) ?>" min="0" max="100" step="0.1" id="kbaLstWeight">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Precipitation Weight (%)</label>
+                <input type="number" class="form-control" value="<?= htmlspecialchars($thresholds['kba_precip_weight']) ?>" min="0" max="100" step="0.1" id="kbaPrecipWeight">
             </div>
         </div>
 
-        <button class="btn btn-primary" style="margin-top: 15px;" onclick="saveThresholds()">Save Configuration</button>
+        <div style="display:flex;align-items:center;gap:16px;padding:10px 14px;background:var(--bg-card-alt);border:1px solid var(--border-color);border-radius:8px;margin-bottom:16px;">
+            <span style="font-size:0.875rem;color:var(--text-secondary);">Total Weight</span>
+            <input type="text" id="kbaWeightTotal" readonly
+                   style="width:80px;padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:transparent;font-weight:600;text-align:center;color:var(--text-primary);">
+            <small style="color:#666;">Should equal 100%</small>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveThresholds()">Save Configuration</button>
     </div>
 </div>
 
@@ -534,7 +555,38 @@ require_once 'includes/header.php';
 
 <?php
 $extra_scripts = <<<'EOD'
+<style>
+@keyframes toastIn { from { opacity:0; transform:translateX(30px); } to { opacity:1; transform:translateX(0); } }
+#toastContainer > div { transition: opacity .3s ease; }
+</style>
 <script>
+// ── Toast notifications ───────────────────────────────────────────────────────
+
+function showToast(title, lines, type = 'info') {
+    const colors = {
+        success: { bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.4)',  icon: '✓', titleColor: '#4ade80' },
+        danger:  { bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.4)', icon: '✗', titleColor: '#f87171' },
+        warning: { bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)', icon: '⚠', titleColor: '#fbbf24' },
+        info:    { bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)',  icon: 'ℹ', titleColor: '#60a5fa' },
+    };
+    const c = colors[type] || colors.info;
+    const toast = document.createElement('div');
+    toast.style.cssText = `background:${c.bg};border:1px solid ${c.border};border-radius:10px;padding:14px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);backdrop-filter:blur(8px);animation:toastIn .2s ease;`;
+    const bodyLines = (Array.isArray(lines) ? lines : [lines]).filter(Boolean);
+    toast.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div style="flex:1;">
+                <div style="font-weight:600;color:${c.titleColor};margin-bottom:${bodyLines.length ? 6 : 0}px;">${c.icon} ${title}</div>
+                ${bodyLines.map(l => `<div style="font-size:0.82rem;color:var(--text-secondary,#94a3b8);margin-top:3px;">${l}</div>`).join('')}
+            </div>
+            <button onclick="this.closest('div[data-toast]').remove()" style="background:none;border:none;color:#666;cursor:pointer;font-size:1.1rem;line-height:1;padding:0;flex-shrink:0;">×</button>
+        </div>`;
+    toast.setAttribute('data-toast', '1');
+    document.getElementById('toastContainer').appendChild(toast);
+    setTimeout(() => toast.style.opacity = '0', 4700);
+    setTimeout(() => toast.remove(), 5000);
+}
+
 // ── Validation log loader ─────────────────────────────────────────────────────
 
 const REASON_META = {
@@ -798,13 +850,13 @@ function fetchCovariate(btn, source, label) {
         btn.textContent = `Fetch ${label} Data`;
 
         if (!data.success) {
-            alert(`${label} error:\n\n${data.error || JSON.stringify(data)}`);
+            showToast(`${label} Error`, [data.error || 'Unexpected error occurred.'], 'danger');
             return;
         }
 
         // Nothing missing
         if (!data.missing || data.missing.length === 0) {
-            alert(`${label} is already up to date with all bird observation periods.`);
+            showToast(`${label}`, ['Already up to date with all bird observation periods.'], 'success');
             loadCovariateStatus();
             return;
         }
@@ -854,28 +906,24 @@ function fetchCovariate(btn, source, label) {
             btn.textContent = `Fetch ${label} Data`;
             loadCovariateStatus();
             if (result.success) {
-                let msg = result.message || 'Batch complete.';
-                if (result.remaining_count > 0) {
-                    msg += `\n\n${result.remaining_count} period(s) still remaining. Click Fetch again to continue.`;
-                }
-                if (result.errors && result.errors.length > 0) {
-                    msg += `\n\nWarnings:\n${result.errors.join('\n')}`;
-                }
-                alert(`${label}:\n\n${msg}`);
+                const lines = [result.message || 'Batch complete.'];
+                if (result.remaining_count > 0) lines.push(`${result.remaining_count} period(s) still remaining — click Fetch again to continue.`);
+                if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
+                showToast(`${label} Complete`, lines, result.errors?.length ? 'warning' : 'success');
             } else {
-                alert(`${label} fetch failed:\n\n${result.error || JSON.stringify(result)}`);
+                showToast(`${label} Fetch Failed`, [result.error || 'Unexpected error.'], 'danger');
             }
         })
         .catch(err => {
             btn.disabled = false;
             btn.textContent = `Fetch ${label} Data`;
-            alert(`${label} fetch failed:\n\n${err.message}`);
+            showToast(`${label} Fetch Failed`, [err.message], 'danger');
         });
     })
     .catch(err => {
         btn.disabled = false;
         btn.textContent = `Fetch ${label} Data`;
-        alert(`${label} check failed:\n\n${err.message}`);
+        showToast(`${label} Check Failed`, [err.message], 'danger');
     });
 }
 
@@ -1039,17 +1087,17 @@ function saveThresholds() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                alert(data.message || 'Thresholds saved. Dashboard and Reports will use the updated values on refresh.');
+                showToast('Thresholds Saved', ['Dashboard and Reports will use the updated values on next refresh.'], 'success');
                 try {
                     localStorage.setItem('avilight-thresholds-updated', String(Date.now()));
                 } catch (e) {
                     // Ignore storage write failures.
                 }
             } else {
-                alert('Error: ' + (data.error || 'Failed to save thresholds'));
+                showToast('Save Failed', [data.error || 'Failed to save thresholds.'], 'danger');
             }
         })
-        .catch(() => alert('Request failed. Check server connection.'));
+        .catch(() => showToast('Request Failed', ['Check server connection.'], 'danger'));
 }
 
 function updateKbaWeightTotal() {

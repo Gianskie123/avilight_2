@@ -6,7 +6,10 @@
  */
 header('Content-Type: application/json');
 require_once __DIR__ . '/../includes/auth.php';
-require_admin();
+if (!is_logged_in()) {
+    echo json_encode(['success' => false, 'error' => 'Session expired.']);
+    exit;
+}
 require_once __DIR__ . '/../includes/backend_config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

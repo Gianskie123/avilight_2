@@ -212,6 +212,15 @@ $lacking_details = $pdo->query(
      WHERE (image_path IS NULL OR image_path='') OR (description IS NULL OR description='')
      ORDER BY species_name"
 )->fetchAll(PDO::FETCH_ASSOC);
+
+// All species for general editing
+$all_species = $pdo->query(
+    "SELECT $select_cols,
+            (image_path IS NULL OR image_path='') AS no_image,
+            (description IS NULL OR description='') AS no_desc
+     FROM species_masterlist
+     ORDER BY species_name"
+)->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <div class="page-header">
@@ -324,7 +333,7 @@ $edit_total = count(array_unique(array_merge(
     <div class="species-card">
         <div class="species-image">
             <?php if (!empty($species['image_path'])): ?>
-                <img src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" style="width:100%;height:120px;object-fit:cover;border-radius:4px;">
+                <img src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" style="width:100%;height:180px;object-fit:cover;display:block;">
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
@@ -416,6 +425,11 @@ $page_url = function(int $p) use ($base_query): string {
                 style="flex:1;padding:8px 16px;border-radius:6px;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-size:.9rem;font-weight:500;transition:all .2s;">
             Incomplete Details
             <span style="background:var(--bg-card-alt);border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;border:1px solid var(--border-color);"><?php echo count($lacking_details); ?></span>
+        </button>
+        <button class="edit-tab-btn" data-etab="edit-details"
+                style="flex:1;padding:8px 16px;border-radius:6px;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-size:.9rem;font-weight:500;transition:all .2s;">
+            Edit Details
+            <span style="background:var(--bg-card-alt);border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;border:1px solid var(--border-color);"><?php echo count($all_species); ?></span>
         </button>
     </div>
 
@@ -520,11 +534,11 @@ $page_url = function(int $p) use ($base_query): string {
         <?php render_edit_table($no_category, 'These species are missing a light tolerance or migration status. Assign both to include them in analysis.'); ?>
     </div>
     <div id="etab-lacking-details" class="edit-tab-panel" style="display:none;">
-        <?php
-        // Add missing-indicator columns so the table can show what's absent
-        render_edit_table($lacking_details,
-            'These species are missing a photo, a description, or both. Use the Edit button to fill in the gaps.');
-        ?>
+        <?php render_edit_table($lacking_details, 'These species are missing a photo, a description, or both. Use the Edit button to fill in the gaps.'); ?>
+    </div>
+
+    <div id="etab-edit-details" class="edit-tab-panel" style="display:none;">
+        <?php render_edit_table($all_species, 'All species — click Edit to update any entry.'); ?>
     </div>
 
 </div><!-- /tab-edit -->
@@ -629,14 +643,14 @@ $page_url = function(int $p) use ($base_query): string {
             <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:8px;font-size:.85rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;">Species Photo</label>
                 <div id="imageDropZone"
-                     style="border:2px dashed var(--border-color);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;"
+                     style="border:2px dashed var(--border-color);border-radius:10px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;overflow:hidden;min-height:160px;display:flex;align-items:center;justify-content:center;"
                      onclick="document.getElementById('editImageFile').click()"
                      ondragover="event.preventDefault();this.style.borderColor='var(--accent-color)';this.style.background='var(--bg-card-alt)';"
                      ondragleave="this.style.borderColor='var(--border-color)';this.style.background='';"
                      ondrop="handleImageDrop(event)">
                     <img id="imagePreview" src="" alt=""
-                         style="display:none;width:160px;height:120px;object-fit:cover;border-radius:8px;margin-bottom:10px;">
-                    <div id="imageDropPlaceholder">
+                         style="display:none;width:100%;height:100%;object-fit:cover;position:absolute;inset:0;">
+                    <div id="imageDropPlaceholder" style="padding:20px;">
                         <div style="font-size:2rem;margin-bottom:6px;">📷</div>
                         <div style="font-size:.9rem;color:var(--text-secondary);">Click or drag & drop to upload</div>
                         <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px;">JPG, PNG, WEBP — resized to 400×300 px</div>
@@ -644,8 +658,14 @@ $page_url = function(int $p) use ($base_query): string {
                     <input type="file" id="editImageFile" name="image_file" accept="image/jpeg,image/png,image/webp"
                            style="display:none;" onchange="previewImage(this)">
                 </div>
-                <div id="currentImageNote" style="margin-top:6px;font-size:.8rem;color:var(--text-muted);display:none;">
-                    Current image on file — upload a new one to replace it.
+                <input type="hidden" id="removeImageFlag" name="remove_image" value="0">
+                <div id="currentImageNote" style="margin-top:6px;display:none;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                    <span style="font-size:.8rem;color:var(--text-muted);">Current image on file — upload a new one to replace it.</span>
+                    <button type="button" id="removePhotoBtn"
+                            onclick="removeCurrentPhoto()"
+                            style="font-size:.78rem;padding:3px 10px;border-radius:5px;border:1px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.07);color:#dc2626;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+                        Remove Photo
+                    </button>
                 </div>
             </div>
 
@@ -919,15 +939,16 @@ function openEditModal(row) {
     const fileInput   = document.getElementById('editImageFile');
     fileInput.value   = '';
 
+    document.getElementById('removeImageFlag').value = '0';
     if (row.image_path) {
-        preview.src           = row.image_path;
-        preview.style.display = 'block';
-        placeholder.style.display = 'none';
-        note.style.display    = 'block';
+        preview.src                = row.image_path;
+        preview.style.display      = 'block';
+        placeholder.style.display  = 'none';
+        note.style.display         = 'flex';
     } else {
-        preview.style.display = 'none';
-        placeholder.style.display = '';
-        note.style.display    = 'none';
+        preview.style.display      = 'none';
+        placeholder.style.display  = '';
+        note.style.display         = 'none';
     }
 
     const msg = document.getElementById('editSaveMsg');
@@ -943,6 +964,14 @@ function closeEditModal() {
 document.getElementById('editModal').addEventListener('click', function(e) {
     if (e.target === this) closeEditModal();
 });
+
+function removeCurrentPhoto() {
+    document.getElementById('removeImageFlag').value   = '1';
+    document.getElementById('imagePreview').style.display     = 'none';
+    document.getElementById('imageDropPlaceholder').style.display = '';
+    document.getElementById('currentImageNote').style.display  = 'none';
+    document.getElementById('editImageFile').value             = '';
+}
 
 function previewImage(input) {
     if (!input.files || !input.files[0]) return;

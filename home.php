@@ -419,7 +419,7 @@ $extra_scripts = <<<SCRIPTS
         })
         .finally(function() {
             clearTimeout(timeoutId);
-        });
+      });
 })();
 </script>
 SCRIPTS;

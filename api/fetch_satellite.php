@@ -233,7 +233,7 @@ if (!$confirmed) {
 
 // ── Confirmed: run Python workers and insert results ──────────────────────────
 
-const FETCH_BATCH_SIZE = 10;
+const FETCH_BATCH_SIZE = 12;
 $remaining = array_slice($missing, FETCH_BATCH_SIZE);
 $missing   = array_slice($missing, 0, FETCH_BATCH_SIZE);
 
@@ -409,13 +409,12 @@ function insert_viirs(PDO $pdo, array $rows): int {
 }
 
 function insert_ndvi(PDO $pdo, array $rows): int {
-    $cols = ['system_index', 'cell_id', 'record_date', 'latitude', 'longitude', 'month', 'year', 'ndvi'];
+    $cols = ['system_index', 'cell_id', 'latitude', 'longitude', 'month', 'year', 'ndvi'];
     $data = [];
     foreach ($rows as $r) {
         $data[] = [
             $r['system_index'],
             $r['cell_id'],
-            $r['record_date'],
             $r['latitude'],
             $r['longitude'],
             $r['month'],
