@@ -749,14 +749,14 @@ function classifyRiskByLight(lightValue) {
 }
 
 function computeZoneLight(zone, zoneIndex, year) {
-    var yearlyBySite = riskSiteYearly && riskSiteYearly[zone.name] ? riskSiteYearly[zone.name] : null;
-    if (yearlyBySite && yearlyBySite[String(year)] !== undefined && yearlyBySite[String(year)] !== null) {
-        return Math.max(0, Number(yearlyBySite[String(year)]));
-    }
-
     // Use site-footprint snapshot values for the snapshot year so Dashboard matches Reports.
     if (year === Number(zone.snapshot_year || riskSnapshotYear)) {
         return Math.max(0, Number(zone.light_exposure || 0));
+    }
+
+    var yearlyBySite = riskSiteYearly && riskSiteYearly[zone.name] ? riskSiteYearly[zone.name] : null;
+    if (yearlyBySite && yearlyBySite[String(year)] !== undefined && yearlyBySite[String(year)] !== null) {
+        return Math.max(0, Number(yearlyBySite[String(year)]));
     }
 
     // Get city for this zone from mapping
