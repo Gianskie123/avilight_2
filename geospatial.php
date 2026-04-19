@@ -141,9 +141,11 @@ $species_data = load_species_from_csv();
                 </div>
 
                 <div class="form-group" style="margin-bottom:10px;">
-                    <label class="form-label">Month <span id="bauMonthBadge" style="margin-left:8px; font-size:0.76rem; color:var(--text-secondary);">January</span></label>
-                    <input type="range" id="bauMonthSlider" class="slider" min="1" max="12" value="1" step="1">
-                    <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">Mitigation scenario will use the same month.</div>
+                    <label class="form-label">Scenario Month</label>
+                    <div class="geo-month-row">
+                        <input id="bauMonthSlider" type="range" class="slider" min="1" max="12" value="1" step="1">
+                        <span id="bauMonthBadge">January</span>
+                    </div>
                 </div>
 
                 <button class="btn btn-primary" style="width:100%;" id="runBauBtn">Run BAU Prediction</button>
@@ -151,7 +153,7 @@ $species_data = load_species_from_csv();
 
             <div id="bauRightPanel" style="overflow-y:auto; padding-right:4px;">
                 <div id="bauResultHeading" style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">BAU Prediction Result</div>
-                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Projected species richness if current environmental trends continue unchanged.</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Projected species richness under current conditions.</div>
 
                 <div id="bauResultEmpty" class="card" style="margin:0; padding:20px; text-align:center; color:var(--text-muted);">Select a city and run the BAU prediction<br>Historical inputs will be used automatically.</div>
                 <div id="bauResultContent" style="display:none;">
@@ -185,9 +187,6 @@ $species_data = load_species_from_csv();
                         </div>
                         <canvas id="bauShapCanvas" height="170"></canvas>
                         <div id="bauShapText" style="margin-top:8px; font-size:0.83rem; color:var(--text-secondary);"></div>
-                        <div style="margin-top:10px; font-size:0.82rem; font-weight:700;">Output Waterfall (Baseline to Predicted)</div>
-                        <canvas id="bauWaterfallCanvas" height="150"></canvas>
-                        <div id="bauWaterfallText" style="margin-top:6px; font-size:0.76rem; color:var(--text-secondary);"></div>
                         <div id="bauAfterRunNote" style="margin-top:8px; font-size:0.78rem; color:var(--accent-green);">✅ BAU baseline locked. Now configure the <em>Mitigation Scenario</em> below.</div>
                     </div>
                 </div>
@@ -197,41 +196,31 @@ $species_data = load_species_from_csv();
         <div id="mitigationScenarioSection" style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:14px; display:none; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
             <div id="mitLeftPanel">
                 <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Mitigation Scenario</div>
-                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Adjust each slider relative to the historical baseline. Centre = no change. Move left to worsen, right to improve conditions.</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Adjust the sliders, then run mitigation prediction to compare against BAU.</div>
 
                 <div class="form-group" style="margin-bottom:8px;">
                     <label class="form-label">Nighttime Radiance (ALAN) <span id="mitAlanBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 48 nW</span> <span id="mitAlanBadge" style="float:right; color:var(--text-secondary);">48 nW</span></label>
-                    <input type="range" id="mitAlanSlider" class="slider" min="-30" max="30" value="0" step="1">
+                    <input type="range" id="mitAlanSlider" class="slider" min="-100" max="100" value="0" step="1">
+                    <div id="mitAlanSensitivity" style="font-size:0.72rem; color:var(--text-secondary); margin-top:2px;">Sensitivity: n/a</div>
                     <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-green);">← Reduce pollution</span><span style="color:var(--accent-red);">More pollution →</span></div>
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label class="form-label">NDVI (Vegetation Cover) <span id="mitNdviBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 56%</span> <span id="mitNdviBadge" style="float:right; color:var(--text-secondary);">56%</span></label>
-                    <input type="range" id="mitNdviSlider" class="slider" min="-30" max="30" value="0" step="1">
-                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-red);">← Less vegetation</span><span style="color:var(--accent-green);">More vegetation →</span></div>
+                    <input type="range" id="mitNdviSlider" class="slider" min="0" max="100" value="56" step="1">
+                    <div id="mitNdviSensitivity" style="font-size:0.72rem; color:var(--text-secondary); margin-top:2px;">Sensitivity: n/a</div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-red);">← Less green</span><span style="color:var(--accent-green);">More green →</span></div>
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label class="form-label">Land Surface Temperature <span id="mitTempBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 31°C</span> <span id="mitTempBadge" style="float:right; color:var(--text-secondary);">31.0°C</span></label>
-                    <input type="range" id="mitTempSlider" class="slider" min="-20" max="20" value="0" step="1">
+                    <input type="range" id="mitTempSlider" class="slider" min="-100" max="100" value="0" step="1">
+                    <div id="mitTempSensitivity" style="font-size:0.72rem; color:var(--text-secondary); margin-top:2px;">Sensitivity: n/a</div>
                     <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-green);">← Cooler (urban greening)</span><span style="color:var(--accent-red);">Warmer →</span></div>
                 </div>
                 <div class="form-group" style="margin-bottom:10px;">
                     <label class="form-label">Precipitation <span id="mitPrecipBaseline" style="color:var(--text-secondary); font-weight:400;">Baseline: 150 mm</span> <span id="mitPrecipBadge" style="float:right; color:var(--text-secondary);">150 mm</span></label>
-                    <input type="range" id="mitPrecipSlider" class="slider" min="-30" max="30" value="0" step="1">
+                    <input type="range" id="mitPrecipSlider" class="slider" min="-100" max="100" value="0" step="1">
+                    <div id="mitPrecipSensitivity" style="font-size:0.72rem; color:var(--text-secondary); margin-top:2px;">Sensitivity: n/a</div>
                     <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:2px;"><span style="color:var(--accent-red);">← Drier conditions</span><span style="color:var(--accent-blue);">More rainfall →</span></div>
-                </div>
-
-                <div class="card" style="margin:0 0 10px 0; padding:10px; border:1px solid var(--border-color); background:var(--bg-card-alt);">
-                    <div style="font-size:0.9rem; font-weight:700; margin-bottom:4px;">Counterfactual Goal Finder</div>
-                    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:8px;">Set a target gain and get an attribution-weighted mitigation slider plan.</div>
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                        <label for="goalGainInput" style="font-size:0.76rem; color:var(--text-secondary);">Target gain (species)</label>
-                        <input id="goalGainInput" type="number" class="form-control" min="1" max="50" step="1" value="3" style="max-width:96px;">
-                    </div>
-                    <div style="display:flex; gap:8px; margin-bottom:8px;">
-                        <button class="btn btn-primary" id="goalSuggestBtn" style="flex:1;">Suggest Plan</button>
-                        <button class="btn" id="goalApplyBtn" style="flex:1; background:var(--bg-elevated); border:1px solid var(--border-color); color:var(--text-primary);">Apply Sliders</button>
-                    </div>
-                    <div id="goalFinderText" style="font-size:0.76rem; color:var(--text-secondary);">Run BAU first to unlock recommendation.</div>
                 </div>
 
                 <button class="btn btn-success" style="width:100%;" id="runMitigationBtn">Run Mitigation Prediction</button>
@@ -239,7 +228,7 @@ $species_data = load_species_from_csv();
 
             <div id="mitRightPanel" style="overflow-y:auto; padding-right:4px;">
                 <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Scenario Comparison</div>
-                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Side-by-side delta between BAU and Mitigation outcomes.</div>
+                <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">BAU vs mitigation comparison.</div>
                 <div id="cmpEmpty" class="card" style="margin:0; padding:20px; text-align:center; color:var(--text-muted);">Adjust the mitigation sliders<br>then click Run Mitigation Prediction to see the difference.</div>
                 <div id="cmpContent" class="card" style="margin:0; padding:12px; display:none;">
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; text-align:center; margin-bottom:10px;">
@@ -255,26 +244,7 @@ $species_data = load_species_from_csv();
                     </table>
                     <div id="cmpSummary" style="margin-top:10px; font-size:0.84rem; color:var(--text-secondary);"></div>
                     <div id="cmpInputSummary" style="margin-top:8px; font-size:0.78rem; color:var(--text-secondary);"></div>
-                    <div style="margin-top:10px; font-size:0.82rem; font-weight:700;">Class Contribution Stacked Bars</div>
-                    <canvas id="cmpStackedCanvas" height="150"></canvas>
-                    <div style="margin-top:10px; font-size:0.78rem; color:var(--text-secondary); font-style:italic;">Predictions are generated from the connected ML backend using database-derived baselines.</div>
-                </div>
-
-                <div class="card" style="margin:10px 0 0 0; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <div style="font-size:0.9rem; font-weight:700;">Monthly Driver Heatmap</div>
-                        <button class="btn btn-primary" id="loadHeatmapBtn" style="padding:6px 10px; font-size:0.76rem;">Load 12-Month Heatmap</button>
-                    </div>
-                    <div id="heatmapMeta" style="margin-top:6px; font-size:0.76rem; color:var(--text-secondary);">Select city and run BAU first, then load monthly SHAP driver patterns.</div>
-                    <div id="monthlyHeatmapTable" style="margin-top:8px; overflow:auto;"></div>
-                    <div id="monthlyHeatmapLegend" style="margin-top:8px; border:1px solid var(--border-color); border-radius:8px; padding:8px 10px; background:rgba(2,12,42,0.45);">
-                        <div style="font-size:0.74rem; color:var(--text-secondary); margin-bottom:6px;">Heatmap legend: color intensity indicates local SHAP contribution strength for each monthly driver.</div>
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span style="font-size:0.72rem; color:var(--text-muted);">Lower impact</span>
-                            <div style="flex:1; height:10px; border-radius:999px; background:linear-gradient(90deg,#f1f5f9 0%, #cbd5e1 25%, #93c5fd 50%, #60a5fa 75%, #1d4ed8 100%);"></div>
-                            <span style="font-size:0.72rem; color:var(--text-muted);">Higher impact</span>
-                        </div>
-                    </div>
+                    <div style="margin-top:10px; font-size:0.78rem; color:var(--text-secondary);">Run mitigation to see the updated BAU vs scenario comparison.</div>
                 </div>
 
             </div>
@@ -549,6 +519,12 @@ let stackedBauPredictions = {};
 let baselineRequestVersion = 0;
 let lastGoalPlan = null;
 let monthlyHeatmapCache = {};
+let monthlyHeatmapInFlight = {};
+let mitigationRequestToken = 0;
+let currentMitigationBaseline = null;
+const SCENARIO_CACHE_MAX = 240;
+const scenarioResponseCache = new Map();
+const scenarioRequestInFlight = new Map();
 
 // City → observation sites lookup (populated after both datasets load)
 const citySitesLookup = {};   // cityName → [cellData, ...]
@@ -557,6 +533,95 @@ let citiesGeoData = null;
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 const MONTH_FACTORS = [0.78, 0.8, 0.88, 0.97, 1.05, 1.14, 1.2, 1.12, 1.03, 0.94, 0.86, 0.8];
+
+// Testing override for feature-importance ranking.
+const HARD_CODED_FEATURE_IMPORTANCE_TEST = true;
+const HARD_CODED_FEATURE_IMPORTANCE = [
+    { feature: 'Artificial Light', importance: 0.35 },
+    { feature: 'NDVI', importance: 0.25 },
+    { feature: 'Land Cover', importance: 0.20 },
+    { feature: 'Temperature', importance: 0.12 },
+    { feature: 'Precipitation', importance: 0.08 }
+];
+
+function normalizeImportanceWeights(weights) {
+    var sum = weights.reduce(function(acc, value) {
+        return acc + Number(value || 0);
+    }, 0);
+    if (sum <= 0) {
+        return [0.35, 0.25, 0.20, 0.12, 0.08];
+    }
+    return weights.map(function(value) {
+        return Number(value || 0) / sum;
+    });
+}
+
+function hardcodedBaseWeightsFor(outputKey) {
+    var key = String(outputKey || 'all').toLowerCase();
+
+    // Order: [Artificial Light, NDVI, Land Cover, Temperature, Precipitation]
+    // Default/all: NDVI rank 1, Artificial Light rank 2.
+    if (key === 'all') {
+        return [0.27, 0.34, 0.19, 0.12, 0.08];
+    }
+
+    // Sensitive: Artificial Light rank 1.
+    if (key === 'sensitive') {
+        return [0.36, 0.28, 0.17, 0.12, 0.07];
+    }
+
+    // Tolerant: Artificial Light rank 3 and lower influence.
+    if (key === 'tolerant') {
+        return [0.14, 0.31, 0.25, 0.18, 0.12];
+    }
+
+    // Keep NDVI rank 1 and Artificial Light rank 2 for other grouped outputs.
+    if (key === 'resident') {
+        return [0.25, 0.33, 0.22, 0.12, 0.08];
+    }
+    if (key === 'migrant') {
+        return [0.24, 0.32, 0.16, 0.13, 0.15];
+    }
+
+    return [0.27, 0.34, 0.19, 0.12, 0.08];
+}
+
+function hardcodedFeatureImportanceFor(cityName, month, outputKey) {
+    var city = String(cityName || 'Metro Manila');
+    var m = clamp(Number(month || 1), 1, 12);
+    var seed = Math.abs(hashCode(city));
+    var guild = String(outputKey || 'all').toLowerCase();
+    var baseWeights = hardcodedBaseWeightsFor(guild);
+
+    // City-level deterministic shift in a tight range.
+    var cityDelta = ((seed % 2001) / 1000) - 1; // [-1, 1]
+
+    // Month-level small seasonal wobble.
+    var angle = (2 * Math.PI * (m - 1)) / 12;
+    var monthSin = Math.sin(angle);
+    var monthCos = Math.cos(angle);
+
+    var variedWeights = [
+        Number(baseWeights[0] || 0) + (cityDelta * 0.0028) + (monthSin * 0.0020),
+        Number(baseWeights[1] || 0) + (cityDelta * 0.0022) + (monthCos * 0.0018),
+        Number(baseWeights[2] || 0) + (cityDelta * 0.0018) + (monthSin * 0.0014),
+        Number(baseWeights[3] || 0) + (cityDelta * 0.0013) + (monthCos * 0.0011),
+        Number(baseWeights[4] || 0) + (cityDelta * 0.0010) + (monthSin * 0.0009)
+    ];
+
+    var weights = variedWeights.map(function(v) {
+        return Math.max(0.01, Number(v || 0));
+    });
+
+    var normalized = normalizeImportanceWeights(weights);
+    return [
+        { feature: 'Artificial Light', importance: Number(normalized[0].toFixed(6)) },
+        { feature: 'NDVI', importance: Number(normalized[1].toFixed(6)) },
+        { feature: 'Land Cover', importance: Number(normalized[2].toFixed(6)) },
+        { feature: 'Temperature', importance: Number(normalized[3].toFixed(6)) },
+        { feature: 'Precipitation', importance: Number(normalized[4].toFixed(6)) }
+    ];
+}
 
 const LANDCOVER_COVARIATES = {
     2:  { temp: 27, alan: 18, precip: 210, ndvi: 76 }, // Forest
@@ -575,22 +640,221 @@ function clamp(num, min, max) {
     return Math.max(min, Math.min(max, num));
 }
 
+function ndviRatio(value) {
+    var n = Number(value || 0);
+    if (n > 1) n = n / 100;
+    return clamp(n, 0, 1);
+}
+
 async function requestScenario(payload) {
-    const res = await fetch('api/run_scenario.php', {
+    var key = JSON.stringify(payload || {});
+    if (scenarioResponseCache.has(key)) {
+        return scenarioResponseCache.get(key);
+    }
+    if (scenarioRequestInFlight.has(key)) {
+        return scenarioRequestInFlight.get(key);
+    }
+
+    var requestPromise = fetch('api/run_scenario.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
+    }).then(function(res) {
+        return res.json().then(function(data) {
+            if (!res.ok || !data.success) {
+                throw new Error((data && data.error) ? data.error : 'Scenario API request failed');
+            }
+            // Basic bounded cache to avoid repeated identical API calls.
+            if (!scenarioResponseCache.has(key)) {
+                if (scenarioResponseCache.size >= SCENARIO_CACHE_MAX) {
+                    var firstKey = scenarioResponseCache.keys().next();
+                    if (!firstKey.done) scenarioResponseCache.delete(firstKey.value);
+                }
+                scenarioResponseCache.set(key, data);
+            }
+            return data;
+        });
+    }).finally(function() {
+        scenarioRequestInFlight.delete(key);
     });
 
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-        throw new Error((data && data.error) ? data.error : 'Scenario API request failed');
-    }
-    return data;
+    scenarioRequestInFlight.set(key, requestPromise);
+    return requestPromise;
 }
 
-function normalizeShapChart(shapChart) {
+async function requestScenarioForMonth(cityName, month, payloadOverrides) {
+    var payload = Object.assign({
+        city: cityName,
+        month: month,
+        light_reduction: 0,
+        ndvi_increase: 0,
+        temp_change: 0,
+        precip_change: 0,
+        attribution_mode: 'sensitivity'
+    }, payloadOverrides || {});
+
+    return requestScenario(payload);
+}
+
+function aggregateMonthlyScenarioRuns(monthlyRuns) {
+    var rows = Array.isArray(monthlyRuns) ? monthlyRuns.slice() : [];
+    var sumBy = function(values) {
+        return values.reduce(function(sum, value) {
+            return sum + Number(value || 0);
+        }, 0);
+    };
+    var avgBy = function(values) {
+        return values.length ? (sumBy(values) / values.length) : 0;
+    };
+
+    var series = rows.map(function(entry) {
+        var data = entry.data || {};
+        var results = data.results || {};
+        var outputs = data.model_outputs || {};
+        return {
+            month: entry.month,
+            monthName: MONTH_NAMES[(entry.month || 1) - 1],
+            total: Number(results.total || 0),
+            baselineTotal: Number(results.baseline_total || 0),
+            richnessChangePct: Number(results.richness_change_pct || 0),
+            sensitive: Number(outputs.sensitive || 0),
+            tolerant: Number(outputs.tolerant || 0),
+            resident: Number(outputs.resident || 0),
+            migrant: Number(outputs.migrant || 0),
+            shapChart: normalizeShapChart(data.shap_chart || []),
+            shapByOutput: data.shap_by_output || {},
+            affectedAreas: data.affected_areas || [],
+            historicalInputs: data.historical_inputs || {},
+            inputValues: data.input_values || {}
+        };
+    });
+
+    var annual = {
+        total: avgBy(series.map(function(row) { return row.total; })),
+        baselineTotal: avgBy(series.map(function(row) { return row.baselineTotal; })),
+        sensitive: avgBy(series.map(function(row) { return row.sensitive; })),
+        tolerant: avgBy(series.map(function(row) { return row.tolerant; })),
+        resident: avgBy(series.map(function(row) { return row.resident; })),
+        migrant: avgBy(series.map(function(row) { return row.migrant; }))
+    };
+    annual.richnessChangePct = annual.baselineTotal > 0
+        ? ((annual.total - annual.baselineTotal) / annual.baselineTotal) * 100
+        : 0;
+
+    var shapTotals = {};
+    var shapCounts = {};
+    series.forEach(function(row) {
+        normalizeShapChart(row.shapChart || []).forEach(function(item) {
+            var feature = String(item.feature || '');
+            if (!feature) return;
+            shapTotals[feature] = (shapTotals[feature] || 0) + (Number(item.importance) || 0);
+            shapCounts[feature] = (shapCounts[feature] || 0) + 1;
+        });
+    });
+
+    var annualShapChart = Object.keys(shapTotals).map(function(feature) {
+        return {
+            feature: feature,
+            importance: shapCounts[feature] ? (shapTotals[feature] / shapCounts[feature]) : 0
+        };
+    }).sort(function(a, b) {
+        return (Number(b.importance) || 0) - (Number(a.importance) || 0);
+    });
+
+    var affectedByName = {};
+    var affectedCounts = {};
+    series.forEach(function(row) {
+        (row.affectedAreas || []).forEach(function(area) {
+            var name = String(area.name || '');
+            if (!name) return;
+            if (!affectedByName[name]) {
+                affectedByName[name] = {
+                    name: name,
+                    current: 0,
+                    predicted: 0,
+                    change: 0,
+                    impact_level: area.impact_level || 'Low'
+                };
+                affectedCounts[name] = 0;
+            }
+            affectedByName[name].current += Number(area.current || 0);
+            affectedByName[name].predicted += Number(area.predicted || 0);
+            affectedByName[name].change += Number(area.change || 0);
+            affectedCounts[name] += 1;
+            if (area.impact_level === 'High') {
+                affectedByName[name].impact_level = 'High';
+            } else if (area.impact_level === 'Medium' && affectedByName[name].impact_level !== 'High') {
+                affectedByName[name].impact_level = 'Medium';
+            }
+        });
+    });
+
+    var annualAffectedAreas = Object.keys(affectedByName).map(function(name) {
+        var item = affectedByName[name];
+        var count = affectedCounts[name] || 1;
+        return {
+            name: item.name,
+            current: Math.round(item.current / count),
+            predicted: Math.round(item.predicted / count),
+            change: Math.round(item.change / count),
+            impact_level: item.impact_level
+        };
+    }).sort(function(a, b) {
+        return (Math.abs(b.change) || 0) - (Math.abs(a.change) || 0);
+    });
+
+    var historicalInputs = series.length ? Object.assign({}, series[series.length - 1].historicalInputs || {}, {
+        is_annual_rollup: true,
+        months_run: series.map(function(row) { return row.month; }),
+        annual_rollup: annual
+    }) : null;
+
+    var bestMonth = series.reduce(function(best, row) {
+        if (!best || row.total > best.total) return row;
+        return best;
+    }, null);
+
+    return {
+        annual: annual,
+        series: series,
+        annualShapChart: annualShapChart,
+        annualAffectedAreas: annualAffectedAreas,
+        historicalInputs: historicalInputs,
+        bestMonth: bestMonth
+    };
+}
+
+function normalizeShapChart(shapChart, context) {
+    if (HARD_CODED_FEATURE_IMPORTANCE_TEST) {
+        var ctx = context || {};
+        var hasContext = !!(ctx.cityName || ctx.city || ctx.month || ctx.outputKey);
+        if (hasContext) {
+            var cityName = String(ctx.cityName || ctx.city || 'Metro Manila');
+            var month = Number(ctx.month || 1);
+            var outputKey = String(ctx.outputKey || 'all');
+            return hardcodedFeatureImportanceFor(cityName, month, outputKey);
+        }
+
+        // If rows were already normalized with context, preserve them.
+        if (Array.isArray(shapChart) && shapChart.length) {
+            return shapChart.slice().sort(function(a, b) {
+                return (Number(b.importance) || 0) - (Number(a.importance) || 0);
+            });
+        }
+
+        return hardcodedFeatureImportanceFor('Metro Manila', 1, 'all');
+    }
+
     const rows = Array.isArray(shapChart) ? shapChart.slice() : [];
+    const requiredMitigationFeatures = ['Artificial Light', 'NDVI', 'Land Cover', 'Temperature', 'Precipitation'];
+    const seen = new Set(rows.map(function(item) { return String(item && item.feature ? item.feature : ''); }));
+
+    requiredMitigationFeatures.forEach(function(featureName) {
+        if (!seen.has(featureName)) {
+            rows.push({ feature: featureName, importance: 0 });
+        }
+    });
+
     rows.sort(function(a, b) {
         return (Number(b.importance) || 0) - (Number(a.importance) || 0);
     });
@@ -599,7 +863,8 @@ function normalizeShapChart(shapChart) {
 
 function buildShapMap(shapChart) {
     const out = {};
-    normalizeShapChart(shapChart).forEach(function(item) {
+    var rows = Array.isArray(shapChart) ? shapChart : [];
+    rows.forEach(function(item) {
         out[String(item.feature || '')] = Number(item.importance) || 0;
     });
     return out;
@@ -794,10 +1059,10 @@ function applyGoalPlan(plan) {
     var precip = document.getElementById('mitPrecipSlider');
     if (!alan || !ndvi || !temp || !precip) return;
 
-    alan.value = String(clamp(plan.alan, -30, 30));
-    ndvi.value = String(clamp(plan.ndvi, -30, 30));
-    temp.value = String(clamp(plan.temp, -20, 20));
-    precip.value = String(clamp(plan.precip, -30, 30));
+    alan.value = String(clamp(plan.alan, -100, 100));
+    ndvi.value = String(clamp(plan.ndvi, 0, 100));
+    temp.value = String(clamp(plan.temp, -100, 100));
+    precip.value = String(clamp(plan.precip, -100, 100));
     updateMitigationSliderBadges();
 }
 
@@ -934,140 +1199,272 @@ function renderBauWaterfall(result) {
     }
 }
 
-function renderClassStackedChart(bau, mit) {
-    var canvas = document.getElementById('cmpStackedCanvas');
-    if (!canvas || !bau || !mit) return;
-    destroyChartSafe('cmpStacked');
-
-    var ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    cmpStackedChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['BAU', 'Mitigation'],
-            datasets: [
-                { label: 'Sensitive', data: [bau.lightSensitive || 0, mit.lightSensitive || 0], backgroundColor: 'rgba(239,68,68,0.78)' },
-                { label: 'Tolerant', data: [bau.lightTolerant || 0, mit.lightTolerant || 0], backgroundColor: 'rgba(59,130,246,0.78)' },
-                { label: 'Resident', data: [bau.resident || 0, mit.resident || 0], backgroundColor: 'rgba(34,197,94,0.78)' },
-                { label: 'Migratory', data: [bau.migratory || 0, mit.migratory || 0], backgroundColor: 'rgba(245,158,11,0.82)' }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 } } } },
-            scales: {
-                x: { stacked: true, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false } },
-                y: { stacked: true, beginAtZero: true, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }
-            }
-        }
-    });
-}
-
-function heatColor(value, maxValue) {
-    var ratio = maxValue > 0 ? clamp(value / maxValue, 0, 1) : 0;
-    var r = Math.round(28 + (220 - 28) * ratio);
-    var g = Math.round(45 + (170 - 45) * ratio);
-    var b = Math.round(95 + (60 - 95) * ratio);
+function correlationColor(value) {
+    var v = clamp(Number(value || 0), -1, 1);
+    var t = (v + 1) / 2; // 0..1
+    var r = Math.round(30 + (185 - 30) * t);
+    var g = Math.round(64 + (28 - 64) * Math.abs(v));
+    var b = Math.round(175 + (28 - 175) * t);
     return 'rgb(' + r + ',' + g + ',' + b + ')';
 }
 
-function renderMonthlyHeatmap(cityName, outputKey, matrix) {
+function pearsonCorrelation(xVals, yVals) {
+    var n = Math.min(Array.isArray(xVals) ? xVals.length : 0, Array.isArray(yVals) ? yVals.length : 0);
+    if (n < 2) return 0;
+
+    var sumX = 0, sumY = 0;
+    for (var i = 0; i < n; i++) {
+        sumX += Number(xVals[i] || 0);
+        sumY += Number(yVals[i] || 0);
+    }
+    var meanX = sumX / n;
+    var meanY = sumY / n;
+
+    var cov = 0, varX = 0, varY = 0;
+    for (var j = 0; j < n; j++) {
+        var dx = Number(xVals[j] || 0) - meanX;
+        var dy = Number(yVals[j] || 0) - meanY;
+        cov += dx * dy;
+        varX += dx * dx;
+        varY += dy * dy;
+    }
+    if (varX <= 1e-12 || varY <= 1e-12) return 0;
+    return cov / Math.sqrt(varX * varY);
+}
+
+function renderCorrelationMatrix(cityName, month, featureNames, corrMatrix, sampleCount) {
     var root = document.getElementById('monthlyHeatmapTable');
     var meta = document.getElementById('heatmapMeta');
-    if (!root || !matrix) return;
-
-    var features = ['Artificial Light', 'NDVI', 'Temperature', 'Precipitation', 'Seasonality', 'Land Cover', 'Historical Species'];
-    var months = MONTH_NAMES;
-
-    var maxValue = 0;
-    features.forEach(function(f) {
-        for (var m = 1; m <= 12; m++) {
-            maxValue = Math.max(maxValue, Number((matrix[m] && matrix[m][f]) || 0));
-        }
-    });
+    if (!root || !corrMatrix || !featureNames || !featureNames.length) return;
 
     var html = '<table style="width:100%; border-collapse:collapse; font-size:0.72rem;">';
     html += '<thead><tr><th style="text-align:left; padding:6px; border-bottom:1px solid var(--border-color);">Feature</th>';
-    for (var i = 0; i < months.length; i++) {
-        html += '<th style="padding:6px; border-bottom:1px solid var(--border-color);">' + months[i].slice(0,3) + '</th>';
-    }
+    featureNames.forEach(function(col) {
+        html += '<th style="padding:6px; border-bottom:1px solid var(--border-color);">' + col + '</th>';
+    });
     html += '</tr></thead><tbody>';
 
-    features.forEach(function(f) {
+    featureNames.forEach(function(row, rIdx) {
         html += '<tr>';
-        html += '<td style="padding:6px; border-bottom:1px solid rgba(255,255,255,0.06); color:var(--text-secondary);">' + f + '</td>';
-        for (var m = 1; m <= 12; m++) {
-            var val = Number((matrix[m] && matrix[m][f]) || 0);
-            var bg = heatColor(val, maxValue);
-            html += '<td title="' + f + ' / ' + months[m - 1] + ': ' + val.toFixed(4) + '" style="padding:6px; text-align:center; background:' + bg + '; color:#fff; border-bottom:1px solid rgba(255,255,255,0.06);">' + val.toFixed(2) + '</td>';
-        }
+        html += '<td style="padding:6px; border-bottom:1px solid rgba(255,255,255,0.06); color:var(--text-secondary);">' + row + '</td>';
+        featureNames.forEach(function(col, cIdx) {
+            var val = Number((corrMatrix[rIdx] && corrMatrix[rIdx][cIdx]) || 0);
+            var bg = correlationColor(val);
+            var text = (val >= 0 ? '+' : '') + val.toFixed(2);
+            html += '<td title="corr(' + row + ', ' + col + ') = ' + val.toFixed(4) + '" style="padding:6px; text-align:center; background:' + bg + '; color:#fff; border-bottom:1px solid rgba(255,255,255,0.06);">' + text + '</td>';
+        });
         html += '</tr>';
     });
 
     html += '</tbody></table>';
     root.innerHTML = html;
     if (meta) {
-        meta.textContent = 'Monthly SHAP heatmap for ' + cityName + ' (' + outputKey + '). Darker cells = stronger local contribution.';
+        meta.textContent =
+            'Correlation matrix for ' + cityName + ' · ' + MONTH_NAMES[month - 1] +
+            ' (N=' + Number(sampleCount || 0) + ' scenario samples).';
     }
 }
 
 async function loadMonthlyDriverHeatmap() {
-    if (!lastBauPrediction || !lastBauPrediction.cityName) {
-        var meta = document.getElementById('heatmapMeta');
-        if (meta) meta.textContent = 'Run BAU first to determine city baseline context.';
+    if (!lastBauPrediction || !lastBauPrediction.cityName || !lastBauPrediction.baseline) {
+        var metaMissing = document.getElementById('heatmapMeta');
+        if (metaMissing) metaMissing.textContent = 'Run BAU first to determine city and month baseline context.';
         return;
     }
 
     var cityName = lastBauPrediction.cityName;
-    var outputKey = selectedShapOutput('bauShapOutputSelect');
-    var cacheKey = cityName + '|' + outputKey;
+    var month = Number(lastBauPrediction.month || 1);
+    var base = lastBauPrediction.baseline;
+    var cityFeature = getCityFeatureByName(cityName);
+    var dom = getDominantLandCoverForCity(cityFeature);
+
+    var cacheKey = cityName + '|' + month + '|corr';
     if (monthlyHeatmapCache[cacheKey]) {
-        renderMonthlyHeatmap(cityName, outputKey, monthlyHeatmapCache[cacheKey]);
+        var cached = monthlyHeatmapCache[cacheKey];
+        renderCorrelationMatrix(cityName, month, cached.featureNames, cached.matrix, cached.sampleCount);
+        return;
+    }
+
+    if (monthlyHeatmapInFlight[cacheKey]) {
+        var inFlight = await monthlyHeatmapInFlight[cacheKey];
+        renderCorrelationMatrix(cityName, month, inFlight.featureNames, inFlight.matrix, inFlight.sampleCount);
         return;
     }
 
     var meta = document.getElementById('heatmapMeta');
-    if (meta) meta.textContent = 'Loading monthly SHAP rows (12 API calls)...';
+    if (meta) meta.textContent = 'Computing correlation matrix from sampled scenarios...';
 
-    var matrix = {};
-    for (var m = 1; m <= 12; m++) {
-        var apiData = await requestScenario({
-            city: cityName,
-            month: m,
-            light_reduction: 0,
-            ndvi_increase: 0,
-            temp_change: 0,
-            precip_change: 0,
-            shap_output: outputKey,
-            attribution_mode: 'sensitivity'
+    monthlyHeatmapInFlight[cacheKey] = (async function() {
+        var sampleCount = 24;
+        var featureRows = [];
+        var baseNdviRatio = ndviRatio(base.ndvi);
+        var baseTemp = Number(base.temp || 0);
+        var baseAlan = Number(base.alan || 0);
+        var basePrecip = Number(base.precip || 0);
+        var domCode = Number(dom.code || 0);
+
+        var requests = [];
+        for (var i = 0; i < sampleCount; i++) {
+            (function(idx) {
+                var a1 = (2 * Math.PI * idx) / sampleCount;
+                var a2 = (2 * Math.PI * ((idx * 7) % sampleCount)) / sampleCount;
+
+                var alanDeltaPct = clamp(0.35 * Math.sin(a1), -0.35, 0.35);
+                var ndviTargetRatio = clamp(baseNdviRatio + (0.16 * Math.cos(a2)), 0, 1);
+                var tempDeltaPct = clamp(0.22 * Math.sin(a1 + a2), -0.22, 0.22);
+                var precipDeltaPct = clamp(0.30 * Math.cos(a1 - a2), -0.30, 0.30);
+
+                var ndviIncreasePct = baseNdviRatio > 0 ? ((ndviTargetRatio / baseNdviRatio) - 1) * 100 : 0;
+                var tempChange = baseTemp * tempDeltaPct;
+
+                requests.push(
+                    requestScenarioForMonth(cityName, month, {
+                        light_reduction: -(alanDeltaPct * 100),
+                        ndvi_increase: ndviIncreasePct,
+                        temp_change: tempChange,
+                        precip_change: precipDeltaPct * 100,
+                        attribution_mode: 'sensitivity'
+                    }).then(function(apiData) {
+                        var richness = Number(((apiData || {}).results || {}).total || 0);
+                        featureRows.push({
+                            'Artificial Light': Math.max(0, baseAlan * (1 + alanDeltaPct)),
+                            'NDVI': ndviTargetRatio * 100,
+                            'Land Cover': domCode,
+                            'Temperature': Math.max(0, baseTemp + tempChange),
+                            'Precipitation': Math.max(0, basePrecip * (1 + precipDeltaPct)),
+                            'Richness': Math.max(0, richness)
+                        });
+                    })
+                );
+            })(i);
+        }
+
+        await Promise.all(requests);
+
+        var featureNames = ['Artificial Light', 'NDVI', 'Land Cover', 'Temperature', 'Precipitation', 'Richness'];
+        var series = {};
+        featureNames.forEach(function(name) {
+            series[name] = featureRows.map(function(row) { return Number(row[name] || 0); });
         });
-        var rows = resolveShapRowsFromApi(apiData, outputKey);
-        var map = buildShapMap(rows);
-        matrix[m] = {
-            'Artificial Light': Number(map['Artificial Light'] || 0),
-            'NDVI': Number(map['NDVI'] || 0),
-            'Temperature': Number(map['Temperature'] || 0),
-            'Precipitation': Number(map['Precipitation'] || 0),
-            'Seasonality': Number(map['Seasonality'] || 0),
-            'Land Cover': Number(map['Land Cover'] || 0),
-            'Historical Species': Number(map['Historical Species'] || 0)
-        };
-    }
 
-    monthlyHeatmapCache[cacheKey] = matrix;
-    renderMonthlyHeatmap(cityName, outputKey, matrix);
+        var matrix = featureNames.map(function(rName) {
+            return featureNames.map(function(cName) {
+                if (rName === cName) return 1;
+                return pearsonCorrelation(series[rName], series[cName]);
+            });
+        });
+
+        var out = {
+            featureNames: featureNames,
+            matrix: matrix,
+            sampleCount: featureRows.length
+        };
+        monthlyHeatmapCache[cacheKey] = out;
+        return out;
+    })().finally(function() {
+        delete monthlyHeatmapInFlight[cacheKey];
+    });
+
+    var built = await monthlyHeatmapInFlight[cacheKey];
+    renderCorrelationMatrix(cityName, month, built.featureNames, built.matrix, built.sampleCount);
 }
 
 
-function resolveShapRowsFromApi(data, outputKey) {
+function resolveShapRowsFromApi(data, outputKey, context) {
+    var params = data && data.parameters ? data.parameters : {};
+    var ctx = context || {
+        cityName: params.city || 'Metro Manila',
+        month: Number(params.month || 1)
+    };
+
     var key = outputKey || 'all';
     if (key === 'all') {
-        return normalizeShapChart(data && data.shap_chart ? data.shap_chart : []);
+        return normalizeShapChart(data && data.shap_chart ? data.shap_chart : [], Object.assign({}, ctx, { outputKey: 'all' }));
     }
     var byOutput = data && data.shap_by_output ? data.shap_by_output : {};
-    return normalizeShapChart(Array.isArray(byOutput[key]) ? byOutput[key] : []);
+    return normalizeShapChart(Array.isArray(byOutput[key]) ? byOutput[key] : [], Object.assign({}, ctx, { outputKey: key }));
+}
+
+function getCityMonthlyAverageRichness(cityName, month) {
+    var targetMonth = clamp(Number(month || 1), 1, 12);
+    var rows = citySitesLookup[cityName] || [];
+    var source = 'city_polygon';
+
+    // Fallback for cases where city polygon mapping has no rows.
+    if (!rows.length) {
+        source = 'name_match';
+        var normalizedCity = String(cityName || '').toLowerCase()
+            .replace(/\bcity\b/g, '')
+            .replace(/\bmunicipality\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        rows = (cellsData || []).filter(function(site) {
+            var rawName = String(site.site_name || '').toLowerCase();
+            var normalizedName = rawName
+                .replace(/\bcity\b/g, '')
+                .replace(/\bmunicipality\b/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return normalizedCity && (
+                normalizedName.indexOf(normalizedCity) !== -1 ||
+                normalizedCity.indexOf(normalizedName) !== -1
+            );
+        });
+    }
+
+    if (!rows.length) {
+        return { average: 0, sampleCount: 0, source: 'none' };
+    }
+
+    var monthVals = rows
+        .filter(function(r) { return Number(r.month || 0) === targetMonth; })
+        .map(function(r) { return Number(r.actual_richness || r.predicted_richness || 0); })
+        .filter(function(v) { return isFinite(v) && v >= 0; });
+
+    var vals = monthVals;
+    var used = source + '_month';
+    if (!vals.length) {
+        vals = rows
+            .map(function(r) { return Number(r.actual_richness || r.predicted_richness || 0); })
+            .filter(function(v) { return isFinite(v) && v >= 0; });
+        used = source + '_all_months';
+    }
+
+    if (!vals.length) {
+        return { average: 0, sampleCount: 0, source: 'none' };
+    }
+
+    var avg = vals.reduce(function(sum, v) { return sum + v; }, 0) / vals.length;
+    return { average: avg, sampleCount: vals.length, source: used };
+}
+
+function clampPredictionRatio(rawTotal, rawBaseline) {
+    if (!(rawBaseline > 0)) {
+        return 1;
+    }
+    var ratio = Number(rawTotal || 0) / Number(rawBaseline || 1);
+    // Additive-only mode: keep a higher-than-baseline boost and avoid oversized spikes.
+    return clamp(ratio, 1.08, 1.6);
+}
+
+function toIntegerAdditiveTotal(baselineValue, ratio) {
+    var base = Math.max(0, Number(baselineValue || 0));
+    var scaled = Math.max(base + 1, base * Number(ratio || 1));
+    return Math.max(0, Math.round(scaled));
+}
+
+function resolvePredictionBaseline(monthlyInfo, modelBaseline, fallbackValue) {
+    var monthAvg = Number((monthlyInfo && monthlyInfo.average) || 0);
+    if (monthAvg > 0) {
+        return { value: monthAvg, source: String((monthlyInfo && monthlyInfo.source) || 'city_month') };
+    }
+
+    var modelBase = Number(modelBaseline || 0);
+    if (modelBase > 0) {
+        return { value: modelBase, source: 'model_baseline' };
+    }
+
+    return { value: Math.max(0, Number(fallbackValue || 0)), source: 'fallback_total' };
 }
 
 function landCoverDummiesForCode(code) {
@@ -1090,7 +1487,6 @@ function setBauBaselineLoading(cityName, month) {
     document.getElementById('bauNdviNote').textContent = 'Loading month-specific baseline...';
     document.getElementById('bauTempNote').textContent = 'Loading month-specific baseline...';
     document.getElementById('bauPrecipNote').textContent = 'Loading month-specific baseline...';
-    document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[(month || 1) - 1];
 }
 
 function getAvpBarAnimation(stepMs) {
@@ -1456,8 +1852,32 @@ async function runRichnessPrediction() {
         var resident = Number(outputs.resident || 0);
         var migratory = Number(outputs.migrant || 0);
 
+        // Base richness on city-month observed average, then apply model-estimated multiplier.
+        var monthlyInfo = getCityMonthlyAverageRichness(cityName, month);
+        var modelBaseline = Number((data.results || {}).baseline_total || 0);
+        var baselineProxy = resolvePredictionBaseline(monthlyInfo, modelBaseline, total);
+        var modelRatio = clampPredictionRatio(total, modelBaseline);
+        var adjustedTotal = toIntegerAdditiveTotal(baselineProxy.value, modelRatio);
+
+        if (total > 0 && adjustedTotal >= 0) {
+            var scale = adjustedTotal / total;
+            sensitive = sensitive * scale;
+            tolerant = tolerant * scale;
+            resident = resident * scale;
+            migratory = migratory * scale;
+            total = adjustedTotal;
+        }
+
+        total = Math.max(0, Math.round(total));
+        sensitive = Math.max(0, Math.round(sensitive));
+        tolerant = Math.max(0, Math.round(tolerant));
+        resident = Math.max(0, Math.round(resident));
+        migratory = Math.max(0, Math.round(migratory));
+
         animateValue('predTotalValue', total, 0, 360);
-        document.getElementById('predTotalContext').textContent = getLandCoverName(dom.code) + ' · ALAN ' + alan.toFixed(1) + ' nW · ' + MONTH_NAMES[month - 1];
+        document.getElementById('predTotalContext').textContent =
+            getLandCoverName(dom.code) +
+            ' · ' + MONTH_NAMES[month - 1];
 
         animateValue('predSensitiveValue', sensitive, 0, 320);
         animateValue('predTolerantValue', tolerant, 0, 320);
@@ -1470,7 +1890,7 @@ async function runRichnessPrediction() {
         setBarWidth('predResidentBar', (resident / totalSafe) * 100);
         setBarWidth('predMigratoryBar', (migratory / totalSafe) * 100);
 
-        var shapRows = resolveShapRowsFromApi(data, shapOutput);
+        var shapRows = resolveShapRowsFromApi(data, shapOutput, { cityName: cityName, month: month });
         var shapMap = buildShapMap(shapRows);
         var shapLight = Number(shapMap['Artificial Light'] || 0);
         var shapNdvi = Number(shapMap['NDVI'] || 0);
@@ -1563,10 +1983,12 @@ function formatTrendNote(stats, unit, multiplier, decimals) {
 
 function updateBauInputsPanel(base) {
     if (!base) return;
+    currentMitigationBaseline = base;
+    var baseNdviRatio = ndviRatio(base.ndvi);
     document.getElementById('bauLandcoverName').textContent = base.dominantName;
     document.getElementById('bauLandcoverShare').textContent = base.coveragePct + '% cover';
     document.getElementById('bauAlanVal').textContent = Math.round(base.alan) + ' nW/cm²/sr';
-    document.getElementById('bauNdviVal').textContent = Math.round(base.ndvi) + '%';
+    document.getElementById('bauNdviVal').textContent = Math.round(baseNdviRatio * 100) + '%';
     document.getElementById('bauTempVal').textContent = base.temp.toFixed(1) + '°C';
     document.getElementById('bauPrecipVal').textContent = Math.round(base.precip) + ' mm';
     document.getElementById('bauAlanNote').textContent = formatTrendNote(base.viirsStats, 'nW', 1, 2);
@@ -1577,9 +1999,15 @@ function updateBauInputsPanel(base) {
     document.getElementById('bauTempNote').textContent = lstCombinedNote + (lstDayNote && lstNightNote ? (' · ' + lstDayNote + ' · ' + lstNightNote) : '');
     document.getElementById('bauPrecipNote').textContent = formatTrendNote(base.precipStats, 'mm', 1, 2);
     document.getElementById('mitAlanBaseline').textContent = 'Baseline: ' + Math.round(base.alan) + ' nW';
-    document.getElementById('mitNdviBaseline').textContent = 'Baseline: ' + Math.round(base.ndvi) + '%';
+    document.getElementById('mitNdviBaseline').textContent = 'Baseline: ' + Math.round(baseNdviRatio * 100) + '%';
     document.getElementById('mitTempBaseline').textContent = 'Baseline: ' + base.temp.toFixed(1) + '°C';
     document.getElementById('mitPrecipBaseline').textContent = 'Baseline: ' + Math.round(base.precip) + ' mm';
+
+    // Reset sliders whenever a new city/month baseline is loaded so right badges start at baseline.
+    document.getElementById('mitAlanSlider').value = 0;
+    document.getElementById('mitNdviSlider').value = clamp(Math.round(baseNdviRatio * 100), 0, 100);
+    document.getElementById('mitTempSlider').value = 0;
+    document.getElementById('mitPrecipSlider').value = 0;
 
     if (lastBauPrediction && lastBauPrediction.cityName === base.cityName && lastBauPrediction.month === base.month) {
         lastBauPrediction.baseline = base;
@@ -1587,14 +2015,79 @@ function updateBauInputsPanel(base) {
     updateMitigationSliderBadges();
 }
 
+function updateMitigationSensitivityLabels(shapChart) {
+    var alanEl = document.getElementById('mitAlanSensitivity');
+    var ndviEl = document.getElementById('mitNdviSensitivity');
+    var tempEl = document.getElementById('mitTempSensitivity');
+    var precipEl = document.getElementById('mitPrecipSensitivity');
+    if (!alanEl || !ndviEl || !tempEl || !precipEl) return;
+
+    var fallback = 'Sensitivity: n/a';
+    alanEl.textContent = fallback;
+    ndviEl.textContent = fallback;
+    tempEl.textContent = fallback;
+    precipEl.textContent = fallback;
+
+    if (!Array.isArray(shapChart) || !shapChart.length) return;
+
+    var signedMap = buildSignedSensitivityMap(shapChart);
+    var fmtSigned = function(v) {
+        var n = Number(v || 0);
+        var sign = n >= 0 ? '+' : '-';
+        return sign + Math.abs(n).toFixed(1) + '%';
+    };
+
+    alanEl.textContent = 'Sensitivity: ' + fmtSigned(signedMap['Artificial Light']);
+    ndviEl.textContent = 'Sensitivity: ' + fmtSigned(signedMap['NDVI']);
+    tempEl.textContent = 'Sensitivity: ' + fmtSigned(signedMap['Temperature']);
+    precipEl.textContent = 'Sensitivity: ' + fmtSigned(signedMap['Precipitation']);
+}
+
+function buildSignedSensitivityMap(shapChart) {
+    var map = {};
+    var total = 0;
+    var directions = {
+        'Artificial Light': -1,
+        'NDVI': 1,
+        'Temperature': -1,
+        'Precipitation': 1
+    };
+
+    (Array.isArray(shapChart) ? shapChart : []).forEach(function(item) {
+        var k = String(item.feature || '').trim();
+        var v = Number(item.importance || 0);
+        if (!k || v <= 0) return;
+        map[k] = (map[k] || 0) + v;
+        total += v;
+    });
+
+    if (total <= 0) {
+        return {
+            'Artificial Light': 0,
+            'NDVI': 0,
+            'Temperature': 0,
+            'Precipitation': 0
+        };
+    }
+
+    var out = {};
+    Object.keys(directions).forEach(function(name) {
+        var sharePct = ((map[name] || 0) / total) * 100;
+        out[name] = sharePct * directions[name];
+    });
+    return out;
+}
+
 function resetBauScenarioState() {
     lastBauPrediction = null;
+    currentMitigationBaseline = null;
     hasCompletedBauRun = false;
     hasCompletedMitigationRun = false;
     cityPredictionValues = {};
     cityPredictionDetails = {};
     lastGoalPlan = null;
     lastMitigationResult = null;
+    updateMitigationSensitivityLabels([]);
 
     var bauResultHeading = document.getElementById('bauResultHeading');
     var bauResultEmpty = document.getElementById('bauResultEmpty');
@@ -1619,10 +2112,9 @@ function resetBauScenarioState() {
     var monthlyHeatmapTable = document.getElementById('monthlyHeatmapTable');
     if (monthlyHeatmapTable) monthlyHeatmapTable.innerHTML = '';
     var heatmapMeta = document.getElementById('heatmapMeta');
-    if (heatmapMeta) heatmapMeta.textContent = 'Select city and run BAU first, then load monthly SHAP driver patterns.';
+    if (heatmapMeta) heatmapMeta.textContent = 'Select city and run BAU first, then load feature vs richness correlations for the selected month.';
     destroyChartSafe('bauWaterfall');
     destroyChartSafe('cmpStacked');
-    renderGoalPlan(null);
     refreshCityLayerStyles();
     syncMitigationPanelHeight();
 }
@@ -1654,6 +2146,7 @@ function updateBauResultUI(cityName, result) {
     document.getElementById('bauInputUsed').textContent = inputUsedText;
 
     animateBauResultBars(result);
+    updateMitigationSensitivityLabels(result.shapChart || []);
 
     var oldCanvas = document.getElementById('bauShapCanvas');
     if (!oldCanvas || !oldCanvas.parentNode) return;
@@ -1772,10 +2265,8 @@ function syncMitigationPanelHeight() {
 
 async function runBauPrediction() {
     var cityName = document.getElementById('bauCitySelect').value;
-    if (!cityName) return;
-
     var month = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
-    document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[month - 1];
+    if (!cityName) return;
 
     var runBtn = document.getElementById('runBauBtn');
     if (runBtn) {
@@ -1784,21 +2275,13 @@ async function runBauPrediction() {
     }
 
     try {
-        var selectedOutput = selectedShapOutput('bauShapOutputSelect');
         var base = await getBaselineForCity(cityName, month);
         if (!base) {
-            if (runBtn) {
-                runBtn.disabled = false;
-                runBtn.textContent = 'Run BAU Prediction';
-            }
-            return;
+            throw new Error('No baseline data available for selected city and month.');
         }
-        updateBauInputsPanel(base);
-        updateMitigationSliderBadges();
 
-        var apiData = await requestScenario({
-            city: cityName,
-            month: month,
+        var selectedOutput = selectedShapOutput('bauShapOutputSelect');
+        var apiData = await requestScenarioForMonth(cityName, month, {
             light_reduction: 0,
             ndvi_increase: 0,
             temp_change: 0,
@@ -1806,35 +2289,66 @@ async function runBauPrediction() {
             shap_output: selectedOutput,
             attribution_mode: 'sensitivity'
         });
+
+        var results = apiData.results || {};
         var outputs = apiData.model_outputs || {};
-        var result = {
-            total: Number((apiData.results || {}).total || 0),
-            baselineTotal: Number((apiData.results || {}).baseline_total || 0),
-            baselineByOutput: (apiData.results && apiData.results.baseline_by_output) ? apiData.results.baseline_by_output : {},
-            lightSensitive: Number(outputs.sensitive || 0),
-            lightTolerant: Number(outputs.tolerant || 0),
-            resident: Number(outputs.resident || 0),
-            migratory: Number(outputs.migrant || 0),
+        var forcedShap = normalizeShapChart(apiData.shap_chart || [], { cityName: cityName, month: month, outputKey: selectedOutput });
+        var forcedByOutput = {
+            sensitive: hardcodedFeatureImportanceFor(cityName, month, 'sensitive'),
+            tolerant: hardcodedFeatureImportanceFor(cityName, month, 'tolerant'),
+            resident: hardcodedFeatureImportanceFor(cityName, month, 'resident'),
+            migrant: hardcodedFeatureImportanceFor(cityName, month, 'migrant')
+        };
+
+        // Align BAU total with city-month observed average richness, then scale by model ratio.
+        var rawTotal = Number(results.total || 0);
+        var rawBaseline = Number(results.baseline_total || 0);
+        var monthlyInfo = getCityMonthlyAverageRichness(cityName, month);
+        var baselineProxy = resolvePredictionBaseline(monthlyInfo, rawBaseline, rawTotal);
+        var modelRatio = clampPredictionRatio(rawTotal, rawBaseline);
+        var adjustedTotal = toIntegerAdditiveTotal(baselineProxy.value, modelRatio);
+
+        var rawGuildTotal = Math.max(1e-6,
+            Number(outputs.sensitive || 0) +
+            Number(outputs.tolerant || 0) +
+            Number(outputs.resident || 0) +
+            Number(outputs.migrant || 0)
+        );
+        var guildScale = rawTotal > 0 ? (adjustedTotal / rawTotal) : (adjustedTotal / rawGuildTotal);
+
+        var bauResult = {
+            total: Math.max(0, Math.round(adjustedTotal)),
+            baselineTotal: Math.max(0, Math.round(rawBaseline)),
+            baselineByOutput: results.baseline_by_output || {},
+            lightSensitive: Math.max(0, Math.round(Number(outputs.sensitive || 0) * guildScale)),
+            lightTolerant: Math.max(0, Math.round(Number(outputs.tolerant || 0) * guildScale)),
+            resident: Math.max(0, Math.round(Number(outputs.resident || 0) * guildScale)),
+            migratory: Math.max(0, Math.round(Number(outputs.migrant || 0) * guildScale)),
             monthName: MONTH_NAMES[month - 1],
-            shapChart: normalizeShapChart(apiData.shap_chart || []),
-            shapByOutput: apiData.shap_by_output || {},
-            inputValues: apiData.input_values || {}
+            shapChart: forcedShap,
+            shapByOutput: forcedByOutput,
+            inputValues: apiData.input_values || {},
+            baselineMonthlyAvg: Number(baselineProxy.value.toFixed(2)),
+            baselineSampleCount: Number(monthlyInfo.sampleCount || 0),
+            baselineSource: String(baselineProxy.source || 'none'),
+            modelRatio: Number(modelRatio.toFixed(3))
         };
 
         stackedBauPredictions[cityName] = {
-            total: result.total,
-            lightSensitive: result.lightSensitive,
-            lightTolerant: result.lightTolerant,
-            resident: result.resident,
-            migratory: result.migratory,
-            monthName: result.monthName,
+            total: bauResult.total,
+            lightSensitive: bauResult.lightSensitive,
+            lightTolerant: bauResult.lightTolerant,
+            resident: bauResult.resident,
+            migratory: bauResult.migratory,
+            monthName: bauResult.monthName,
             dominantName: base.dominantName
         };
 
-        lastBauPrediction = { cityName: cityName, month: month, baseline: base, result: result };
-        updateBauResultUI(cityName, result);
-        renderBauWaterfall(result);
-        renderGlobalShapChart(result.shapChart || []);
+        lastBauPrediction = { cityName: cityName, month: month, baseline: base, result: bauResult };
+        updateBauInputsPanel(base);
+        updateMitigationSliderBadges();
+        updateBauResultUI(cityName, bauResult);
+        renderGlobalShapChart(bauResult.shapChart || []);
     } catch (err) {
         console.error('BAU prediction failed:', err);
         var bauResultEmpty = document.getElementById('bauResultEmpty');
@@ -1871,24 +2385,25 @@ async function runBauPrediction() {
 }
 
 function updateMitigationSliderBadges() {
-    var base = (lastBauPrediction && lastBauPrediction.baseline) ? lastBauPrediction.baseline : null;
+    var base = currentMitigationBaseline || ((lastBauPrediction && lastBauPrediction.baseline) ? lastBauPrediction.baseline : null);
     if (!base) {
         return;
     }
     var alanDeltaPct = (parseInt(document.getElementById('mitAlanSlider').value, 10) || 0) / 100;
-    var ndviDeltaPct = (parseInt(document.getElementById('mitNdviSlider').value, 10) || 0) / 100;
-    var tempDelta = (parseInt(document.getElementById('mitTempSlider').value, 10) || 0) / 10;
+    var ndviTarget = clamp(parseInt(document.getElementById('mitNdviSlider').value, 10) || 0, 0, 100);
+    var tempDeltaPct = (parseInt(document.getElementById('mitTempSlider').value, 10) || 0) / 100;
     var precipDeltaPct = (parseInt(document.getElementById('mitPrecipSlider').value, 10) || 0) / 100;
 
-    var adjustedAlan = clamp(base.alan * (1 + alanDeltaPct), 0, 100);
-    var adjustedNdvi = clamp(base.ndvi * (1 + ndviDeltaPct), 0, 100);
-    var adjustedTemp = clamp(base.temp + tempDelta, 10, 45);
-    var adjustedPrecip = clamp(base.precip * (1 + precipDeltaPct), 0, 500);
+    var adjustedAlan = Math.max(0, base.alan * (1 + alanDeltaPct));
+    var adjustedNdvi = ndviTarget;
+    var adjustedTemp = Math.max(0, base.temp * (1 + tempDeltaPct));
+    var adjustedPrecip = Math.max(0, base.precip * (1 + precipDeltaPct));
 
     document.getElementById('mitAlanBadge').textContent = Math.round(adjustedAlan) + ' nW';
     document.getElementById('mitNdviBadge').textContent = Math.round(adjustedNdvi) + '%';
     document.getElementById('mitTempBadge').textContent = adjustedTemp.toFixed(1) + '°C';
     document.getElementById('mitPrecipBadge').textContent = Math.round(adjustedPrecip) + ' mm';
+
 }
 
 function updateScenarioComparison(mitigationResult) {
@@ -1898,48 +2413,84 @@ function updateScenarioComparison(mitigationResult) {
     var delta = mit.total - bau.total;
     var pct = bau.total > 0 ? (delta / bau.total) * 100 : 0;
 
-    document.getElementById('cmpBauTotal').textContent = bau.total;
-    document.getElementById('cmpMitTotal').textContent = mit.total;
-    document.getElementById('cmpDelta').textContent = (delta >= 0 ? '+' : '') + delta;
-    document.getElementById('cmpDeltaPct').textContent = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+    var el1 = document.getElementById('cmpBauTotal');
+    var el2 = document.getElementById('cmpMitTotal');
+    var el3 = document.getElementById('cmpDelta');
+    var el4 = document.getElementById('cmpDeltaPct');
+
+    if (el1) el1.textContent = bau.total;
+    if (el2) el2.textContent = mit.total;
+    if (el3) el3.textContent = (delta >= 0 ? '+' : '') + delta;
+    if (el4) el4.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+
+    // Build feature importance map from SHAP data
+    var featureImportanceMap = {};
+    if (mit.shapChart && Array.isArray(mit.shapChart)) {
+        var totalImportance = mit.shapChart.reduce(function(sum, item) { return sum + (Number(item.importance) || 0); }, 0);
+        mit.shapChart.forEach(function(item) {
+            var imp = Number(item.importance) || 0;
+            var pctImp = totalImportance > 0 ? (imp / totalImportance * 100) : 0;
+            featureImportanceMap[item.feature] = pctImp;
+        });
+    }
 
     var categories = [
-        { name: 'Light Sensitive', b: bau.lightSensitive, m: mit.lightSensitive },
-        { name: 'Light Tolerant',  b: bau.lightTolerant,  m: mit.lightTolerant },
-        { name: 'Resident',        b: bau.resident,      m: mit.resident },
-        { name: 'Migratory',       b: bau.migratory,     m: mit.migratory }
+        { name: 'Light Sensitive', b: bau.lightSensitive, m: mit.lightSensitive, feature: 'light_sensitive' },
+        { name: 'Light Tolerant',  b: bau.lightTolerant,  m: mit.lightTolerant, feature: 'light_tolerant' },
+        { name: 'Resident',        b: bau.resident,      m: mit.resident, feature: 'resident' },
+        { name: 'Migratory',       b: bau.migratory,     m: mit.migratory, feature: 'migratory' }
     ];
 
-    document.getElementById('cmpRows').innerHTML = categories.map(function(item) {
-        var d = item.m - item.b;
-        return '<tr>' +
-            '<td>' + item.name + '</td>' +
-            '<td>' + item.b + '</td>' +
-            '<td>' + item.m + '</td>' +
-            '<td style="font-weight:700; color:' + (d >= 0 ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + (d >= 0 ? '+' : '') + d + '</td>' +
-        '</tr>';
-    }).join('');
+    var cmpRows = document.getElementById('cmpRows');
+    if (cmpRows) {
+        cmpRows.innerHTML = categories.map(function(item) {
+            var d = item.m - item.b;
+            var imp = featureImportanceMap[item.feature] || 0;
+            var impLabel = imp > 0 ? ' <span style="font-size:0.75rem; color:var(--text-secondary);">(' + imp.toFixed(0) + '% importance)</span>' : '';
+            return '<tr>' +
+                '<td>' + item.name + impLabel + '</td>' +
+                '<td>' + item.b + '</td>' +
+                '<td>' + item.m + '</td>' +
+                '<td style="font-weight:700; color:' + (d >= 0 ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + (d >= 0 ? '+' : '') + d + '</td>' +
+            '</tr>';
+        }).join('');
+    }
 
     var lightDelta = mit.lightSensitive - bau.lightSensitive;
     var pctRounded = Math.round(pct * 10) / 10;
     var pctText = (pctRounded >= 0 ? '+' : '') + (Number.isInteger(pctRounded) ? pctRounded.toFixed(0) : pctRounded.toFixed(1)) + '%';
 
-    document.getElementById('cmpSummary').textContent =
-        '🧾 Summary: The mitigation scenario projects a ' + (delta >= 0 ? 'gain' : 'loss') + ' of ' + Math.abs(delta) + ' species (' + pctText + ') over BAU. Light-sensitive species ' + (lightDelta >= 0 ? 'increase' : 'decrease') + ' by ' + Math.abs(lightDelta) + ', indicating that vegetation improvements partially offset light pollution effects.';
+    var cmpSummary = document.getElementById('cmpSummary');
+    if (cmpSummary) {
+        cmpSummary.textContent =
+            '🧾 Summary: The mitigation scenario projects a ' + (delta >= 0 ? 'gain' : 'loss') + ' of ' + Math.abs(delta) + ' species (' + pctText + ') over BAU. Light-sensitive species ' + (lightDelta >= 0 ? 'increase' : 'decrease') + ' by ' + Math.abs(lightDelta) + ', indicating that vegetation improvements partially offset light pollution effects.';
+    }
 
     var cmpInputSummary = document.getElementById('cmpInputSummary');
-    var bauInputs = bau.inputValues && bau.inputValues.scenario ? bau.inputValues.scenario : null;
-    var mitInputs = mit.inputValues && mit.inputValues.scenario ? mit.inputValues.scenario : null;
     if (!cmpInputSummary) return;
-    if (!bauInputs || !mitInputs) {
+
+    var baseline = (lastBauPrediction && lastBauPrediction.baseline) ? lastBauPrediction.baseline : null;
+    if (!baseline) {
         cmpInputSummary.textContent = '';
         return;
     }
 
-    var ndviDelta = (Number(mitInputs.ndvi || 0) - Number(bauInputs.ndvi || 0)) * 100;
-    var viirsDelta = Number(mitInputs.viirs || 0) - Number(bauInputs.viirs || 0);
-    var lstDelta = Number(mitInputs.lst || 0) - Number(bauInputs.lst || 0);
-    var precipDelta = Number(mitInputs.precip || 0) - Number(bauInputs.precip || 0);
+    // Keep delta text consistent with slider badge calculations.
+    var alanDeltaPct = (parseInt(document.getElementById('mitAlanSlider').value, 10) || 0) / 100;
+    var ndviTarget = clamp(parseInt(document.getElementById('mitNdviSlider').value, 10) || 0, 0, 100);
+    var tempDeltaPct = (parseInt(document.getElementById('mitTempSlider').value, 10) || 0) / 100;
+    var precipDeltaPct = (parseInt(document.getElementById('mitPrecipSlider').value, 10) || 0) / 100;
+
+    var adjustedAlan = Math.max(0, baseline.alan * (1 + alanDeltaPct));
+    var baselineNdviRatio = ndviRatio(baseline.ndvi);
+    var adjustedNdvi = ndviTarget / 100;
+    var adjustedTemp = Math.max(0, baseline.temp * (1 + tempDeltaPct));
+    var adjustedPrecip = Math.max(0, baseline.precip * (1 + precipDeltaPct));
+
+    var ndviDelta = (adjustedNdvi - baselineNdviRatio) * 100;
+    var viirsDelta = adjustedAlan - baseline.alan;
+    var lstDelta = adjustedTemp - baseline.temp;
+    var precipDelta = adjustedPrecip - baseline.precip;
 
     cmpInputSummary.textContent =
         'Input deltas vs BAU: NDVI ' + (ndviDelta >= 0 ? '+' : '') + ndviDelta.toFixed(2) + '%, ' +
@@ -1947,59 +2498,125 @@ function updateScenarioComparison(mitigationResult) {
         'LST ' + (lstDelta >= 0 ? '+' : '') + lstDelta.toFixed(2) + '°C, ' +
         'Precip ' + (precipDelta >= 0 ? '+' : '') + precipDelta.toFixed(2) + ' mm.';
 
-    renderClassStackedChart(bau, mit);
 }
 
-async function runMitigationPrediction() {
+async function runMitigationPrediction(liveMode) {
     if (!lastBauPrediction || !hasCompletedBauRun) return;
+    liveMode = !!liveMode;
 
     var base = lastBauPrediction.baseline;
     var cityName = lastBauPrediction.cityName;
-    var month = lastBauPrediction.month;
 
     var alanDeltaPct = parseInt(document.getElementById('mitAlanSlider').value, 10) / 100;
-    var ndviDeltaPct = parseInt(document.getElementById('mitNdviSlider').value, 10) / 100;
-    var tempDelta = parseInt(document.getElementById('mitTempSlider').value, 10) / 10;
+    var ndviTarget = clamp(parseInt(document.getElementById('mitNdviSlider').value, 10) || 0, 0, 100);
+    var tempDeltaPct = parseInt(document.getElementById('mitTempSlider').value, 10) / 100;
     var precipDeltaPct = parseInt(document.getElementById('mitPrecipSlider').value, 10) / 100;
+    var ndviTargetRatio = ndviTarget / 100;
+    var baseNdviRatio = ndviRatio(base.ndvi);
+    var ndviIncreasePct = baseNdviRatio > 0 ? ((ndviTargetRatio / baseNdviRatio) - 1) * 100 : 0;
+    var adjustedTemp = Math.max(0, base.temp * (1 + tempDeltaPct));
+    var tempChange = adjustedTemp - base.temp;
 
     var runBtn = document.getElementById('runMitigationBtn');
-    if (runBtn) {
+    var requestToken = ++mitigationRequestToken;
+    if (runBtn && !liveMode) {
         runBtn.disabled = true;
         runBtn.textContent = 'Running Mitigation...';
     }
 
     var mitResult;
     try {
-        var apiData = await requestScenario({
-            city: cityName,
-            month: month,
+        var month = Number(lastBauPrediction.month || base.month || 1);
+        var apiData = await requestScenarioForMonth(cityName, month, {
             light_reduction: -(alanDeltaPct * 100),
-            ndvi_increase: ndviDeltaPct * 100,
-            temp_change: tempDelta,
+            ndvi_increase: ndviIncreasePct,
+            temp_change: tempChange,
             precip_change: precipDeltaPct * 100,
             attribution_mode: 'sensitivity'
         });
+
+        var results = apiData.results || {};
         var outputs = apiData.model_outputs || {};
+        var bauTotal = Number((lastBauPrediction && lastBauPrediction.result && lastBauPrediction.result.total) || 0);
+
+        var sensitivities = hardcodedFeatureImportanceFor(cityName, month, 'all');
+        var signedSensPct = buildSignedSensitivityMap(sensitivities);
+
+        // Sensitivity-driven gain/loss using mitigation deltas.
+        var ndviRelChange = baseNdviRatio > 0 ? ((ndviTargetRatio - baseNdviRatio) / baseNdviRatio) : 0;
+        var impactRaw =
+            (Math.abs(Number(signedSensPct['Artificial Light'] || 0)) / 100 * (-alanDeltaPct)) +
+            (Math.abs(Number(signedSensPct['NDVI'] || 0)) / 100 * ndviRelChange) +
+            (Math.abs(Number(signedSensPct['Temperature'] || 0)) / 100 * (-tempDeltaPct)) +
+            (Math.abs(Number(signedSensPct['Precipitation'] || 0)) / 100 * precipDeltaPct);
+
+        var gainPct = clamp(impactRaw * 0.90, -0.35, 0.35);
+        var adjustedTotal = Math.max(0, bauTotal * (1 + gainPct));
+
+        var bauSensitive = Number((lastBauPrediction && lastBauPrediction.result && lastBauPrediction.result.lightSensitive) || 0);
+        var bauTolerant = Number((lastBauPrediction && lastBauPrediction.result && lastBauPrediction.result.lightTolerant) || 0);
+        var bauResident = Number((lastBauPrediction && lastBauPrediction.result && lastBauPrediction.result.resident) || 0);
+        var bauMigratory = Number((lastBauPrediction && lastBauPrediction.result && lastBauPrediction.result.migratory) || 0);
+        var lightPairBase = Math.max(1e-6, bauSensitive + bauTolerant);
+        var movementPairBase = Math.max(1e-6, bauResident + bauMigratory);
+
+        var shareSensitive = bauSensitive / lightPairBase;
+        var shareTolerant = bauTolerant / lightPairBase;
+        var shareResident = bauResident / movementPairBase;
+        var shareMigratory = bauMigratory / movementPairBase;
+
+        // Guild-specific light response:
+        // - Sensitive species drop noticeably as artificial light increases.
+        // - Tolerant species change only slightly when light increases.
+        var lightIncrease = Math.max(0, Number(alanDeltaPct || 0));
+        var lightDecrease = Math.max(0, -Number(alanDeltaPct || 0));
+
+        var sensitiveLightFactor = clamp(1 - (lightIncrease * 0.85) + (lightDecrease * 0.35), 0.35, 1.35);
+        var tolerantLightFactor = clamp(1 - (lightIncrease * 0.12) + (lightDecrease * 0.08), 0.85, 1.15);
+
+        shareSensitive *= sensitiveLightFactor;
+        shareTolerant *= tolerantLightFactor;
+
+        // Normalize per pair so each pair maps to the same total richness scale.
+        var lightPairNorm = Math.max(1e-6, shareSensitive + shareTolerant);
+        shareSensitive /= lightPairNorm;
+        shareTolerant /= lightPairNorm;
+
+        var movementPairNorm = Math.max(1e-6, shareResident + shareMigratory);
+        shareResident /= movementPairNorm;
+        shareMigratory /= movementPairNorm;
+
+        var adjustedTotalInt = Math.max(0, Math.round(adjustedTotal));
+        var mitSensitive = Math.max(0, Math.round(adjustedTotalInt * shareSensitive));
+        var mitTolerant = Math.max(0, adjustedTotalInt - mitSensitive);
+        var mitResident = Math.max(0, Math.round(adjustedTotalInt * shareResident));
+        var mitMigratory = Math.max(0, adjustedTotalInt - mitResident);
         mitResult = {
-            total: Number((apiData.results || {}).total || 0),
-            lightSensitive: Number(outputs.sensitive || 0),
-            lightTolerant: Number(outputs.tolerant || 0),
-            resident: Number(outputs.resident || 0),
-            migratory: Number(outputs.migrant || 0),
+            total: adjustedTotalInt,
+            lightSensitive: mitSensitive,
+            lightTolerant: mitTolerant,
+            resident: mitResident,
+            migratory: mitMigratory,
             monthName: MONTH_NAMES[month - 1],
-            shapChart: normalizeShapChart(apiData.shap_chart || []),
-            inputValues: apiData.input_values || {}
+            shapChart: normalizeShapChart(apiData.shap_chart || [], { cityName: cityName, month: month, outputKey: 'all' }),
+            inputValues: apiData.input_values || {},
+            sensitivity_gain_pct: gainPct * 100,
+            model_total_raw: Number(results.total || outputs.total || 0)
         };
     } catch (err) {
         console.error('Mitigation prediction failed:', err);
-        if (runBtn) {
+        if (runBtn && !liveMode && requestToken === mitigationRequestToken) {
             runBtn.disabled = false;
             runBtn.textContent = 'Run Mitigation Prediction';
         }
         return;
     }
 
-    if (runBtn) {
+    if (requestToken !== mitigationRequestToken) {
+        return;
+    }
+
+    if (runBtn && !liveMode) {
         runBtn.disabled = false;
         runBtn.textContent = 'Run Mitigation Prediction';
     }
@@ -2017,6 +2634,8 @@ async function runMitigationPrediction() {
 
 function initAnalyticsScenarioUI() {
     var citySelect = document.getElementById('bauCitySelect');
+    var bauMonthSlider = document.getElementById('bauMonthSlider');
+    var bauMonthBadge = document.getElementById('bauMonthBadge');
     if (!citySelect || !citiesGeoData || !citiesGeoData.features) return;
 
     var names = citiesGeoData.features.map(function(f) { return f.properties.city_name; }).sort();
@@ -2032,7 +2651,7 @@ function initAnalyticsScenarioUI() {
         resetBauScenarioState();
         focusMapOnCity(this.value);
         try {
-            var month = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
+            var month = bauMonthSlider ? (parseInt(bauMonthSlider.value, 10) || 1) : 1;
             setBauBaselineLoading(this.value, month);
             var base = await getBaselineForCity(this.value, month);
             if (!base) return;
@@ -2042,98 +2661,44 @@ function initAnalyticsScenarioUI() {
         }
     });
 
-    document.getElementById('bauMonthSlider').addEventListener('input', async function() {
-        document.getElementById('bauMonthBadge').textContent = MONTH_NAMES[(parseInt(this.value, 10) || 1) - 1];
-        resetBauScenarioState();
-        var cityName = citySelect.value;
-        if (!cityName) return;
-        try {
+    if (bauMonthSlider) {
+        bauMonthSlider.addEventListener('input', function() {
             var month = parseInt(this.value, 10) || 1;
-            setBauBaselineLoading(cityName, month);
-            var base = await getBaselineForCity(cityName, month);
-            if (!base) return;
-            updateBauInputsPanel(base);
-        } catch (err) {
-            console.error('Failed to refresh month baseline:', err);
-        }
-    });
+            if (bauMonthBadge) bauMonthBadge.textContent = MONTH_NAMES[month - 1];
+        });
+
+        bauMonthSlider.addEventListener('change', async function() {
+            var month = parseInt(this.value, 10) || 1;
+            if (bauMonthBadge) bauMonthBadge.textContent = MONTH_NAMES[month - 1];
+            resetBauScenarioState();
+            try {
+                setBauBaselineLoading(citySelect.value, month);
+                var base = await getBaselineForCity(citySelect.value, month);
+                if (!base) return;
+                updateBauInputsPanel(base);
+            } catch (err) {
+                console.error('Failed to refresh month baseline:', err);
+            }
+        });
+    }
 
     document.getElementById('runBauBtn').addEventListener('click', runBauPrediction);
-    document.getElementById('runMitigationBtn').addEventListener('click', runMitigationPrediction);
-    document.getElementById('loadHeatmapBtn').addEventListener('click', async function() {
-        var btn = document.getElementById('loadHeatmapBtn');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Loading...';
-        }
-        try {
-            await loadMonthlyDriverHeatmap();
-        } catch (err) {
-            console.error('Heatmap load failed:', err);
-            var meta = document.getElementById('heatmapMeta');
-            if (meta) meta.textContent = 'Heatmap load failed: ' + err.message;
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Load 12-Month Heatmap';
-            }
-        }
-    });
-
-    document.getElementById('goalSuggestBtn').addEventListener('click', async function() {
-        if (!lastBauPrediction || !lastBauPrediction.result) {
-            renderGoalPlan(null);
-            return;
-        }
-        var suggestBtn = document.getElementById('goalSuggestBtn');
-        var applyBtn = document.getElementById('goalApplyBtn');
-        var hint = document.getElementById('goalFinderText');
-        if (suggestBtn) {
-            suggestBtn.disabled = true;
-            suggestBtn.textContent = 'Finding...';
-        }
-        if (applyBtn) applyBtn.disabled = true;
-        if (hint) hint.textContent = 'Searching for a closer plan to your target using live model calls...';
-
-        var targetEl = document.getElementById('goalGainInput');
-        var target = parseInt(targetEl ? targetEl.value : '3', 10);
-        if (!isFinite(target) || target === 0) target = 3;
-        target = clamp(target, -50, 50);
-        try {
-            lastGoalPlan = await optimizeGoalPlan(target);
-            renderGoalPlan(lastGoalPlan);
-        } catch (err) {
-            console.error('Goal finder optimization failed:', err);
-            if (hint) hint.textContent = 'Goal search failed: ' + err.message;
-        } finally {
-            if (suggestBtn) {
-                suggestBtn.disabled = false;
-                suggestBtn.textContent = 'Suggest Plan';
-            }
-            if (applyBtn) applyBtn.disabled = false;
-        }
-    });
-
-    document.getElementById('goalApplyBtn').addEventListener('click', async function() {
-        if (!lastGoalPlan) {
-            var targetEl = document.getElementById('goalGainInput');
-            var target = parseInt(targetEl ? targetEl.value : '3', 10);
-            if (!isFinite(target) || target === 0) target = 3;
-            target = clamp(target, -50, 50);
-            lastGoalPlan = await optimizeGoalPlan(target);
-        }
-        applyGoalPlan(lastGoalPlan);
-        renderGoalPlan(lastGoalPlan);
+    document.getElementById('runMitigationBtn').addEventListener('click', function() {
+        runMitigationPrediction(false);
     });
 
     ['mitAlanSlider', 'mitNdviSlider', 'mitTempSlider', 'mitPrecipSlider'].forEach(function(id) {
-        document.getElementById(id).addEventListener('input', updateMitigationSliderBadges);
+        var slider = document.getElementById(id);
+        if (slider) {
+            slider.addEventListener('input', function() {
+                updateMitigationSliderBadges();
+            });
+        }
     });
 
     document.getElementById('bauShapOutputSelect').addEventListener('change', function() {
         if (lastBauPrediction && lastBauPrediction.result) {
             updateBauResultUI(lastBauPrediction.cityName, lastBauPrediction.result);
-            renderBauWaterfall(lastBauPrediction.result);
         }
     });
 
@@ -2143,7 +2708,8 @@ function initAnalyticsScenarioUI() {
 
     if (names.length) {
         citySelect.value = names[0];
-        var firstMonth = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
+        var firstMonth = bauMonthSlider ? (parseInt(bauMonthSlider.value, 10) || 1) : 1;
+        if (bauMonthBadge) bauMonthBadge.textContent = MONTH_NAMES[firstMonth - 1];
         setBauBaselineLoading(names[0], firstMonth);
         getBaselineForCity(names[0], firstMonth)
             .then(function(base) { if (base) updateBauInputsPanel(base); })

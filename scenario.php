@@ -21,7 +21,6 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
                 <span>Target City:</span>
             </div>
             <select id="citySelect" class="form-control" style="max-width: 420px; margin-top: 8px;">
-                <option value="">Metro Manila (All Cities)</option>
                 <option value="Caloocan">Caloocan</option>
                 <option value="Las Piñas">Las Piñas</option>
                 <option value="Makati">Makati</option>
@@ -245,7 +244,6 @@ async function runScenario() {
     btn.disabled = true;
     
     try {
-        // Call the API endpoint with ML predictions
         const response = await fetch('api/run_scenario.php', {
             method: 'POST',
             headers: {
@@ -393,7 +391,7 @@ function updateHistoricalInputs(historicalInputs, parameters) {
         return;
     }
 
-    const city = historicalInputs.city || (parameters?.city || 'Metro Manila (All Cities)');
+    const city = historicalInputs.city || (parameters?.city || 'Selected City');
     const land = historicalInputs.dominant_land_cover || {};
     const modelInputs = historicalInputs.model_inputs_used || {};
     const years = (historicalInputs.common_years || []).join(', ');
