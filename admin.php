@@ -738,49 +738,65 @@ require_once 'includes/header.php';
     <div class="card">
         <h2 class="card-header">Security & Access Logs</h2>
         <div class="card-body">
-            <h4>Recent Activity</h4>
-            <table style="font-size: 0.9rem; width:100%;">
-                <thead>
-                    <tr>
-                        <th>User</th>
-                        <th>Action</th>
-                        <th>IP</th>
-                        <th>Time (UTC)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($recent_access)): ?>
-                        <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
-                    <?php else: foreach ($recent_access as $row): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($row['email']) ?></td>
-                            <td><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
-                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
-                        </tr>
-                    <?php endforeach; endif; ?>
-                </tbody>
-            </table>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
 
-            <h4 style="margin-top:20px;">Recent Failed Login Attempts</h4>
-            <table style="font-size: 0.9rem; width:100%;">
-                <thead>
-                    <tr>
-                        <th>Email</th>
-                        <th>IP</th>
-                        <th>Time (UTC)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($recent_failures)): ?>
-                        <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
-                    <?php else: foreach ($recent_failures as $row): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($row['email']) ?></td>
-                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
-                        </tr>
-                    <?php endforeach; endif; ?>
+                <!-- Recent Activity -->
+                <div>
+                    <h4 style="margin-bottom:10px;">Recent Activity</h4>
+                    <div style="overflow-x:auto;">
+                        <table style="font-size:0.85rem; width:100%;">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>IP</th>
+                                    <th style="white-space:nowrap;">Time (UTC)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($recent_access)): ?>
+                                    <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
+                                <?php else: foreach ($recent_access as $row): ?>
+                                    <tr>
+                                        <td style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
+                                        <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
+                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
+                                    </tr>
+                                <?php endforeach; endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Failed Login Attempts -->
+                <div>
+                    <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
+                    <div style="overflow-x:auto;">
+                        <table style="font-size:0.85rem; width:100%;">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>IP</th>
+                                    <th style="white-space:nowrap;">Time (UTC)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($recent_failures)): ?>
+                                    <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
+                                <?php else: foreach ($recent_failures as $row): ?>
+                                    <tr>
+                                        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
+                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
+                                    </tr>
+                                <?php endforeach; endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
         </div>
     </div>
     
