@@ -2,22 +2,24 @@
 REM ============================================================
 REM  AviLight — Python Environment Setup
 REM  Run this ONCE from the project root:
-REM      cd C:\xampp\htdocs\avilight
+REM      cd C:\laragon\www\avilight-main
 REM      setup_env.bat
 REM
 REM  What it does:
-REM    1. Creates venv\ in this folder
+REM    1. Creates .venv\ in this folder
 REM    2. Installs all packages from requirements.txt
-REM    3. PHP (backend_config.php) auto-detects venv\Scripts\python.exe
+REM    3. PHP (backend_config.php) auto-detects .venv\Scripts\python.exe
 REM       so no other changes are needed.
 REM ============================================================
 
 setlocal
 
 set PROJECT_DIR=%~dp0
-set VENV_DIR=%PROJECT_DIR%venv
+set VENV_DIR=%PROJECT_DIR%.venv
+set ALT_VENV_DIR=%PROJECT_DIR%venv
 set VENV_PYTHON=%VENV_DIR%\Scripts\python.exe
 set VENV_PIP=%VENV_DIR%\Scripts\pip.exe
+set ALT_VENV_PYTHON=%ALT_VENV_DIR%\Scripts\python.exe
 set REQUIREMENTS=%PROJECT_DIR%requirements.txt
 
 echo.
@@ -44,7 +46,12 @@ echo [OK] Found: %PY_VER%
 
 REM ── Create venv ──────────────────────────────────────────────
 if exist "%VENV_PYTHON%" (
-    echo [OK] venv already exists — skipping creation.
+    echo [OK] .venv already exists — skipping creation.
+) else if exist "%ALT_VENV_PYTHON%" (
+    echo [OK] existing venv\ detected — using that environment.
+    set VENV_DIR=%ALT_VENV_DIR%
+    set VENV_PYTHON=%ALT_VENV_PYTHON%
+    set VENV_PIP=%ALT_VENV_DIR%\Scripts\pip.exe
 ) else (
     echo [..] Creating virtual environment...
     python -m venv "%VENV_DIR%"

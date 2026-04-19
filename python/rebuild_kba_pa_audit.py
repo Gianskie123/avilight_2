@@ -32,34 +32,39 @@ except Exception as exc:  # pragma: no cover
 
 TARGET_AREAS: List[Dict[str, Any]] = [
     {
-        "name": "Ninoy Aquino Parks & Wildlife Center",
+        "name": "Manila Bay",
+        "type": "KBA",
+        "layer": "KBA",
+        "aliases": ["manila bay"],
+    },
+    {
+        "name": "Luneta National Park",
         "type": "PA",
         "layer": "PA",
-        "aliases": ["ninoy aquino parks wildlife center", "ninoy aquino parks & wildlife center"],
+        "aliases": ["luneta national park"],
     },
     {
-        "name": "Laguna de Bay Wetlands",
-        "type": "KBA",
-        "layer": "KBA",
-        "aliases": ["laguna de bay wetlands", "laguna de bay"],
-    },
-    {
-        "name": "Las Pinas-Paranaque Critical Habitat",
-        "type": "KBA",
-        "layer": "KBA",
-        "aliases": ["las pinas paranaque critical habitat", "las pinas-paranaque critical habitat", "las piñas parañaque critical habitat"],
-    },
-    {
-        "name": "Marikina Watershed",
+        "name": "Manila Bay Beach Resort",
         "type": "PA",
         "layer": "PA",
-        "aliases": ["marikina watershed"],
+        "aliases": ["manila bay beach resort"],
     },
     {
-        "name": "La Mesa Watershed",
-        "type": "KBA",
-        "layer": "KBA",
-        "aliases": ["la mesa watershed"],
+        "name": "Las Piñas-Parañaque Wetland Park",
+        "type": "PA",
+        "layer": "PA",
+        "aliases": [
+            "las pinas paranaque critical habitat and ecotourism area lppchea also known as las pinas paranaque wetland park",
+            "las pinas paranaque critical habitat",
+            "las pinas-paranaque wetland park",
+            "lppchea",
+        ],
+    },
+    {
+        "name": "Ninoy Aquino Parks and Wildlife Center",
+        "type": "PA",
+        "layer": "PA",
+        "aliases": ["ninoy aquino parks and wildlife center", "ninoy aquino parks wildlife center"],
     },
 ]
 
@@ -73,7 +78,7 @@ def norm(s: Any) -> str:
 
 
 def connect_mysql() -> pymysql.connections.Connection:
-    return pymysql.connect(
+    conn = pymysql.connect(
         host=os.getenv("AVILIGHT_DB_HOST", "127.0.0.1"),
         port=int(os.getenv("AVILIGHT_DB_PORT", "3306")),
         user=os.getenv("AVILIGHT_DB_USER", "root"),
@@ -83,6 +88,11 @@ def connect_mysql() -> pymysql.connections.Connection:
         autocommit=False,
         cursorclass=pymysql.cursors.DictCursor,
     )
+    # Set lock wait timeout to 60 seconds to reduce contention
+    with conn.cursor() as cur:
+        cur.execute("SET innodb_lock_wait_timeout = 60")
+    conn.commit()
+    return conn
 
 
 def read_shapefile_polygons(path: str) -> List[Tuple[str, List[List[Tuple[float, float]]]]]:
@@ -109,7 +119,12 @@ def read_shapefile_polygons(path: str) -> List[Tuple[str, List[List[Tuple[float,
         "AREA_NAME",
         "area_name",
         "KBA_NAME",
+        "KBA_Name",
+        "kba_name",
         "PA_NAME",
+        "PA_Name",
+        "pa_name",
+        "Former_Nam",
     ]
 
     if has_records:
@@ -183,6 +198,44 @@ def point_in_any_polygon(x: float, y: float, polygons: Sequence[Sequence[Tuple[f
     return False
 
 
+def polygon_intersects_grid_cell(
+    lon: float,
+    lat: float,
+    polygons: Sequence[Sequence[Tuple[float, float]]],
+    cell_size: float = 0.01,
+) -> bool:
+    """Check if polygon boundary overlaps with grid cell centered at (lon, lat).
+    
+    Returns True if:
+    - Grid cell center is inside polygon, OR
+    - Any polygon point is inside grid cell, OR
+    - Any grid cell corner is inside polygon
+    """
+    half = cell_size / 2.0
+    cell_min_lon = lon - half
+    cell_max_lon = lon + half
+    cell_min_lat = lat - half
+    cell_max_lat = lat + half
+    
+    # Check 1: center point in polygon
+    if point_in_any_polygon(lon, lat, polygons):
+        return True
+    
+    # Check 2: any polygon point inside cell
+    for ring in polygons:
+        for px, py in ring:
+            if cell_min_lon <= px <= cell_max_lon and cell_min_lat <= py <= cell_max_lat:
+                return True
+    
+    # Check 3: any cell corner inside polygon
+    for cx in [cell_min_lon, cell_max_lon]:
+        for cy in [cell_min_lat, cell_max_lat]:
+            if point_in_any_polygon(cx, cy, polygons):
+                return True
+    
+    return False
+
+
 def build_target_polygons(project_root: str) -> Dict[str, Dict[str, Any]]:
     kba_path = os.path.join(project_root, "NCR_Key_Biodiversity_Areas.shp")
     pa_path = os.path.join(project_root, "NCR_Protected Areas.shp")
@@ -212,16 +265,6 @@ def build_target_polygons(project_root: str) -> Dict[str, Dict[str, Any]]:
             "layer": layer,
             "polygons": matched_polys,
         }
-
-    # Fallback for shapefiles without usable name attributes: apply all layer polygons.
-    for target in TARGET_AREAS:
-        area = out[target["name"]]
-        if area["polygons"]:
-            continue
-        fallback_layer_polys: List[List[Tuple[float, float]]] = []
-        for _fname, polys in layer_map.get(area["layer"], []):
-            fallback_layer_polys.extend(polys)
-        area["polygons"] = fallback_layer_polys
 
     return out
 
@@ -283,7 +326,115 @@ def fetch_latest_snapshot(conn: pymysql.connections.Connection) -> Tuple[int, in
         if row2:
             return int(row2["year"]), int(row2["month"])
 
-    return 2024, 12
+    return 2025, 12
+
+
+def fetch_precipitation_points(
+    conn: pymysql.connections.Connection,
+    snapshot_year: int,
+    snapshot_month: int,
+) -> List[Tuple[float, float, float]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT latitude AS lat, longitude AS lon, precip_mm
+            FROM precip
+            WHERE year = %s
+              AND month = %s
+              AND latitude IS NOT NULL
+              AND longitude IS NOT NULL
+              AND precip_mm IS NOT NULL
+            """,
+            (snapshot_year, snapshot_month),
+        )
+        rows = cur.fetchall() or []
+
+    points: List[Tuple[float, float, float]] = []
+    for row in rows:
+        points.append((float(row["lat"]), float(row["lon"]), float(row["precip_mm"])))
+    return points
+
+
+def fetch_land_temp_points(
+    conn: pymysql.connections.Connection,
+    snapshot_year: int,
+    snapshot_month: int,
+) -> List[Tuple[float, float, float]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT latitude AS lat, longitude AS lon,
+                   CASE
+                       WHEN lst_day > 100 THEN (lst_day * 0.02) - 273.15
+                       WHEN lst_day > 0 THEN lst_day
+                       ELSE NULL
+                   END AS lst_c
+            FROM land_temp
+            WHERE year = %s
+              AND month = %s
+              AND latitude IS NOT NULL
+              AND longitude IS NOT NULL
+              AND lst_day IS NOT NULL
+              AND lst_day != 0
+            """,
+            (snapshot_year, snapshot_month),
+        )
+        rows = cur.fetchall() or []
+
+    points: List[Tuple[float, float, float]] = []
+    for row in rows:
+        lst_val = row.get("lst_c")
+        if lst_val is None:
+            continue
+        points.append((float(row["lat"]), float(row["lon"]), float(lst_val)))
+    return points
+
+
+def nearest_precipitation_total(
+    cells: Sequence[Tuple[float, float]],
+    precip_points: Sequence[Tuple[float, float, float]],
+) -> Optional[float]:
+    if not cells or not precip_points:
+        return None
+
+    total = 0.0
+    for lat, lon in cells:
+        nearest_value = None
+        nearest_distance = float("inf")
+        for p_lat, p_lon, precip_mm in precip_points:
+            distance = (lat - p_lat) ** 2 + (lon - p_lon) ** 2
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest_value = precip_mm
+
+        if nearest_value is not None:
+            total += nearest_value
+
+    return total
+
+
+def nearest_max_lst(
+    cells: Sequence[Tuple[float, float]],
+    lst_points: Sequence[Tuple[float, float, float]],
+) -> Optional[float]:
+    if not cells or not lst_points:
+        return None
+
+    max_lst = None
+    for lat, lon in cells:
+        nearest_value = None
+        nearest_distance = float("inf")
+        for p_lat, p_lon, lst_c in lst_points:
+            distance = (lat - p_lat) ** 2 + (lon - p_lon) ** 2
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest_value = lst_c
+
+        if nearest_value is not None:
+            if max_lst is None or nearest_value > max_lst:
+                max_lst = nearest_value
+
+    return max_lst
 
 
 def fetch_all_grid_cells(conn: pymysql.connections.Connection) -> List[Tuple[float, float]]:
@@ -423,6 +574,8 @@ def build_area_metrics(
     bird_points: Sequence[Tuple[float, float, int, bool]],
     snapshot_year: int,
     snapshot_month: int,
+    precip_points: Sequence[Tuple[float, float, float]],
+    lst_points: Sequence[Tuple[float, float, float]],
 ) -> Dict[str, Any]:
     if not cells:
         return {
@@ -430,7 +583,7 @@ def build_area_metrics(
             "light_exposure": 0.0,
             "mean_ndvi": 0.0,
             "max_lst": 0.0,
-            "precipitation_total": 0.0,
+            "precipitation_total": None,
             "species_count": 0,
             "sensitive_species_count": 0,
             "sensitive_species_percent": 0.0,
@@ -470,12 +623,7 @@ def build_area_metrics(
                         ELSE lt.lst_day
                     END
                 ) AS max_lst,
-                SUM(
-                    CASE
-                        WHEN p.precip_mm < 0 THEN NULL
-                        ELSE p.precip_mm
-                    END
-                ) AS precipitation_total
+                    NULL AS precipitation_total
             FROM tmp_kba_cells c
             LEFT JOIN viirs v
                 ON v.latitude = c.lat
@@ -492,15 +640,8 @@ def build_area_metrics(
                AND lt.longitude = c.lon
                AND lt.year = %s
                AND lt.month = %s
-            LEFT JOIN precip p
-                ON p.latitude = c.lat
-               AND p.longitude = c.lon
-               AND p.year = %s
-               AND p.month = %s
             """,
             (
-                snapshot_year,
-                snapshot_month,
                 snapshot_year,
                 snapshot_month,
                 snapshot_year,
@@ -517,7 +658,7 @@ def build_area_metrics(
     sensitive_species_ids = set()
     if polygons and bird_points:
         for lat, lon, species_id, is_sensitive in bird_points:
-            if point_in_any_polygon(lon, lat, polygons):
+            if polygon_intersects_grid_cell(lon, lat, polygons):
                 species_ids.add(species_id)
                 if is_sensitive:
                     sensitive_species_ids.add(species_id)
@@ -525,13 +666,26 @@ def build_area_metrics(
     species_count = len(species_ids)
     sensitive_count = len(sensitive_species_ids)
     sensitive_pct = (float(sensitive_count) / float(species_count) * 100.0) if species_count > 0 else 0.0
+    precip_total = nearest_precipitation_total(cells, precip_points)
+    max_lst = float(env_row.get("max_lst") or 0.0)
+    if max_lst <= 0.0:
+        nearest_lst = nearest_max_lst(cells, lst_points)
+        if nearest_lst is not None:
+            max_lst = float(nearest_lst)
+        # DEBUG
+        if len(cells) > 0 and max_lst <= 0.0:
+            import sys
+            print(f"DEBUG: {polygons[0] if polygons else 'NO POLYGON'} - cells={len(cells)}, lst_points={len(lst_points)}, max_lst={max_lst}", file=sys.stderr)
+            if cells and lst_points:
+                print(f"  First cell: {cells[0]}", file=sys.stderr)
+                print(f"  First lst_point: {lst_points[0]}", file=sys.stderr)
 
     return {
         "grid_cell_count": len(cells),
         "light_exposure": float(env_row.get("light_exposure") or 0.0),
         "mean_ndvi": float(env_row.get("mean_ndvi") or 0.0),
-        "max_lst": float(env_row.get("max_lst") or 0.0),
-        "precipitation_total": float(env_row.get("precipitation_total") or 0.0),
+        "max_lst": max_lst,
+        "precipitation_total": None if precip_total is None else float(precip_total),
         "species_count": species_count,
         "sensitive_species_count": sensitive_count,
         "sensitive_species_percent": round(sensitive_pct, 1),
@@ -640,6 +794,16 @@ def upsert_area(
         )
 
 
+def prune_stale_areas(conn: pymysql.connections.Connection, target_names: Sequence[str]) -> None:
+    """Remove audit rows that are not part of the current configured target list."""
+    if not target_names:
+        return
+    placeholders = ",".join(["%s"] * len(target_names))
+    sql = f"DELETE FROM kba_pa_audit_live WHERE area_name NOT IN ({placeholders})"
+    with conn.cursor() as cur:
+        cur.execute(sql, tuple(target_names))
+
+
 def main() -> int:
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -649,8 +813,11 @@ def main() -> int:
         snapshot_year, snapshot_month = fetch_latest_snapshot(conn)
         all_cells = fetch_all_grid_cells(conn)
         bird_points = fetch_bird_points_snapshot(conn, snapshot_year, snapshot_month)
+        precip_points = fetch_precipitation_points(conn, snapshot_year, snapshot_month)
+        lst_points = fetch_land_temp_points(conn, snapshot_year, snapshot_month)
 
         targets = build_target_polygons(project_root)
+        prune_stale_areas(conn, list(targets.keys()))
         summary: List[Dict[str, Any]] = []
 
         for area_name, area in targets.items():
@@ -658,11 +825,21 @@ def main() -> int:
             cells: List[Tuple[float, float]] = []
             if polygons:
                 for lat, lon in all_cells:
-                    if point_in_any_polygon(lon, lat, polygons):
+                    if polygon_intersects_grid_cell(lon, lat, polygons):
                         cells.append((lat, lon))
 
-            metrics = build_area_metrics(conn, cells, polygons, bird_points, snapshot_year, snapshot_month)
+            metrics = build_area_metrics(
+                conn,
+                cells,
+                polygons,
+                bird_points,
+                snapshot_year,
+                snapshot_month,
+                precip_points,
+                lst_points,
+            )
             upsert_area(conn, area, metrics, cells, snapshot_year, snapshot_month)
+            conn.commit()  # Commit after each area to reduce lock contention
 
             summary.append(
                 {

@@ -8,12 +8,13 @@
  *  3. Fall back to lightweight HTML scraping.
  *  4. Fall back to hardcoded placeholder data so the page never breaks.
  *
- * @param  int   $limit     Maximum number of announcements to return.
- * @param  int   $cache_ttl Cache lifetime in seconds (default 3600 = 1 h).
+ * @param  int   $limit         Maximum number of announcements to return.
+ * @param  int   $cache_ttl     Cache lifetime in seconds (default 3600 = 1 h).
+ * @param  bool  $allow_network When false, do not make live network calls.
  * @return array            Array of announcement arrays with keys:
  *                          date, title, summary, tag, tag_class, link.
  */
-function fetch_bmb_announcements(int $limit = 5, int $cache_ttl = 3600): array
+function fetch_bmb_announcements(int $limit = 5, int $cache_ttl = 3600, bool $allow_network = true): array
 {
     $base_url   = 'https://faps.bmb.gov.ph/faps/';
     $cache_file = __DIR__ . '/../data/bmb_announcements_cache.json';
@@ -28,6 +29,10 @@ function fetch_bmb_announcements(int $limit = 5, int $cache_ttl = 3600): array
         ) {
             return array_slice($cached['items'], 0, $limit);
         }
+    }
+
+    if (!$allow_network) {
+        return _bmb_fallback_data();
     }
 
     // ── 2. Try WordPress REST API ──────────────────────────────────────────
@@ -127,7 +132,7 @@ function _bmb_fetch_via_html(string $base_url, int $limit): array
 
         // Title – look for the first heading link
         $title_node = $xpath->query('.//h1/a|.//h2/a|.//h3/a', $article)->item(0);
-        if (!$title_node) {
+        if (!($title_node instanceof DOMElement)) {
             continue;
         }
         $title = trim($title_node->textContent);

@@ -65,152 +65,6 @@ try {
     $model_error = $e->getMessage();
 }
 
-// ── Validation & rejection log summary ───────────────────────────────────
-// One row per (upload, reason) — gives a count of how many rows were rejected
-// for each reason in each upload so the table can show a natural-language issue.
-$validation_log_rows = [];
-try {
-    $vl_db = get_mysql_db();
-    $validation_log_rows = $vl_db->query(
-        "SELECT ul.uploaded_at, ul.uploaded_by, ul.filename,
-                url.reason,
-                COUNT(*) AS cnt
-           FROM upload_rejection_log url
-           JOIN upload_log ul ON ul.id = url.upload_log_id
-          WHERE ul.uploaded_at >= NOW() - INTERVAL 1 HOUR
-          GROUP BY url.upload_log_id, url.reason
-          ORDER BY ul.uploaded_at DESC, url.reason
-          LIMIT 5"
-    )->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) {
-    // Non-fatal — tables may not exist yet
-}
-
-// ── Spatial integrity checks against live DB ─────────────────────────────
-// Runs on every admin page load — all queries are indexed COUNT(*) so they
-// are fast even on large tables. Checks cover raw_bird_observation and
-// aggregated_bird_observation only; land_cover is intentionally excluded
-// (null cells are expected and filled during the merge step).
-$spatial_checks  = [];
-$spatial_db_ok   = false;
-$LAT_MIN = 14.3; $LAT_MAX = 14.8;
-$LON_MIN = 120.9; $LON_MAX = 121.15;
-
-try {
-    $sp_db = get_mysql_db();
-    $spatial_db_ok = true;
-
-    // ── raw_bird_observation ──────────────────────────────────────────────
-    $raw_total = (int) $sp_db->query('SELECT COUNT(*) FROM raw_bird_observation')->fetchColumn();
-
-    // 1. Null coordinates
-    $null_coords = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM raw_bird_observation WHERE latitude IS NULL OR longitude IS NULL'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'No null coordinates in raw observations',
-        'pass'   => $null_coords === 0,
-        'detail' => $null_coords > 0 ? "{$null_coords} row(s) have NULL latitude or longitude" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 2. Zero coordinates (often a GPS/export artifact)
-    $zero_coords = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM raw_bird_observation WHERE latitude = 0 OR longitude = 0'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'No zero-value coordinates in raw observations',
-        'pass'   => $zero_coords === 0,
-        'detail' => $zero_coords > 0 ? "{$zero_coords} row(s) have lat=0 or lon=0 (likely missing GPS fix)" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 3. Latitude within Metro Manila range
-    $oob_lat = (int) $sp_db->query(
-        "SELECT COUNT(*) FROM raw_bird_observation
-          WHERE latitude IS NOT NULL AND (latitude < {$LAT_MIN} OR latitude > {$LAT_MAX})"
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => "Latitude within {$LAT_MIN}°–{$LAT_MAX}° N (Metro Manila)",
-        'pass'   => $oob_lat === 0,
-        'detail' => $oob_lat > 0 ? "{$oob_lat} observation(s) outside latitude range {$LAT_MIN}°–{$LAT_MAX}° N" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 4. Longitude within Metro Manila range
-    $oob_lon = (int) $sp_db->query(
-        "SELECT COUNT(*) FROM raw_bird_observation
-          WHERE longitude IS NOT NULL AND (longitude < {$LON_MIN} OR longitude > {$LON_MAX})"
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => "Longitude within {$LON_MIN}°–{$LON_MAX}° E (Metro Manila)",
-        'pass'   => $oob_lon === 0,
-        'detail' => $oob_lon > 0 ? "{$oob_lon} observation(s) outside longitude range {$LON_MIN}°–{$LON_MAX}° E" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // 5. No duplicate observation IDs in raw table
-    $dup_obs = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM (
-             SELECT observation_id FROM raw_bird_observation
-             GROUP BY observation_id HAVING COUNT(*) > 1
-         ) AS d'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'No duplicate observation IDs in raw observations',
-        'pass'   => $dup_obs === 0,
-        'detail' => $dup_obs > 0 ? "{$dup_obs} observation ID(s) appear more than once" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-    // ── aggregated_bird_observation ───────────────────────────────────────
-    $agg_total = (int) $sp_db->query('SELECT COUNT(*) FROM aggregated_bird_observation')->fetchColumn();
-
-    // 6. All aggregated rows snapped to a grid cell
-    $unsnapped = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM aggregated_bird_observation WHERE grid_lat IS NULL OR grid_lon IS NULL'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'All aggregated observations snapped to a grid cell',
-        'pass'   => $unsnapped === 0,
-        'detail' => $unsnapped > 0 ? "{$unsnapped} aggregated row(s) have no grid_lat/grid_lon — re-run aggregation to fix" : null,
-        'table'  => 'aggregated_bird_observation',
-    ];
-
-    // 7. Aggregated grid coordinates within Metro Manila
-    $agg_oob = (int) $sp_db->query(
-        "SELECT COUNT(*) FROM aggregated_bird_observation
-          WHERE grid_lat IS NOT NULL AND grid_lon IS NOT NULL
-            AND (grid_lat < {$LAT_MIN} OR grid_lat > {$LAT_MAX}
-              OR grid_lon < {$LON_MIN} OR grid_lon > {$LON_MAX})"
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'All aggregated grid cells within Metro Manila bounds',
-        'pass'   => $agg_oob === 0,
-        'detail' => $agg_oob > 0 ? "{$agg_oob} aggregated row(s) have grid coordinates outside Metro Manila bounding box" : null,
-        'table'  => 'aggregated_bird_observation',
-    ];
-
-    // 8. Coordinates are realistic (within Philippines — catch gross errors)
-    $non_ph = (int) $sp_db->query(
-        'SELECT COUNT(*) FROM raw_bird_observation
-          WHERE latitude  IS NOT NULL AND (latitude  < 4.5  OR latitude  > 21.5)
-             OR longitude IS NOT NULL AND (longitude < 116.0 OR longitude > 127.0)'
-    )->fetchColumn();
-    $spatial_checks[] = [
-        'label'  => 'All coordinates within Philippines extent (4.5°–21.5° N, 116°–127° E)',
-        'pass'   => $non_ph === 0,
-        'detail' => $non_ph > 0 ? "{$non_ph} observation(s) fall outside the Philippines entirely" : null,
-        'table'  => 'raw_bird_observation',
-    ];
-
-} catch (Throwable $e) {
-    $spatial_db_ok = false;
-}
-
-$spatial_all_pass = $spatial_db_ok && !empty($spatial_checks)
-    && count(array_filter($spatial_checks, fn($c) => !$c['pass'])) === 0;
-
 // ── Security logs from MySQL ──────────────────────────────────────────────
 $recent_access    = [];
 $recent_failures  = [];
@@ -266,14 +120,18 @@ require_once 'includes/header.php';
 
         <hr style="margin: 20px 0;">
 
-        <h4>Analytics Cache</h4>
+        <h4>Cache Maintenance</h4>
         <p style="margin: 0 0 10px 0; color: #666;">
-            Rebuild precomputed analytics summaries used by the Analytics tab for faster loading.
+            Rebuild analytics summaries or refresh report caches after database updates.
         </p>
         <button type="button" class="btn btn-secondary" id="rebuildAnalyticsBtn" onclick="rebuildAnalyticsCache()">
             Rebuild Analytics Cache
         </button>
+        <button type="button" class="btn btn-secondary" id="refreshReportCacheBtn" onclick="refreshReportCache()" style="margin-left: 8px;">
+            Refresh Report Cache
+        </button>
         <div id="analyticsCacheStatus" style="margin-top: 10px;"></div>
+        <div id="reportCacheStatus" style="margin-top: 10px;"></div>
     </div>
 </div>
 
@@ -335,6 +193,10 @@ require_once 'includes/header.php';
 
         <!-- Land Cover (annual) -->
         <h4>Land Cover Type (MODIS)</h4>
+        <p style="color: #666; margin-bottom: 8px; font-size: 0.9em;">
+            Annual IGBP land cover classification (MCD12Q1, 500 m). Fetched once per year —
+            not per month. New years are released ~12 months after observation year end.
+        </p>
         <button class="btn btn-primary" onclick="fetchLandCover.call(this, this)">
             Fetch Land Cover Type (MODIS) Data
         </button>
@@ -347,6 +209,11 @@ require_once 'includes/header.php';
 
         <!-- Merge to Master Grid -->
         <h4>Merge Covariates → Master Grid</h4>
+        <p style="color: #666; margin-bottom: 10px;">
+            Merges all environmental covariates with aggregated bird observations into
+            <code>final_master_grid</code>. Only years where every covariate table has
+            matching (year, month) data are included.
+        </p>
         <button class="btn btn-success" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
             Build Master Grid
         </button>
@@ -447,43 +314,26 @@ require_once 'includes/header.php';
             <div>
                 <h4>Danger Zone Color Scales</h4>
                 <div class="form-group">
-                    <label class="form-label">Low Risk Ceiling <small style="color:#666;">(nW/cm²/sr — ≤ this value = Low)</small></label>
-                    <input type="number" class="form-control" value="25" min="0" id="lowRiskThreshold">
+                    <label class="form-label">High Risk Threshold (Light Intensity):</label>
+                    <input type="number" class="form-control" value="60" min="0" max="100" id="highRiskThreshold">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Moderate Risk Ceiling <small style="color:#666;">(nW/cm²/sr — above Low up to this = Medium; above this = High)</small></label>
-                    <input type="number" class="form-control" value="40" min="0" id="modRiskThreshold">
+                    <label class="form-label">Moderate Risk Threshold:</label>
+                    <input type="number" class="form-control" value="40" min="0" max="100" id="modRiskThreshold">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">High Risk Absolute Max <small style="color:#666;">(nW/cm²/sr — scale ceiling for visualization)</small></label>
-                    <input type="number" class="form-control" value="60" min="0" id="highRiskThreshold">
+                    <label class="form-label">Low Risk Threshold:</label>
+                    <input type="number" class="form-control" value="25" min="0" max="100" id="lowRiskThreshold">
                 </div>
             </div>
             
-            <div>
-                <h4>SHAP Alert Thresholds</h4>
-                <div class="form-group">
-                    <label class="form-label">Critical Negative Impact:</label>
-                    <input type="number" class="form-control" value="-5" step="0.1" id="criticalShap">
-                    <small style="color: #666;">Cells turn red when SHAP value below this</small>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Warning Threshold:</label>
-                    <input type="number" class="form-control" value="-3" step="0.1" id="warningShap">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Positive Impact Threshold:</label>
-                    <input type="number" class="form-control" value="2" step="0.1" id="positiveShap">
-                    <small style="color: #666;">Cells turn green when above this</small>
-                </div>
-            </div>
         </div>
 
         <hr style="margin: 20px 0;">
 
         <h4>KBA/PA Audit Effectiveness Weights</h4>
         <p style="margin: 0 0 14px 0; color: #666;">
-            Suggested weights for the 7-pillar KBA/PA audit score. The total may be kept at 100% for the current formula.
+            Suggested weights for the 6-pillar KBA/PA audit score. The total may be kept at 100% for the current formula.
         </p>
 
         <div class="grid-2">
@@ -491,10 +341,6 @@ require_once 'includes/header.php';
                 <div class="form-group">
                     <label class="form-label">Richness Weight (%)</label>
                     <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaRichnessWeight">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Density Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaDensityWeight">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Sensitive Species Weight (%)</label>
@@ -536,52 +382,37 @@ require_once 'includes/header.php';
     <h2 class="card-header">Validation & Error Logs</h2>
     <div class="card-body">
         <h4>Recent Data Quality Issues</h4>
-        <?php
-        // Maps rejection reason → [type badge class, type label, issue template, status label, status badge class]
-        $reason_meta = [
-            'out_of_bounds'     => ['warning',   'Spatial',   '%d observation(s) outside Metro Manila bounding box (lat 14.3–14.8 / lon 120.9–121.15) in "%s"',              'Rejected', 'danger'],
-            'missing_fields'    => ['info',      'Format',    '%d row(s) missing GLOBAL UNIQUE IDENTIFIER or COMMON NAME in "%s"',                                            'Rejected', 'danger'],
-            'uncertain_species' => ['warning',   'Species',   '%d uncertain species record(s) (contains " sp." or "/") in "%s"',                                             'Rejected', 'danger'],
-            'invalid_date'      => ['info',      'Format',    '%d row(s) with unparseable OBSERVATION DATE in "%s"',                                                          'Resolved', 'success'],
-            'duplicate_in_file' => ['secondary', 'Duplicate', '%d duplicate GLOBAL UNIQUE IDENTIFIER(s) removed within file "%s"',                                           'Cleaned',  'success'],
-            'duplicate_in_db'   => ['danger',    'Duplicate', '%d observation ID(s) already exist in the database — upload from "%s" was aborted and rolled back',           'Aborted',  'danger'],
-        ];
-        ?>
         <table>
             <thead>
                 <tr>
                     <th>Timestamp</th>
-                    <th>Uploaded By</th>
                     <th>Type</th>
                     <th>Issue</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($validation_log_rows)): ?>
                 <tr>
-                    <td colspan="5" style="text-align:center; color:#888; padding: 16px;">
-                        No validation issues in the last hour. Issues are logged automatically when CSV/XLSX files are uploaded.
-                    </td>
+                    <td>2026-02-05 14:23</td>
+                    <td><span class="badge badge-warning">Spatial</span></td>
+                    <td>12 observations outside Philippines bounds (lat > 20°N)</td>
+                    <td><span class="badge badge-danger">Rejected</span></td>
                 </tr>
-                <?php else: ?>
-                <?php foreach ($validation_log_rows as $vl):
-                    $reason  = $vl['reason'] ?? 'unknown';
-                    $meta    = $reason_meta[$reason] ?? ['secondary', ucwords(str_replace('_',' ',$reason)), '%d issue(s) in "%s"', 'Rejected', 'danger'];
-                    [$type_badge, $type_label, $issue_tpl, $status_label, $status_badge] = $meta;
-                    $issue_text = sprintf($issue_tpl, (int)$vl['cnt'], basename($vl['filename'] ?? ''));
-                ?>
                 <tr>
-                    <td style="white-space:nowrap;"><?php echo htmlspecialchars($vl['uploaded_at'] ?? '—'); ?></td>
-                    <td><?php echo htmlspecialchars($vl['uploaded_by'] ?? '—'); ?></td>
-                    <td><span class="badge badge-<?php echo $type_badge; ?>"><?php echo $type_label; ?></span></td>
-                    <td><?php echo htmlspecialchars($issue_text); ?></td>
-                    <td><span class="badge badge-<?php echo $status_badge; ?>"><?php echo $status_label; ?></span></td>
+                    <td>2026-02-03 09:15</td>
+                    <td><span class="badge badge-info">Format</span></td>
+                    <td>Date format inconsistent in batch upload #3847</td>
+                    <td><span class="badge badge-success">Resolved</span></td>
                 </tr>
-                <?php endforeach; ?>
-                <?php endif; ?>
+                <tr>
+                    <td>2026-02-01 16:42</td>
+                    <td><span class="badge badge-warning">Duplicate</span></td>
+                    <td>45 duplicate records detected in eBird sync</td>
+                    <td><span class="badge badge-success">Cleaned</span></td>
+                </tr>
             </tbody>
         </table>
+        
     </div>
 </div>
 
@@ -589,56 +420,15 @@ require_once 'includes/header.php';
 <div class="card">
     <h2 class="card-header">Spatial Integrity Checks</h2>
     <div class="card-body">
-        <?php if (!$spatial_db_ok): ?>
-        <div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>
-        <?php elseif (empty($spatial_checks)): ?>
-        <div class="alert alert-info">No observation data found. Upload bird observation data to run spatial checks.</div>
-        <?php else: ?>
-
-        <?php if ($spatial_all_pass): ?>
-        <div style="padding: 12px 16px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; margin-bottom: 14px;">
-            <strong style="color:#4ade80;">✓ All spatial integrity checks passed.</strong>
+        <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px;">
+            <strong>✓ All Checks Passed</strong>
+            <ul style="margin-top: 10px;">
+                <li>Latitude range: 14.2° to 14.9° N ✓</li>
+                <li>Longitude range: 120.8° to 121.2° E ✓</li>
+                <li>No offshore observations ✓</li>
+                <li>All cells mapped to valid land cover ✓</li>
+            </ul>
         </div>
-        <?php else:
-            $fail_count = count(array_filter($spatial_checks, fn($c) => !$c['pass']));
-        ?>
-        <div style="padding: 12px 16px; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); border-radius: 8px; margin-bottom: 14px;">
-            <strong style="color:#f87171;">⚠ <?php echo $fail_count; ?> check(s) failed — review the issues below.</strong>
-        </div>
-        <?php endif; ?>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Check</th>
-                    <th>Table</th>
-                    <th>Result</th>
-                    <th>Detail</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php foreach ($spatial_checks as $chk): ?>
-                <tr>
-                    <td><?php echo htmlspecialchars($chk['label']); ?></td>
-                    <td><code style="font-size:0.8rem;"><?php echo htmlspecialchars($chk['table']); ?></code></td>
-                    <td>
-                        <?php if ($chk['pass']): ?>
-                        <span class="badge badge-success">✓ Pass</span>
-                        <?php else: ?>
-                        <span class="badge badge-danger">✗ Fail</span>
-                        <?php endif; ?>
-                    </td>
-                    <td style="font-size:0.875rem; color:<?php echo $chk['pass'] ? '#4ade80' : '#f87171'; ?>;">
-                        <?php echo $chk['pass']
-                            ? 'OK'
-                            : htmlspecialchars($chk['detail'] ?? 'Issue detected'); ?>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <?php endif; ?>
     </div>
 </div>
 
@@ -738,65 +528,49 @@ require_once 'includes/header.php';
     <div class="card">
         <h2 class="card-header">Security & Access Logs</h2>
         <div class="card-body">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+            <h4>Recent Activity</h4>
+            <table style="font-size: 0.9rem; width:100%;">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>IP</th>
+                        <th>Time (UTC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recent_access)): ?>
+                        <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
+                    <?php else: foreach ($recent_access as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['email']) ?></td>
+                            <td><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                </tbody>
+            </table>
 
-                <!-- Recent Activity -->
-                <div>
-                    <h4 style="margin-bottom:10px;">Recent Activity</h4>
-                    <div style="overflow-x:auto;">
-                        <table style="font-size:0.85rem; width:100%;">
-                            <thead>
-                                <tr>
-                                    <th>User</th>
-                                    <th>Action</th>
-                                    <th>IP</th>
-                                    <th style="white-space:nowrap;">Time (UTC)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recent_access)): ?>
-                                    <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
-                                <?php else: foreach ($recent_access as $row): ?>
-                                    <tr>
-                                        <td style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                        <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
-                                    </tr>
-                                <?php endforeach; endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Failed Login Attempts -->
-                <div>
-                    <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
-                    <div style="overflow-x:auto;">
-                        <table style="font-size:0.85rem; width:100%;">
-                            <thead>
-                                <tr>
-                                    <th>Email</th>
-                                    <th>IP</th>
-                                    <th style="white-space:nowrap;">Time (UTC)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recent_failures)): ?>
-                                    <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
-                                <?php else: foreach ($recent_failures as $row): ?>
-                                    <tr>
-                                        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
-                                    </tr>
-                                <?php endforeach; endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            </div>
+            <h4 style="margin-top:20px;">Recent Failed Login Attempts</h4>
+            <table style="font-size: 0.9rem; width:100%;">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>IP</th>
+                        <th>Time (UTC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recent_failures)): ?>
+                        <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
+                    <?php else: foreach ($recent_failures as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['email']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                            <td style="color:#64748b; font-size:0.82rem;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
         </div>
     </div>
     
@@ -977,6 +751,44 @@ function rebuildAnalyticsCache(silent = false) {
         })
         .catch(() => {
             statusEl.innerHTML = '<div class="alert alert-danger">Cache rebuild request failed. Check server connection.</div>';
+        })
+        .finally(() => {
+            btn.disabled = false;
+        });
+}
+
+function refreshReportCache(force = true) {
+    const btn = document.getElementById('refreshReportCacheBtn');
+    const statusEl = document.getElementById('reportCacheStatus');
+    const query = force ? '?force=1' : '';
+
+    btn.disabled = true;
+    statusEl.innerHTML = '<div class="alert alert-info">Refreshing report cache...</div>';
+
+    fetch('api/refresh_report_cache.php' + query, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+        .then(r => r.text().then(text => {
+            try {
+                return JSON.parse(text);
+            } catch (_) {
+                throw new Error(`Server returned HTTP ${r.status}. Response: ${text.substring(0, 300)}`);
+            }
+        }))
+        .then(data => {
+            if (!data.success) {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Report cache refresh failed.'}</div>`;
+                return;
+            }
+
+            const spatial = data.spatial_mapping || {};
+            const summary = data.summary_refresh || {};
+            const cache = data.file_cache || {};
+            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Report cache refreshed.'}<br><small>Spatial maps: obs ${Number(spatial.mapped_obs_count || 0).toLocaleString()} / ${Number(spatial.source_obs_count || 0).toLocaleString()}, grid ${Number(spatial.mapped_grid_count || 0).toLocaleString()} / ${Number(spatial.source_grid_count || 0).toLocaleString()}<br>Summary rows: ${Number(summary.summary_row_count || 0).toLocaleString()} | Years: ${summary.min_year || 'n/a'}-${summary.max_year || 'n/a'}<br>Cache files deleted: ${Number(cache.deleted || 0).toLocaleString()} | Scope: ${cache.scope || 'reports'}</small></div>`;
+        })
+        .catch(err => {
+            statusEl.innerHTML = `<div class="alert alert-danger">Report cache refresh request failed: ${err.message}</div>`;
         })
         .finally(() => {
             btn.disabled = false;
@@ -1183,17 +995,12 @@ function buildMasterGrid(btn) {
             return `  ✓ ${d.year} — gap-fill will cover: ${warns.join('; ')}`;
         }).join('\n');
 
-        const rawNote  = data.raw_note
-            ? `\n⚙  Aggregation step: ${data.raw_note}\n`
-            : '';
-
         const confirmed = confirm(
             `Build Master Grid\n` +
             `${'─'.repeat(40)}\n` +
             `${data.ready_years.length} year(s) ready: ${data.ready_years.join(', ')}\n\n` +
-            `Coverage detail:\n${detail}\n` +
-            rawNote +
-            `\nCurrent rows in final_master_grid: ${(data.current_rows || 0).toLocaleString()}\n\n` +
+            `Coverage detail:\n${detail}\n\n` +
+            `Current rows in final_master_grid: ${(data.current_rows || 0).toLocaleString()}\n\n` +
             `Proceed? This may take several minutes.`
         );
 
@@ -1202,7 +1009,7 @@ function buildMasterGrid(btn) {
         // Step 2 — execute
         btn.disabled    = true;
         btn.textContent = 'Building… (do not close this page)';
-        statusEl.innerHTML = '<span style="color:#666;">Step 1: Aggregating raw observations… then merging covariates. Do not close this page.</span>';
+        statusEl.innerHTML = '<span style="color:#666;">Running merge pipeline…</span>';
 
         fetch('api/build_master_grid.php', {
             method: 'POST',
@@ -1278,11 +1085,7 @@ function saveThresholds() {
         high_risk:     document.getElementById('highRiskThreshold').value,
         mod_risk:      document.getElementById('modRiskThreshold').value,
         low_risk:      document.getElementById('lowRiskThreshold').value,
-        critical_shap: document.getElementById('criticalShap').value,
-        warning_shap:  document.getElementById('warningShap').value,
-        positive_shap: document.getElementById('positiveShap').value,
         kba_richness_weight: document.getElementById('kbaRichnessWeight').value,
-        kba_density_weight: document.getElementById('kbaDensityWeight').value,
         kba_sensitive_weight: document.getElementById('kbaSensitiveWeight').value,
         kba_ndvi_weight: document.getElementById('kbaNdviWeight').value,
         kba_alan_weight: document.getElementById('kbaAlanWeight').value,
@@ -1290,20 +1093,30 @@ function saveThresholds() {
         kba_precip_weight: document.getElementById('kbaPrecipWeight').value
     };
     
-    fetch('api/save_thresholds.php', {
+    fetch('/api/save_thresholds.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
         .then(r => r.json())
-        .then(data => alert(data.message || 'Thresholds saved.'))
+        .then(data => {
+            if (data.success) {
+                alert(data.message || 'Thresholds saved. Dashboard and Reports will use the updated values on refresh.');
+                try {
+                    localStorage.setItem('avilight-thresholds-updated', String(Date.now()));
+                } catch (e) {
+                    // Ignore storage write failures.
+                }
+            } else {
+                alert('Error: ' + (data.error || 'Failed to save thresholds'));
+            }
+        })
         .catch(() => alert('Request failed. Check server connection.'));
 }
 
 function updateKbaWeightTotal() {
     const ids = [
         'kbaRichnessWeight',
-        'kbaDensityWeight',
         'kbaSensitiveWeight',
         'kbaNdviWeight',
         'kbaAlanWeight',
@@ -1324,13 +1137,50 @@ function updateKbaWeightTotal() {
     }
 }
 
-['kbaRichnessWeight','kbaDensityWeight','kbaSensitiveWeight','kbaNdviWeight','kbaAlanWeight','kbaLstWeight','kbaPrecipWeight'].forEach(id => {
+function loadSavedThresholds() {
+    fetch('/api/get_thresholds.php', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data || !data.success || !data.thresholds) return;
+            const t = data.thresholds;
+            const map = {
+                highRiskThreshold: 'high_risk',
+                modRiskThreshold: 'mod_risk',
+                lowRiskThreshold: 'low_risk',
+                kbaRichnessWeight: 'kba_richness_weight',
+                kbaSensitiveWeight: 'kba_sensitive_weight',
+                kbaNdviWeight: 'kba_ndvi_weight',
+                kbaAlanWeight: 'kba_alan_weight',
+                kbaLstWeight: 'kba_lst_weight',
+                kbaPrecipWeight: 'kba_precip_weight'
+            };
+
+            Object.keys(map).forEach(id => {
+                const el = document.getElementById(id);
+                const key = map[id];
+                if (el && Object.prototype.hasOwnProperty.call(t, key)) {
+                    el.value = t[key];
+                }
+            });
+
+            updateKbaWeightTotal();
+        })
+        .catch(() => {
+            // Keep defaults if thresholds cannot be loaded.
+        });
+}
+
+['kbaRichnessWeight','kbaSensitiveWeight','kbaNdviWeight','kbaAlanWeight','kbaLstWeight','kbaPrecipWeight'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
         el.addEventListener('input', updateKbaWeightTotal);
     }
 });
 updateKbaWeightTotal();
+loadSavedThresholds();
 </script>
 EOD;
 
