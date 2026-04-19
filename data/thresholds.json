@@ -1,4 +1,15 @@
 {
-    "high_risk": 40,
-    "mod_risk": 30
+    "high_risk": 60,
+    "mod_risk": 30,
+    "low_risk": 10,
+    "critical_shap": -5,
+    "warning_shap": -3,
+    "positive_shap": 2,
+    "kba_richness_weight": 15,
+    "kba_density_weight": 15,
+    "kba_sensitive_weight": 15,
+    "kba_ndvi_weight": 15,
+    "kba_alan_weight": 15,
+    "kba_lst_weight": 15,
+    "kba_precip_weight": 10
 }

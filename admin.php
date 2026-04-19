@@ -447,16 +447,16 @@ require_once 'includes/header.php';
             <div>
                 <h4>Danger Zone Color Scales</h4>
                 <div class="form-group">
-                    <label class="form-label">High Risk Threshold (Light Intensity):</label>
-                    <input type="number" class="form-control" value="60" min="0" max="100" id="highRiskThreshold">
+                    <label class="form-label">Low Risk Ceiling <small style="color:#666;">(nW/cm²/sr — ≤ this value = Low)</small></label>
+                    <input type="number" class="form-control" value="25" min="0" id="lowRiskThreshold">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Moderate Risk Threshold:</label>
-                    <input type="number" class="form-control" value="40" min="0" max="100" id="modRiskThreshold">
+                    <label class="form-label">Moderate Risk Ceiling <small style="color:#666;">(nW/cm²/sr — above Low up to this = Medium; above this = High)</small></label>
+                    <input type="number" class="form-control" value="40" min="0" id="modRiskThreshold">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Low Risk Threshold:</label>
-                    <input type="number" class="form-control" value="25" min="0" max="100" id="lowRiskThreshold">
+                    <label class="form-label">High Risk Absolute Max <small style="color:#666;">(nW/cm²/sr — scale ceiling for visualization)</small></label>
+                    <input type="number" class="form-control" value="60" min="0" id="highRiskThreshold">
                 </div>
             </div>
             
@@ -1274,7 +1274,7 @@ function saveThresholds() {
         kba_precip_weight: document.getElementById('kbaPrecipWeight').value
     };
     
-    fetch('/api/save_thresholds.php', {
+    fetch('api/save_thresholds.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

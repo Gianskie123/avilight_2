@@ -4,8 +4,14 @@ require_once 'includes/header.php';
 
 // Load data
 require_once 'includes/db.php';
-$pdo           = get_db();
-$total_species = (int) $pdo->query('SELECT COUNT(*) FROM species')->fetchColumn();
+
+// Load risk thresholds from settings (with defaults)
+$_thresholds_file = __DIR__ . '/data/thresholds.json';
+$_thresholds      = is_readable($_thresholds_file) ? (json_decode(file_get_contents($_thresholds_file), true) ?? []) : [];
+$threshold_low    = (float) ($_thresholds['low_risk']  ?? 25);
+$threshold_mod    = (float) ($_thresholds['mod_risk']  ?? 40);
+
+$total_species = 0;
 
 // KBA / PA site definitions – geographic/policy facts; enriched below with live DB values
 $kba_data = [
@@ -22,6 +28,9 @@ try {
     $mysql  = get_mysql_db();
     $radius = 0.15; // bounding box half-width in degrees (≈ ±0.15° at ~14°N)
 
+    // Total species from MySQL species_masterlist (PK index — O(1))
+    $total_species = (int) $mysql->query('SELECT COUNT(*) FROM species_masterlist')->fetchColumn();
+
     // Latest year with VIIRS radiance data (null when the table is empty)
     $viirs_max_year = null;
     try {
@@ -30,6 +39,17 @@ try {
             $viirs_max_year = (int) $yr;
         }
     } catch (Throwable $e) { /* viirs table may not exist yet */ }
+
+    // Latest observation year
+    $obs_max_year = null;
+    try {
+        $yr = $mysql->query('SELECT MAX(year) FROM raw_bird_observation')->fetchColumn();
+        if ($yr !== false && $yr !== null) {
+            $obs_max_year = (int) $yr;
+        }
+    } catch (Throwable $e) { /* table may not exist yet */ }
+
+    $data_end_year = max(2025, $viirs_max_year ?? 2025, $obs_max_year ?? 2025);
 
     // Build a UNION ALL of site bounding boxes so both counts can be fetched in
     // a single query each, avoiding a per-site (N+1) round-trip pattern.
@@ -92,6 +112,7 @@ try {
 } catch (Throwable $e) {
     // MySQL unavailable – fall back to the sample data values for display
     $db_failed = true;
+    $data_end_year = 2025;
     $fallback = json_decode(file_get_contents('data/sample_kba.json'), true) ?? [];
     $fb_map   = [];
     foreach ($fallback as $fb) {
@@ -105,24 +126,32 @@ try {
     unset($site);
 }
 
-// --- Current Light Risk Level (Metro Manila average VIIRS radiance) ---
-$metro_manila_light = 0;
-$metro_count = 0;
-foreach ($kba_data as $area) {
-    if ($area['light_exposure'] !== null) {
-        $metro_manila_light += $area['light_exposure'];
-        $metro_count++;
-    }
+// --- Current Light Risk Level (Metro Manila average VIIRS radiance from all grid cells) ---
+// Metro Manila avg VIIRS from final_master_grid using idx_fmg_year_month index
+$avg_radiance = 0;
+if (!$db_failed && $viirs_max_year !== null) {
+    try {
+        $fmg_month_stmt = $mysql->prepare(
+            'SELECT MAX(month) FROM final_master_grid WHERE year = ? AND viirs_avg_rad IS NOT NULL'
+        );
+        $fmg_month_stmt->execute([$viirs_max_year]);
+        $viirs_max_month = (int) ($fmg_month_stmt->fetchColumn() ?: 1);
+
+        $avg_stmt = $mysql->prepare(
+            'SELECT AVG(viirs_avg_rad) FROM final_master_grid WHERE year = ? AND month = ? AND viirs_avg_rad IS NOT NULL'
+        );
+        $avg_stmt->execute([$viirs_max_year, $viirs_max_month]);
+        $avg_radiance = round((float) ($avg_stmt->fetchColumn() ?: 0), 1);
+    } catch (Throwable $e) { /* fall back to 0 */ }
 }
-$avg_radiance = $metro_count > 0 ? round($metro_manila_light / $metro_count, 1) : 0;
-$risk_label   = 'Low';
-$risk_class   = 'success';
-$risk_icon    = '🟢';
-if ($avg_radiance > 40) {
+$risk_label = 'Low';
+$risk_class = 'success';
+$risk_icon  = '🟢';
+if ($avg_radiance > $threshold_mod) {
     $risk_label = 'High';
     $risk_class = 'danger';
     $risk_icon  = '🔴';
-} elseif ($avg_radiance > 30) {
+} elseif ($avg_radiance > $threshold_low) {
     $risk_label = 'Medium';
     $risk_class = 'warning';
     $risk_icon  = '🟡';
@@ -136,12 +165,12 @@ $announcements = fetch_bmb_announcements(5);
 <div class="home-demo-entry">
 <div class="page-header home-enter home-enter-1">
     <h1 class="page-title">Home — Executive Summary</h1>
-    <p class="page-subtitle">Overview of AVILIGHT monitoring status for Metro Manila. Latest data came from datasets last updated in 2024.</p>
+    <p class="page-subtitle">Overview of AVILIGHT monitoring status for Metro Manila. Latest data came from datasets last updated in <?php echo $data_end_year; ?>.</p>
 </div>
 
 <div class="alert alert-info home-enter home-enter-2" role="status">
-    📅 <strong>Dataset Period: 2014 – 2024</strong> | <strong>Monitoring Status: 2014 – 2024</strong> —
-    All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in 2024.
+    📅 <strong>Dataset Period: 2014 – <?php echo $data_end_year; ?></strong> | <strong>Monitoring Status: 2014 – <?php echo $data_end_year; ?></strong> —
+    All metrics, readings, and site analyses displayed are derived from historical datasets that was last updated in <?php echo $data_end_year; ?>.
 </div>
 
 <?php if ($db_failed): ?>
@@ -164,7 +193,9 @@ $announcements = fetch_bmb_announcements(5);
         <div class="stat-label">Current Light Risk Level</div>
         <div class="stat-value"><?php echo $risk_icon . ' ' . $risk_label; ?></div>
         <div class="stat-description">
-            Metro Manila avg. VIIRS radiance: <strong><?php echo $avg_radiance; ?> nW/cm²/sr</strong>
+            Metro Manila avg. VIIRS: <strong><?php echo $avg_radiance; ?> nW/cm²/sr</strong>
+            (<?php echo $viirs_max_year ?? $data_end_year; ?>)
+            · Thresholds: Low ≤<?php echo (int)$threshold_low; ?>, Med ≤<?php echo (int)$threshold_mod; ?>, High &gt;<?php echo (int)$threshold_mod; ?> nW
         </div>
     </div>
 
@@ -188,7 +219,7 @@ $announcements = fetch_bmb_announcements(5);
 
     <!-- KBA / PA Monitoring Status -->
     <div class="card home-enter home-enter-9">
-        <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2014 – 2024)</span></div>
+        <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2014 – <?php echo $data_end_year; ?>)</span></div>
         <div class="card-body">
             <table class="home-kba-table">
                 <thead>
