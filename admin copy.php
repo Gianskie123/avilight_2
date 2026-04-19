@@ -565,7 +565,7 @@ require_once 'includes/header.php';
 <!-- Spatial Integrity Checks -->
 <div class="card">
     <h2 class="card-header">Spatial Integrity Checks</h2>
-    <div class="card-body">
+    <div class="card-body" id="spatialChecksBody">
         <?php if (!$spatial_db_ok): ?>
         <div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>
         <?php elseif (empty($spatial_checks)): ?>
@@ -702,98 +702,67 @@ require_once 'includes/header.php';
 </div>
 
 <!-- Security & Activity Logs -->
-<div class="grid-2">
-    <div class="card">
-        <h2 class="card-header">Security & Access Logs</h2>
-        <div class="card-body">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+<div class="card">
+    <h2 class="card-header">Security & Access Logs</h2>
+    <div class="card-body">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
 
-                <!-- Recent Activity -->
-                <div>
-                    <h4 style="margin-bottom:10px;">Recent Activity</h4>
-                    <div style="overflow-x:auto;">
-                        <table style="font-size:0.85rem; width:100%;">
-                            <thead>
+            <!-- Recent Activity -->
+            <div>
+                <h4 style="margin-bottom:10px;">Recent Activity</h4>
+                <div style="overflow-x:auto;">
+                    <table style="font-size:0.85rem; width:100%;">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>IP</th>
+                                <th style="white-space:nowrap;">Time (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($recent_access)): ?>
+                                <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
+                            <?php else: foreach ($recent_access as $row): ?>
                                 <tr>
-                                    <th>User</th>
-                                    <th>Action</th>
-                                    <th>IP</th>
-                                    <th style="white-space:nowrap;">Time (UTC)</th>
+                                    <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
+                                    <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recent_access)): ?>
-                                    <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
-                                <?php else: foreach ($recent_access as $row): ?>
-                                    <tr>
-                                        <td style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                        <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
-                                    </tr>
-                                <?php endforeach; endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Failed Login Attempts -->
-                <div>
-                    <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
-                    <div style="overflow-x:auto;">
-                        <table style="font-size:0.85rem; width:100%;">
-                            <thead>
-                                <tr>
-                                    <th>Email</th>
-                                    <th>IP</th>
-                                    <th style="white-space:nowrap;">Time (UTC)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recent_failures)): ?>
-                                    <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
-                                <?php else: foreach ($recent_failures as $row): ?>
-                                    <tr>
-                                        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
-                                    </tr>
-                                <?php endforeach; endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-    
-    <div class="card">
-        <h2 class="card-header">System Health</h2>
-        <div class="card-body">
-            <h4>Monitoring Status</h4>
-            <div style="margin-top: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>API Response Time:</span>
-                    <span class="badge badge-success">125ms</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Database Status:</span>
-                    <span class="badge badge-success">Healthy</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Model Serving:</span>
-                    <span class="badge badge-success">Online</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Satellite Data Sync:</span>
-                    <span class="badge badge-success">Active</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Disk Usage:</span>
-                    <span class="badge badge-warning">68%</span>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
+
+            <!-- Failed Login Attempts -->
+            <div>
+                <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
+                <div style="overflow-x:auto;">
+                    <table style="font-size:0.85rem; width:100%;">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>IP</th>
+                                <th style="white-space:nowrap;">Time (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($recent_failures)): ?>
+                                <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
+                            <?php else: foreach ($recent_failures as $row): ?>
+                                <tr>
+                                    <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
+                                </tr>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -834,6 +803,38 @@ function loadValidationLog() {
                     <td><span class="badge badge-${statusBadge}">${statusLabel}</span></td>
                 </tr>`;
             }).join('');
+        })
+        .catch(() => {});
+}
+
+// ── Spatial checks loader ────────────────────────────────────────────────────
+
+function loadSpatialChecks() {
+    fetch('api/get_spatial_checks.php')
+        .then(r => r.json())
+        .then(data => {
+            const body = document.getElementById('spatialChecksBody');
+            if (!body) return;
+            if (!data.success) {
+                body.innerHTML = `<div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>`;
+                return;
+            }
+            if (!data.checks.length) {
+                body.innerHTML = `<div class="alert alert-info">No observation data found. Upload bird observation data to run spatial checks.</div>`;
+                return;
+            }
+            const allPass = data.checks.every(c => c.pass);
+            const failCount = data.checks.filter(c => !c.pass).length;
+            const banner = allPass
+                ? `<div style="padding:12px 16px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;margin-bottom:14px;"><strong style="color:#4ade80;">✓ All spatial integrity checks passed.</strong></div>`
+                : `<div style="padding:12px 16px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;margin-bottom:14px;"><strong style="color:#f87171;">⚠ ${failCount} check(s) failed — review the issues below.</strong></div>`;
+            const rows = data.checks.map(c => `<tr>
+                <td>${c.label}</td>
+                <td><code style="font-size:0.8rem;">${c.table}</code></td>
+                <td><span class="badge ${c.pass ? 'badge-success' : 'badge-danger'}">${c.pass ? '✓ Pass' : '✗ Fail'}</span></td>
+                <td style="font-size:0.875rem;color:${c.pass ? '#4ade80' : '#f87171'};">${c.pass ? 'OK' : (c.detail || 'Issue detected')}</td>
+            </tr>`).join('');
+            body.innerHTML = banner + `<table><thead><tr><th>Check</th><th>Table</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`;
         })
         .catch(() => {});
 }
@@ -941,9 +942,11 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
                 rebuildAnalyticsCache(true);
                 loadValidationLog();
+                loadSpatialChecks();
             } else {
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
                 loadValidationLog();
+                loadSpatialChecks();
             }
         })
         .catch(err => {

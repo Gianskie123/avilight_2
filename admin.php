@@ -37,11 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         try {
             $pdo = get_mysql_db();
             _ensure_users_table($pdo);
-            $pdo->prepare('INSERT INTO users (email, password_hash, role) VALUES (:email, :hash, :role)')
+            $pdo->prepare('INSERT INTO users (email, password_hash) VALUES (:email, :hash)')
                 ->execute([
                     ':email' => $nu_email,
                     ':hash'  => password_hash($nu_pass, PASSWORD_BCRYPT),
-                    ':role'  => 'admin',
                 ]);
             $add_user_success = 'User ' . htmlspecialchars($nu_email) . ' added successfully.';
         } catch (Exception $e) {
@@ -465,7 +464,7 @@ require_once 'includes/header.php';
 
         <h4>KBA/PA Audit Effectiveness Weights</h4>
         <p style="margin: 0 0 14px 0; color: #666;">
-            Suggested weights for the 7-pillar KBA/PA audit score. The total may be kept at 100% for the current formula.
+            Suggested weights for the 6-pillar KBA/PA audit score. The total may be kept at 100% for the current formula.
         </p>
 
         <div class="grid-2">
@@ -475,16 +474,12 @@ require_once 'includes/header.php';
                     <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaRichnessWeight">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Density Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaDensityWeight">
-                </div>
-                <div class="form-group">
                     <label class="form-label">Sensitive Species Weight (%)</label>
                     <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaSensitiveWeight">
                 </div>
                 <div class="form-group">
                     <label class="form-label">NDVI Weight (%)</label>
-                    <input type="number" class="form-control" value="15" min="0" max="100" step="0.1" id="kbaNdviWeight">
+                    <input type="number" class="form-control" value="20" min="0" max="100" step="0.1" id="kbaNdviWeight">
                 </div>
             </div>
 
@@ -539,7 +534,7 @@ require_once 'includes/header.php';
                     <th>Status</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="validationLogBody">
                 <?php if (empty($validation_log_rows)): ?>
                 <tr>
                     <td colspan="5" style="text-align:center; color:#888; padding: 16px;">
@@ -570,7 +565,7 @@ require_once 'includes/header.php';
 <!-- Spatial Integrity Checks -->
 <div class="card">
     <h2 class="card-header">Spatial Integrity Checks</h2>
-    <div class="card-body">
+    <div class="card-body" id="spatialChecksBody">
         <?php if (!$spatial_db_ok): ?>
         <div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>
         <?php elseif (empty($spatial_checks)): ?>
@@ -665,10 +660,6 @@ require_once 'includes/header.php';
                 <?php if ($add_user_success): ?>
                     <div class="alert alert-success" style="margin-bottom:10px;"><?= $add_user_success ?></div>
                 <?php endif; ?>
-                <?php if ($add_user_error): ?>
-                    <div class="alert alert-danger" style="margin-bottom:10px;"><?= htmlspecialchars($add_user_error) ?></div>
-                <?php endif; ?>
-                <?php $all_users = list_users(); ?>
                 <table style="font-size: 0.88rem; width:100%; margin-bottom:16px;">
                     <thead>
                         <tr>
@@ -676,29 +667,33 @@ require_once 'includes/header.php';
                             <th>Last Login</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <?php foreach ($all_users as $u): ?>
+                    <tbody id="userListBody">
+                        <?php foreach (list_users() as $u): ?>
                         <tr>
                             <td><?= htmlspecialchars($u['email']) ?></td>
-                            <td style="color:#666; font-size:0.82rem;"><?= !empty($u['last_login_at']) ? htmlspecialchars(substr($u['last_login_at'], 0, 16)) . ' UTC' : 'Never' ?></td>
+                            <td style="color:#666; font-size:0.82rem;"><?= !empty($u['last_login']) ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
 
-                <details>
+                <details id="addUserDetails">
                     <summary style="cursor:pointer; font-size:0.9rem; color:var(--accent-blue,#3b82f6); margin-bottom:10px;">+ Add new user</summary>
-                    <form method="POST" style="margin-top:10px;">
-                        <input type="hidden" name="action" value="add_user">
+                    <div id="addUserStatus" style="margin-bottom:8px;"></div>
+                    <form id="addUserForm" style="margin-top:10px;">
+                        <div class="form-group">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" id="newUserFullName" class="form-control" required>
+                        </div>
                         <div class="form-group">
                             <label class="form-label">Email</label>
-                            <input type="email" name="new_user_email" class="form-control" required>
+                            <input type="email" id="newUserEmail" class="form-control" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Password <small style="color:#666;">(min. 8 characters)</small></label>
-                            <input type="password" name="new_user_password" class="form-control" minlength="8" required>
+                            <input type="password" id="newUserPassword" class="form-control" minlength="8" required>
                         </div>
-                        <button type="submit" class="btn btn-primary">Add User</button>
+                        <button type="submit" class="btn btn-primary" id="addUserBtn">Add User</button>
                     </form>
                 </details>
             </div>
@@ -707,98 +702,67 @@ require_once 'includes/header.php';
 </div>
 
 <!-- Security & Activity Logs -->
-<div class="grid-2">
-    <div class="card">
-        <h2 class="card-header">Security & Access Logs</h2>
-        <div class="card-body">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+<div class="card">
+    <h2 class="card-header">Security & Access Logs</h2>
+    <div class="card-body">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
 
-                <!-- Recent Activity -->
-                <div>
-                    <h4 style="margin-bottom:10px;">Recent Activity</h4>
-                    <div style="overflow-x:auto;">
-                        <table style="font-size:0.85rem; width:100%;">
-                            <thead>
+            <!-- Recent Activity -->
+            <div>
+                <h4 style="margin-bottom:10px;">Recent Activity</h4>
+                <div style="overflow-x:auto;">
+                    <table style="font-size:0.85rem; width:100%;">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>IP</th>
+                                <th style="white-space:nowrap;">Time (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($recent_access)): ?>
+                                <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
+                            <?php else: foreach ($recent_access as $row): ?>
                                 <tr>
-                                    <th>User</th>
-                                    <th>Action</th>
-                                    <th>IP</th>
-                                    <th style="white-space:nowrap;">Time (UTC)</th>
+                                    <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
+                                    <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recent_access)): ?>
-                                    <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
-                                <?php else: foreach ($recent_access as $row): ?>
-                                    <tr>
-                                        <td style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                        <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
-                                    </tr>
-                                <?php endforeach; endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Failed Login Attempts -->
-                <div>
-                    <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
-                    <div style="overflow-x:auto;">
-                        <table style="font-size:0.85rem; width:100%;">
-                            <thead>
-                                <tr>
-                                    <th>Email</th>
-                                    <th>IP</th>
-                                    <th style="white-space:nowrap;">Time (UTC)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recent_failures)): ?>
-                                    <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
-                                <?php else: foreach ($recent_failures as $row): ?>
-                                    <tr>
-                                        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                        <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
-                                    </tr>
-                                <?php endforeach; endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-    
-    <div class="card">
-        <h2 class="card-header">System Health</h2>
-        <div class="card-body">
-            <h4>Monitoring Status</h4>
-            <div style="margin-top: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>API Response Time:</span>
-                    <span class="badge badge-success">125ms</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Database Status:</span>
-                    <span class="badge badge-success">Healthy</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Model Serving:</span>
-                    <span class="badge badge-success">Online</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Satellite Data Sync:</span>
-                    <span class="badge badge-success">Active</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
-                    <span>Disk Usage:</span>
-                    <span class="badge badge-warning">68%</span>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
+
+            <!-- Failed Login Attempts -->
+            <div>
+                <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
+                <div style="overflow-x:auto;">
+                    <table style="font-size:0.85rem; width:100%;">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>IP</th>
+                                <th style="white-space:nowrap;">Time (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($recent_failures)): ?>
+                                <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
+                            <?php else: foreach ($recent_failures as $row): ?>
+                                <tr>
+                                    <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
+                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
+                                </tr>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -806,6 +770,75 @@ require_once 'includes/header.php';
 <?php
 $extra_scripts = <<<'EOD'
 <script>
+// ── Validation log loader ─────────────────────────────────────────────────────
+
+const REASON_META = {
+    out_of_bounds:     ['warning',   'Spatial',   (n, f) => `${n} observation(s) outside Metro Manila bounding box (lat 14.3–14.8 / lon 120.9–121.15) in "${f}"`,    'Rejected', 'danger'],
+    missing_fields:    ['info',      'Format',    (n, f) => `${n} row(s) missing GLOBAL UNIQUE IDENTIFIER or COMMON NAME in "${f}"`,                                  'Rejected', 'danger'],
+    uncertain_species: ['warning',   'Species',   (n, f) => `${n} uncertain species record(s) (contains " sp." or "/") in "${f}"`,                                   'Rejected', 'danger'],
+    invalid_date:      ['info',      'Format',    (n, f) => `${n} row(s) with unparseable OBSERVATION DATE in "${f}"`,                                                'Resolved', 'success'],
+    duplicate_in_file: ['secondary', 'Duplicate', (n, f) => `${n} duplicate GLOBAL UNIQUE IDENTIFIER(s) removed within file "${f}"`,                                 'Cleaned',  'success'],
+    duplicate_in_db:   ['danger',    'Duplicate', (n, f) => `${n} observation ID(s) already exist in the database — upload from "${f}" was aborted and rolled back`, 'Aborted',  'danger'],
+};
+
+function loadValidationLog() {
+    fetch('api/get_validation_log.php')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('validationLogBody');
+            if (!tbody) return;
+            if (!data.success || !data.rows.length) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">No validation issues in the last hour. Issues are logged automatically when CSV/XLSX files are uploaded.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.rows.map(row => {
+                const meta   = REASON_META[row.reason] || ['secondary', row.reason, (n, f) => `${n} issue(s) in "${f}"`, 'Rejected', 'danger'];
+                const [typeBadge, typeLabel, issueFn, statusLabel, statusBadge] = meta;
+                const issue  = issueFn(row.cnt, row.filename ? row.filename.split(/[\\/]/).pop() : '');
+                return `<tr>
+                    <td style="white-space:nowrap;">${row.uploaded_at || '—'}</td>
+                    <td>${row.uploaded_by || '—'}</td>
+                    <td><span class="badge badge-${typeBadge}">${typeLabel}</span></td>
+                    <td>${issue}</td>
+                    <td><span class="badge badge-${statusBadge}">${statusLabel}</span></td>
+                </tr>`;
+            }).join('');
+        })
+        .catch(() => {});
+}
+
+// ── Spatial checks loader ────────────────────────────────────────────────────
+
+function loadSpatialChecks() {
+    fetch('api/get_spatial_checks.php')
+        .then(r => r.json())
+        .then(data => {
+            const body = document.getElementById('spatialChecksBody');
+            if (!body) return;
+            if (!data.success) {
+                body.innerHTML = `<div class="alert alert-warning">Database unavailable — spatial checks could not be run.</div>`;
+                return;
+            }
+            if (!data.checks.length) {
+                body.innerHTML = `<div class="alert alert-info">No observation data found. Upload bird observation data to run spatial checks.</div>`;
+                return;
+            }
+            const allPass = data.checks.every(c => c.pass);
+            const failCount = data.checks.filter(c => !c.pass).length;
+            const banner = allPass
+                ? `<div style="padding:12px 16px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;margin-bottom:14px;"><strong style="color:#4ade80;">✓ All spatial integrity checks passed.</strong></div>`
+                : `<div style="padding:12px 16px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;margin-bottom:14px;"><strong style="color:#f87171;">⚠ ${failCount} check(s) failed — review the issues below.</strong></div>`;
+            const rows = data.checks.map(c => `<tr>
+                <td>${c.label}</td>
+                <td><code style="font-size:0.8rem;">${c.table}</code></td>
+                <td><span class="badge ${c.pass ? 'badge-success' : 'badge-danger'}">${c.pass ? '✓ Pass' : '✗ Fail'}</span></td>
+                <td style="font-size:0.875rem;color:${c.pass ? '#4ade80' : '#f87171'};">${c.pass ? 'OK' : (c.detail || 'Issue detected')}</td>
+            </tr>`).join('');
+            body.innerHTML = banner + `<table><thead><tr><th>Check</th><th>Table</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`;
+        })
+        .catch(() => {});
+}
+
 // ── Covariate status loader ───────────────────────────────────────────────────
 
 const STATUS_BADGE = {
@@ -908,8 +941,12 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
                 const added = Number(data.inserted || 0).toLocaleString();
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
                 rebuildAnalyticsCache(true);
+                loadValidationLog();
+                loadSpatialChecks();
             } else {
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
+                loadValidationLog();
+                loadSpatialChecks();
             }
         })
         .catch(err => {
@@ -1196,15 +1233,21 @@ function buildMasterGrid(btn) {
             });
 
             const logHtml = logLines.length
-                ? `<pre style="max-height:200px;overflow-y:auto;background:#f4f4f4;padding:8px;font-size:12px;border-radius:4px;margin-top:8px;">${logLines.join('\n')}</pre>`
+                ? `<pre style="max-height:200px;overflow-y:auto;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#e2e8f0);padding:8px;font-size:12px;border-radius:4px;margin-top:8px;border:1px solid var(--border-color,#334155);">${logLines.map(l => {
+                    const escaped = l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                    if (/error|fail|✗/i.test(l)) return `<span style="color:#f87171;">${escaped}</span>`;
+                    if (/success|complete|✓/i.test(l)) return `<span style="color:#4ade80;">${escaped}</span>`;
+                    if (/warning|warn/i.test(l)) return `<span style="color:#fbbf24;">${escaped}</span>`;
+                    return `<span style="color:var(--text-secondary,#94a3b8);">${escaped}</span>`;
+                }).join('\n')}</pre>`
                 : '';
 
             if (result.success) {
                 const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
-                statusEl.innerHTML = `<span style="color:green;">✓ ${lastMsg}</span>${logHtml}`;
+                statusEl.innerHTML = `<span style="color:#4ade80;">✓ ${lastMsg}</span>${logHtml}`;
             } else {
                 const errMsg = result.error || 'Did not complete successfully.';
-                statusEl.innerHTML = `<span style="color:red;">✗ ${errMsg}</span>${logHtml}`;
+                statusEl.innerHTML = `<span style="color:#f87171;">✗ ${errMsg}</span>${logHtml}`;
             }
         })
         .catch(err => {
@@ -1252,28 +1295,37 @@ function saveThresholds() {
         mod_risk:      document.getElementById('modRiskThreshold').value,
         low_risk:      document.getElementById('lowRiskThreshold').value,
         kba_richness_weight: document.getElementById('kbaRichnessWeight').value,
-        kba_density_weight: document.getElementById('kbaDensityWeight').value,
         kba_sensitive_weight: document.getElementById('kbaSensitiveWeight').value,
         kba_ndvi_weight: document.getElementById('kbaNdviWeight').value,
         kba_alan_weight: document.getElementById('kbaAlanWeight').value,
         kba_lst_weight: document.getElementById('kbaLstWeight').value,
         kba_precip_weight: document.getElementById('kbaPrecipWeight').value
     };
-    
+
     fetch('api/save_thresholds.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
         .then(r => r.json())
-        .then(data => alert(data.message || 'Thresholds saved.'))
+        .then(data => {
+            if (data.success) {
+                alert(data.message || 'Thresholds saved. Dashboard and Reports will use the updated values on refresh.');
+                try {
+                    localStorage.setItem('avilight-thresholds-updated', String(Date.now()));
+                } catch (e) {
+                    // Ignore storage write failures.
+                }
+            } else {
+                alert('Error: ' + (data.error || 'Failed to save thresholds'));
+            }
+        })
         .catch(() => alert('Request failed. Check server connection.'));
 }
 
 function updateKbaWeightTotal() {
     const ids = [
         'kbaRichnessWeight',
-        'kbaDensityWeight',
         'kbaSensitiveWeight',
         'kbaNdviWeight',
         'kbaAlanWeight',
@@ -1294,7 +1346,64 @@ function updateKbaWeightTotal() {
     }
 }
 
-['kbaRichnessWeight','kbaDensityWeight','kbaSensitiveWeight','kbaNdviWeight','kbaAlanWeight','kbaLstWeight','kbaPrecipWeight'].forEach(id => {
+// ── Add User ──────────────────────────────────────────────────────────────────
+
+function loadUserList() {
+    fetch('api/list_users.php')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('userListBody');
+            if (!tbody || !data.success) return;
+            tbody.innerHTML = data.users.map(u => {
+                const lastLogin = u.last_login_at
+                    ? u.last_login_at.substring(0, 16) + ' UTC'
+                    : 'Never';
+                return `<tr>
+                    <td>${u.full_name ? u.full_name + ' <span style="color:#888;font-size:0.85em;">(' + u.email + ')</span>' : u.email}</td>
+                    <td style="color:#666;font-size:0.82rem;">${lastLogin}</td>
+                </tr>`;
+            }).join('');
+        })
+        .catch(() => {});
+}
+
+
+document.getElementById('addUserForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const fullName = document.getElementById('newUserFullName').value.trim();
+    const email    = document.getElementById('newUserEmail').value.trim();
+    const password = document.getElementById('newUserPassword').value;
+    const statusEl = document.getElementById('addUserStatus');
+    const btn      = document.getElementById('addUserBtn');
+
+    btn.disabled = true;
+    statusEl.innerHTML = '';
+
+    const body = new FormData();
+    body.append('full_name', fullName);
+    body.append('email',     email);
+    body.append('password',  password);
+
+    fetch('api/add_user.php', { method: 'POST', body })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                statusEl.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+                document.getElementById('newUserFullName').value = '';
+                document.getElementById('newUserEmail').value    = '';
+                document.getElementById('newUserPassword').value = '';
+                loadUserList();
+            } else {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+            }
+        })
+        .catch(() => {
+            statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
+        })
+        .finally(() => { btn.disabled = false; });
+});
+
+['kbaRichnessWeight','kbaSensitiveWeight','kbaNdviWeight','kbaAlanWeight','kbaLstWeight','kbaPrecipWeight'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
         el.addEventListener('input', updateKbaWeightTotal);
