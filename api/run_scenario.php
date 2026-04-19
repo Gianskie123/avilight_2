@@ -112,12 +112,13 @@ function city_cell_ids(PDO $pdo, ?string $city): array {
     return array_values(array_unique($ids));
 }
 
-function yearly_means(PDO $pdo, string $table, string $column, array $cellIds, int $month): array {
+function yearly_means(PDO $pdo, string $table, string $column, array $cellIds, int $month, bool $ignoreZero = false): array {
     if (empty($cellIds)) {
         return [];
     }
     $placeholders = implode(',', array_fill(0, count($cellIds), '?'));
-    $sql = "SELECT year, AVG({$column}) AS v FROM {$table} WHERE cell_id IN ({$placeholders}) AND month = ? AND {$column} IS NOT NULL GROUP BY year ORDER BY year";
+    $zeroFilter = $ignoreZero ? " AND {$column} <> 0" : '';
+    $sql = "SELECT year, AVG({$column}) AS v FROM {$table} WHERE cell_id IN ({$placeholders}) AND month = ? AND {$column} IS NOT NULL{$zeroFilter} GROUP BY year ORDER BY year";
     $stmt = $pdo->prepare($sql);
     $params = $cellIds;
     $params[] = $month;
@@ -146,7 +147,7 @@ function average_yearly_change(array $series, array $years): float {
 }
 
 function baseline_with_trend(array $series, array $commonYears, int $latestCommonYear): array {
-    $baselineYear = $latestCommonYear - 1;
+    $baselineYear = $latestCommonYear;
     $trend = average_yearly_change($series, $commonYears);
 
     $baseRaw = null;
@@ -301,17 +302,63 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
         throw new Exception('No grid cells available for BAU baseline computation.');
     }
 
-    $has_lst_night = table_has_column($pdo, 'land_temp', 'lst_night');
+    // Match dashboard historical source: ecological_yearly_summary.
+    if ($city === '') {
+        $envStmt = $pdo->prepare('SELECT
+                year,
+                AVG(viirs_avg) AS viirs_avg,
+                AVG(ndvi_avg) AS ndvi_avg,
+                AVG(lst_avg) AS lst_avg,
+                AVG(precipitation_total) AS precipitation_total
+            FROM ecological_yearly_summary
+            WHERE year BETWEEN 2014 AND 2025
+            GROUP BY year
+            ORDER BY year ASC');
+        $envStmt->execute();
+    } else {
+        $envStmt = $pdo->prepare('SELECT
+                year,
+                viirs_avg,
+                ndvi_avg,
+                lst_avg,
+                precipitation_total
+            FROM ecological_yearly_summary
+            WHERE area = :area
+              AND year BETWEEN 2014 AND 2025
+            ORDER BY year ASC');
+        $envStmt->execute([':area' => $city]);
+    }
+
+    $envRows = $envStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $series = [
-        'ndvi' => yearly_means($pdo, 'ndvi', 'ndvi', $cell_ids, $month),
-        'viirs' => yearly_means($pdo, 'viirs', 'viirs_avg_rad', $cell_ids, $month),
-        'lst_day' => yearly_means($pdo, 'land_temp', 'lst_day', $cell_ids, $month),
-        'lst_night' => $has_lst_night
-            ? yearly_means($pdo, 'land_temp', 'lst_night', $cell_ids, $month)
-            : yearly_means($pdo, 'land_temp', 'lst_day', $cell_ids, $month),
-        'precip' => yearly_means($pdo, 'precip', 'precip_mm', $cell_ids, $month),
+        'ndvi' => [],
+        'viirs' => [],
+        'lst_day' => [],
+        'lst_night' => [],
+        'precip' => [],
     ];
+
+    foreach ($envRows as $row) {
+        $year = (int)($row['year'] ?? 0);
+        if ($year < 2014 || $year > 2025) {
+            continue;
+        }
+
+        $ndvi = isset($row['ndvi_avg']) ? (float)$row['ndvi_avg'] : null;
+        $viirs = isset($row['viirs_avg']) ? (float)$row['viirs_avg'] : null;
+        $lst = isset($row['lst_avg']) ? (float)$row['lst_avg'] : null;
+        $precip = isset($row['precipitation_total']) ? (float)$row['precipitation_total'] : null;
+        if ($ndvi === null || $viirs === null || $lst === null || $precip === null) {
+            continue;
+        }
+
+        $series['ndvi'][$year] = $ndvi;
+        $series['viirs'][$year] = $viirs;
+        $series['lst_day'][$year] = $lst;
+        $series['lst_night'][$year] = $lst;
+        $series['precip'][$year] = $precip;
+    }
 
     $yearSets = array_map(fn($s) => array_keys($s), $series);
     $commonYears = array_values(array_intersect(
@@ -336,6 +383,7 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
         $lstCombined[$y] = ($d + $n) / 2.0;
     }
 
+    // Baseline rule: most recent aligned year + average trend across aligned years.
     $ndviStats = baseline_with_trend($series['ndvi'], $commonYears, $latestCommonYear);
     $viirsStats = baseline_with_trend($series['viirs'], $commonYears, $latestCommonYear);
     $lstDayStats = baseline_with_trend($series['lst_day'], $commonYears, $latestCommonYear);
@@ -356,7 +404,7 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
         'month' => $month,
         'cell_count' => count($cell_ids),
         'latest_common_year' => $latestCommonYear,
-        'baseline_reference_year' => $latestCommonYear - 1,
+        'baseline_reference_year' => $latestCommonYear,
         'common_years' => $commonYears,
         'ndvi' => $ndviStats,
         'viirs' => $viirsStats,
@@ -374,8 +422,8 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
             'base_precip' => $base_precip,
             'land_cover_dummies' => $lc_dummies,
         ],
-        'formula_note' => 'Month-specific baseline: Baseline = value(last_year for selected month) + average(yearly_change across aligned years for selected month).',
-        'baseline_scope' => 'monthly_selected_month',
+        'formula_note' => 'Dashboard-sourced baseline: Baseline = value(latest aligned year) + average(yearly_change across aligned years) from ecological_yearly_summary.',
+        'baseline_scope' => 'dashboard_historical_yearly',
     ];
 
     return [
@@ -533,6 +581,32 @@ function table_has_column(PDO $pdo, string $table, string $column): bool {
         }
     }
     return false;
+}
+
+function enforce_pair_balance(float $tolerant, float $sensitive, float $resident, float $migrant): array {
+    $tolerant = max(0.0, $tolerant);
+    $sensitive = max(0.0, $sensitive);
+    $resident = max(0.0, $resident);
+    $migrant = max(0.0, $migrant);
+
+    $pairA = $tolerant + $sensitive;
+    $pairB = $resident + $migrant;
+    $consensus = ($pairA + $pairB) / 2.0;
+
+    $eps = 1e-9;
+
+    $adjTolerant = $consensus * ($tolerant / max($pairA, $eps));
+    $adjSensitive = $consensus * ($sensitive / max($pairA, $eps));
+    $adjResident = $consensus * ($resident / max($pairB, $eps));
+    $adjMigrant = $consensus * ($migrant / max($pairB, $eps));
+
+    return [
+        'tolerant' => $adjTolerant,
+        'sensitive' => $adjSensitive,
+        'resident' => $adjResident,
+        'migrant' => $adjMigrant,
+        'total' => $consensus,
+    ];
 }
 
 try {
@@ -726,6 +800,19 @@ try {
     
     // Extract predictions
     $predictions = $ml_results['predictions'] ?? [];
+    $predictions_cont = $ml_results['predictions_continuous'] ?? [];
+    $out_tolerant = isset($predictions_cont['tolerant']) ? (float)$predictions_cont['tolerant'] : (float)($predictions['tolerant'] ?? 0);
+    $out_sensitive = isset($predictions_cont['sensitive']) ? (float)$predictions_cont['sensitive'] : (float)($predictions['sensitive'] ?? 0);
+    $out_resident = isset($predictions_cont['resident']) ? (float)$predictions_cont['resident'] : (float)($predictions['resident'] ?? 0);
+    $out_migrant = isset($predictions_cont['migrant']) ? (float)$predictions_cont['migrant'] : (float)($predictions['migrant'] ?? 0);
+
+    // Safety net: enforce strict pair consistency so gains stay aligned across pairs.
+    $balanced = enforce_pair_balance($out_tolerant, $out_sensitive, $out_resident, $out_migrant);
+    $out_tolerant = (float)$balanced['tolerant'];
+    $out_sensitive = (float)$balanced['sensitive'];
+    $out_resident = (float)$balanced['resident'];
+    $out_migrant = (float)$balanced['migrant'];
+    $out_total = (float)$balanced['total'];
     $shap_chart = $ml_results['shap_chart'] ?? [];
     usort($shap_chart, fn($a, $b) => (($b['importance'] ?? 0) <=> ($a['importance'] ?? 0)));
     $shap_by_output = $ml_results['shap_by_output'] ?? [];
@@ -738,7 +825,7 @@ try {
     }
 
     // Calculate impact metrics using observation-derived city baseline (not hardcoded).
-    $total_richness = $predictions['total'] ?? 0;
+    $total_richness = $out_total;
     $baseline_total = average_city_baseline_total($pdo, $city_polygons);
     $baseline_by_output = average_city_baseline_outputs($pdo, $city_polygons);
     $richness_change_pct = 0;
@@ -765,11 +852,11 @@ try {
             'attribution_mode' => $attribution_mode,
         ],
         'results' => [
-            'tolerant' => $predictions['tolerant'] ?? 0,
-            'sensitive' => $predictions['sensitive'] ?? 0,
-            'resident' => $predictions['resident'] ?? 0,
-            'migrant' => $predictions['migrant'] ?? 0,
-            'total' => $predictions['total'] ?? 0,
+            'tolerant' => round($out_tolerant, 2),
+            'sensitive' => round($out_sensitive, 2),
+            'resident' => round($out_resident, 2),
+            'migrant' => round($out_migrant, 2),
+            'total' => round($out_total, 2),
             'richness_change_pct' => round($richness_change_pct, 2),
             'baseline_total' => round($baseline_total, 2),
             'baseline_by_output' => [
@@ -790,10 +877,10 @@ try {
         'shap_warning' => $ml_results['shap_warning'] ?? null,
         'attribution_mode' => $ml_results['attribution_mode'] ?? $attribution_mode,
         'model_outputs' => [
-            'sensitive' => $predictions['sensitive'] ?? 0,
-            'tolerant' => $predictions['tolerant'] ?? 0,
-            'migrant' => $predictions['migrant'] ?? 0,
-            'resident' => $predictions['resident'] ?? 0,
+            'sensitive' => round($out_sensitive, 2),
+            'tolerant' => round($out_tolerant, 2),
+            'migrant' => round($out_migrant, 2),
+            'resident' => round($out_resident, 2),
         ],
         'shap_chart' => $shap_chart,
         'shap_by_output' => $shap_by_output,

@@ -10,7 +10,7 @@
  *
  *   Call 1 — dry-run  {}
  *       Computes which years have COMPLETE covariate coverage against the
- *       (year, month) pairs present in raw_bird_observation.
+ *       (year, month) pairs present in aggregated_bird_observation.
  *       A year is "ready" when land_cover has that year AND ndvi / viirs /
  *       land_temp / precip each have every (year, month) from bird obs.
  *       Returns per-year readiness so the frontend can show a summary.
@@ -83,28 +83,22 @@ try {
  *     Precip uses nearest-neighbour spatial fill; ndvi/lst use temporal
  *     interpolation → land-cover mean → global mean fallback.
  *
- * A year is therefore "ready" when raw_bird_observation has rows
- * for it AND land_cover has that year. The Python worker handles populating
- * aggregated_bird_observation from raw data before merging.
+ * A year is therefore "ready" when aggregated_bird_observation has rows
+ * for it AND land_cover has that year.
  */
 function compute_year_readiness(PDO $pdo): array {
-    // Years that have raw bird observations (aggregation happens in Python if needed)
+    // Years that have bird observations
     $bird_years = $pdo
-        ->query('SELECT DISTINCT year FROM raw_bird_observation ORDER BY year')
+        ->query('SELECT DISTINCT year FROM aggregated_bird_observation ORDER BY year')
         ->fetchAll(PDO::FETCH_COLUMN);
 
     if (empty($bird_years)) {
-        return ['ready' => [], 'not_ready' => [], 'year_detail' => [], 'already_built' => []];
+        return ['ready' => [], 'not_ready' => [], 'year_detail' => []];
     }
 
     // Hard requirement: land_cover years
     $lc_years = array_flip($pdo
         ->query('SELECT DISTINCT year FROM land_cover')
-        ->fetchAll(PDO::FETCH_COLUMN));
-
-    // Years already present in final_master_grid — skip these to avoid duplicate key errors
-    $built_years = array_flip($pdo
-        ->query('SELECT DISTINCT year FROM final_master_grid')
         ->fetchAll(PDO::FETCH_COLUMN));
 
     // Soft check: how many months each covariate table has per year (for info only)
@@ -119,25 +113,12 @@ function compute_year_readiness(PDO $pdo): array {
         }
     }
 
-    $ready         = [];
-    $not_ready     = [];
-    $already_built = [];
-    $detail        = [];
+    $ready     = [];
+    $not_ready = [];
+    $detail    = [];
 
     foreach ($bird_years as $y) {
         $y = (int)$y;
-
-        // Skip years already fully written to final_master_grid
-        if (isset($built_years[$y])) {
-            $already_built[] = $y;
-            $detail[$y] = [
-                'year'     => $y,
-                'ready'    => false,
-                'missing'  => ["Already built — skipped to avoid duplicates"],
-                'warnings' => [],
-            ];
-            continue;
-        }
 
         // Hard block: land_cover missing
         $blocked = !isset($lc_years[$y]);
@@ -171,7 +152,7 @@ function compute_year_readiness(PDO $pdo): array {
 
     sort($ready);
 
-    return ['ready' => $ready, 'not_ready' => $not_ready, 'year_detail' => array_values($detail), 'already_built' => $already_built];
+    return ['ready' => $ready, 'not_ready' => $not_ready, 'year_detail' => array_values($detail)];
 }
 
 // ── Dry-run: return coverage summary for frontend confirmation dialog ──────────
@@ -183,30 +164,23 @@ if (!$confirmed) {
         $ready_years = $readiness['ready'];
         $not_ready   = $readiness['not_ready'];
 
-        $already_built = $readiness['already_built'];
-
         $msg = empty($ready_years)
-            ? 'No years need merging. All ready years are already present in final_master_grid.'
-            : sprintf('%d year(s) to merge: %s.', count($ready_years), implode(', ', $ready_years));
+            ? 'No years ready. land_cover must exist for a year before it can be merged.'
+            : sprintf('%d year(s) ready: %s.', count($ready_years), implode(', ', $ready_years));
 
         if (!empty($not_ready)) {
             $blocked = implode(', ', array_keys($not_ready));
             $msg .= " Blocked (no land_cover): {$blocked}.";
         }
 
-        if (!empty($already_built)) {
-            $msg .= sprintf(' Skipped (already built): %s.', implode(', ', $already_built));
-        }
-
         ob_end_clean();
         echo json_encode([
-            'success'       => true,
-            'dry_run'       => true,
-            'ready_years'   => $ready_years,
-            'already_built' => $already_built,
-            'year_detail'   => $readiness['year_detail'],
-            'current_rows'  => $current_rows,
-            'message'       => $msg,
+            'success'      => true,
+            'dry_run'      => true,
+            'ready_years'  => $ready_years,
+            'year_detail'  => $readiness['year_detail'],
+            'current_rows' => $current_rows,
+            'message'      => $msg,
         ]);
     } catch (Throwable $e) {
         ob_end_clean();
@@ -228,14 +202,10 @@ try {
 }
 
 if (empty($ready_years)) {
-    $already_built = $readiness['already_built'];
-    $skip_note = !empty($already_built)
-        ? ' Already-built years skipped: ' . implode(', ', $already_built) . '.'
-        : '';
     ob_end_clean();
     echo json_encode([
         'success' => false,
-        'error'   => 'No years need merging — all ready years are already in final_master_grid.' . $skip_note,
+        'error'   => 'No years have complete covariate coverage. Nothing to rebuild.',
     ]);
     exit;
 }
