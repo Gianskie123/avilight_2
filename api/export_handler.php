@@ -19,6 +19,28 @@ function sanitize_filters(array $input): array {
     ];
 }
 
+function read_request_data(): array {
+    $data = [];
+
+    if (!empty($_POST) && is_array($_POST)) {
+        $data = $_POST;
+    }
+
+    $raw = (string) file_get_contents('php://input');
+    if ($raw !== '') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            $data = array_merge($data, $decoded);
+        }
+    }
+
+    if (!empty($_GET) && is_array($_GET)) {
+        $data = array_merge($data, $_GET);
+    }
+
+    return $data;
+}
+
 function get_cached_report_payload(array $filters): array {
     $cacheDir = __DIR__ . '/../data/cache/reports';
     if (!is_dir($cacheDir)) {
@@ -289,7 +311,7 @@ function run_python_report_engine(array $payload, string $format): array {
     ];
 }
 
-function export_cache_file_path(string $format, array $filters): string {
+function export_cache_file_path(string $format, array $filters, string $payloadHash = ''): string {
     $cacheDir = __DIR__ . '/../data/cache/reports/exports';
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0775, true);
@@ -300,7 +322,7 @@ function export_cache_file_path(string $format, array $filters): string {
         . $filters['start_year'] . ':'
         . $filters['end_year'] . ':'
         . $filters['snapshot_year'] . ':'
-        . $filters['snapshot_month'];
+        . $filters['snapshot_month'] . ':' . ($payloadHash !== '' ? $payloadHash : 'nofp');
     $ext = $format === 'pdf' ? 'pdf' : 'csv';
     return rtrim($cacheDir, '/\\') . '/' . sha1($key) . '.' . $ext;
 }
@@ -313,11 +335,11 @@ function send_export_file(string $path, string $format, string $filename): void 
     readfile($path);
 }
 
-function try_send_cached_export(string $format, array $filters, int $ttlSeconds): bool {
+function try_send_cached_export(string $format, array $filters, int $ttlSeconds, string $payloadHash = ''): bool {
     if ($ttlSeconds <= 0) {
         return false;
     }
-    $cacheFile = export_cache_file_path($format, $filters);
+    $cacheFile = export_cache_file_path($format, $filters, $payloadHash);
     if (!is_file($cacheFile) || !is_readable($cacheFile)) {
         return false;
     }
@@ -331,21 +353,39 @@ function try_send_cached_export(string $format, array $filters, int $ttlSeconds)
     return true;
 }
 
-$format = strtolower(trim((string) ($_GET['format'] ?? 'pdf')));
+$requestData = read_request_data();
+$format = strtolower(trim((string) ($requestData['format'] ?? 'pdf')));
 if (!in_array($format, ['pdf', 'csv'], true)) {
     http_response_code(400);
     echo 'Invalid export format. Use format=pdf or format=csv.';
     exit;
 }
 
-$filters = sanitize_filters($_GET);
-$exportLive = ((string) ($_GET['export_live'] ?? '0') === '1');
-$exportCacheTtlSeconds = in_array($format, ['pdf', 'csv'], true) ? 60 : 0;
-if (!$exportLive && try_send_cached_export($format, $filters, $exportCacheTtlSeconds)) {
+$filters = sanitize_filters($requestData);
+$exportLive = ((string) ($requestData['export_live'] ?? '0') === '1');
+$clientPayload = (isset($requestData['report_payload']) && is_array($requestData['report_payload'])) ? $requestData['report_payload'] : [];
+$clientPayloadHash = '';
+if (!empty($clientPayload)) {
+    $clientPayloadHash = sha1(json_encode($clientPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
+}
+$exportCacheTtlSeconds = in_array($format, ['pdf', 'csv'], true) ? 1800 : 0;
+if (!$exportLive && try_send_cached_export($format, $filters, $exportCacheTtlSeconds, $clientPayloadHash)) {
     exit;
 }
 
-$payload = call_report_data_api($filters, $exportLive);
+if (!empty($clientPayload) && !empty($clientPayload['success'])) {
+    $payload = $clientPayload;
+    if (!isset($payload['filters']) || !is_array($payload['filters'])) {
+        $payload['filters'] = $filters;
+    }
+    if (!isset($payload['meta']) || !is_array($payload['meta'])) {
+        $payload['meta'] = [];
+    }
+    $payload['meta']['export_source'] = 'client_loaded_state';
+    $payload['meta']['export_mode'] = 'current_page';
+} else {
+    $payload = call_report_data_api($filters, $exportLive);
+}
 
 if (empty($payload) || empty($payload['success'])) {
     http_response_code(502);
@@ -357,9 +397,10 @@ if (empty($payload) || empty($payload['success'])) {
     exit;
 }
 
-$payload['kbaPaAuditRows'] = fetch_kba_pa_audit_rows();
+$payload['kbaPaAuditRows'] = !empty($payload['kbaPaAuditRows']) ? $payload['kbaPaAuditRows'] : fetch_kba_pa_audit_rows();
 $payload['meta'] = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
 $payload['meta']['kba_pa_audit_source'] = !empty($payload['kbaPaAuditRows']) ? 'kba_pa_audit_live' : 'none';
+$payload['meta']['export_payload_hash'] = $clientPayloadHash;
 
 $result = run_python_report_engine($payload, $format);
 if (empty($result['success'])) {
@@ -378,7 +419,7 @@ $filename = 'avilight_reports_' . $timestamp . ($format === 'pdf' ? '.pdf' : '.c
 
 $outputFile = $tmpFile;
 if ($exportCacheTtlSeconds > 0) {
-    $cacheFile = export_cache_file_path($format, $filters);
+    $cacheFile = export_cache_file_path($format, $filters, $clientPayloadHash);
     if (@copy($tmpFile, $cacheFile)) {
         $outputFile = $cacheFile;
     }
