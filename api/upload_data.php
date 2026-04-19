@@ -350,12 +350,16 @@ foreach ($required as $src => $_alias) {
 // ── Phase A: Clean rows ───────────────────────────────────────────────────────
 // Consume the generator one row at a time — no full row array ever in memory.
 
-$cleaned = [];
-$skipped = 0;
+$cleaned       = [];
+$skipped       = 0;
+$row_number    = 0;
+$rejected_rows = []; // one entry per rejected row for upload_rejection_log
 
 while ($row_gen->valid()) {
     $row = $row_gen->current();
     $row_gen->next();
+    $row_number++;
+
     $obs_id      = trim($row[$idx['GLOBAL UNIQUE IDENTIFIER']] ?? '');
     $site        = trim($row[$idx['LOCALITY']]                 ?? '');
     $lat_raw     = trim($row[$idx['LATITUDE']]                 ?? '');
@@ -366,6 +370,7 @@ while ($row_gen->valid()) {
 
     // Drop rows missing the primary key or species name
     if ($obs_id === '' || $common_name === '') {
+        $rejected_rows[] = ['row_number' => $row_number, 'obs_id' => $obs_id ?: null, 'common_name' => $common_name ?: null, 'lat' => null, 'lon' => null, 'reason' => 'missing_fields'];
         $skipped++;
         continue;
     }
@@ -373,6 +378,7 @@ while ($row_gen->valid()) {
     // ── 6. Drop uncertain species records ────────────────────────────────────
     // Reject " sp." (with leading space) or "/" anywhere in the name
     if (stripos($common_name, ' sp.') !== false || strpos($common_name, '/') !== false) {
+        $rejected_rows[] = ['row_number' => $row_number, 'obs_id' => $obs_id, 'common_name' => $common_name, 'lat' => null, 'lon' => null, 'reason' => 'uncertain_species'];
         $skipped++;
         continue;
     }
@@ -386,7 +392,8 @@ while ($row_gen->valid()) {
     }
     $ts = strtotime($date_raw);
     if ($ts === false) {
-        $skipped++;   // unparseable date – drop row
+        $rejected_rows[] = ['row_number' => $row_number, 'obs_id' => $obs_id, 'common_name' => $common_name, 'lat' => null, 'lon' => null, 'reason' => 'invalid_date'];
+        $skipped++;
         continue;
     }
 
@@ -396,6 +403,7 @@ while ($row_gen->valid()) {
     $lat = (float) $lat_raw;
     $lon = (float) $lon_raw;
     if ($lat < 14.3 || $lat > 14.8 || $lon < 120.9 || $lon > 121.15) {
+        $rejected_rows[] = ['row_number' => $row_number, 'obs_id' => $obs_id, 'common_name' => $common_name, 'lat' => $lat, 'lon' => $lon, 'reason' => 'out_of_bounds'];
         $skipped++;
         continue;
     }
@@ -418,6 +426,64 @@ if (count($cleaned) === 0) {
     json_error('The file contains no valid content to insert. All rows were skipped (uncertain species, missing fields, unparseable dates, or coordinates outside Metro Manila lat 14.3–14.8 / lon 120.9–121.15).');
 }
 
+// ── Upload audit logging ──────────────────────────────────────────────────────
+
+function log_upload(
+    PDO    $pdo,
+    string $filename,
+    string $uploaded_by,
+    string $file_type,
+    int    $file_size,
+    string $status,
+    int    $rows_total,
+    int    $rows_inserted,
+    int    $rows_skipped,
+    int    $new_species,
+    array  $rejected_rows,
+    ?string $fail_reason = null
+): void {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+    $pdo->prepare(
+        "INSERT INTO upload_log
+             (uploaded_by, filename, file_size_bytes, file_type, status,
+              rows_total, rows_inserted, rows_skipped, new_species, fail_reason, ip_address)
+         VALUES (:by, :fn, :fs, :ft, :st, :rt, :ri, :rs, :ns, :fr, :ip)"
+    )->execute([
+        ':by' => $uploaded_by,
+        ':fn' => $filename,
+        ':fs' => $file_size,
+        ':ft' => $file_type,
+        ':st' => $status,
+        ':rt' => $rows_total,
+        ':ri' => $rows_inserted,
+        ':rs' => $rows_skipped,
+        ':ns' => $new_species,
+        ':fr' => $fail_reason,
+        ':ip' => $ip,
+    ]);
+
+    if (empty($rejected_rows)) return;
+
+    $log_id = (int) $pdo->lastInsertId();
+    $stmt   = $pdo->prepare(
+        "INSERT INTO upload_rejection_log
+             (upload_log_id, `row_number`, observation_id, common_name, latitude, longitude, reason)
+         VALUES (:lid, :rn, :oid, :cn, :lat, :lon, :r)"
+    );
+    foreach ($rejected_rows as $r) {
+        $stmt->execute([
+            ':lid' => $log_id,
+            ':rn'  => $r['row_number'],
+            ':oid' => $r['obs_id'],
+            ':cn'  => $r['common_name'],
+            ':lat' => $r['lat'],
+            ':lon' => $r['lon'],
+            ':r'   => $r['reason'],
+        ]);
+    }
+}
+
 // ── 8. Duplicate observation_id guard (within the file) ───────────────────────
 
 $obs_id_counts = array_count_values(array_column($cleaned, 'obs_id'));
@@ -425,6 +491,15 @@ $dup_ids       = array_keys(array_filter($obs_id_counts, fn($c) => $c > 1));
 if ($dup_ids) {
     $preview = array_slice($dup_ids, 0, 10);
     $suffix  = count($dup_ids) > 10 ? ' … and ' . (count($dup_ids) - 10) . ' more.' : '.';
+    try {
+        $log_pdo     = get_mysql_db();
+        $dup_rows    = array_map(fn($oid, $i) => ['row_number' => $i + 1, 'obs_id' => $oid, 'common_name' => null, 'lat' => null, 'lon' => null, 'reason' => 'duplicate_in_file'], $dup_ids, array_keys($dup_ids));
+        $rows_total  = count($cleaned) + $skipped;
+        log_upload($log_pdo, $file['name'], get_logged_user() ?? 'unknown', $ext, $file['size'],
+            'failed', $rows_total, 0, $skipped, 0,
+            array_merge($rejected_rows, $dup_rows),
+            'Duplicate GLOBAL UNIQUE IDENTIFIER values in file (' . count($dup_ids) . ' duplicates)');
+    } catch (Throwable $_) {}
     json_error(
         'Duplicate GLOBAL UNIQUE IDENTIFIER values found within the file (' . count($dup_ids) . ' duplicates). '
         . 'Fix the file and re-upload. Duplicates: ' . implode(', ', $preview) . $suffix
@@ -519,12 +594,29 @@ try {
     }
     $msg = $e->getMessage();
     if (str_contains($msg, '1062') || str_contains($msg, 'Duplicate entry')) {
+        try {
+            $rows_total = count($cleaned) + $skipped;
+            log_upload($pdo, $file['name'], get_logged_user() ?? 'unknown', $ext, $file['size'],
+                'failed', $rows_total, 0, $skipped, 0, $rejected_rows,
+                'Upload aborted: duplicate observation_id already exists in database');
+        } catch (Throwable $_) {}
         json_error('Upload aborted: one or more observation IDs already exist in the database. No records were saved. Remove the duplicates from your file and re-upload.');
     }
     if (str_contains($msg, 'could not find driver') || str_contains($msg, 'Connection refused') || str_contains($msg, 'Unknown database')) {
         json_error('Database connection failed: ' . $msg . '. Ensure MySQL is running and the avilight database exists.');
     }
     json_error('Database error: ' . $msg);
+}
+
+// ── Log the completed upload ──────────────────────────────────────────────────
+$log_error = null;
+try {
+    $rows_total    = count($cleaned) + $skipped;
+    $upload_status = ($skipped > 0 && $inserted > 0) ? 'partial' : 'success';
+    log_upload($pdo, $file['name'], get_logged_user() ?? 'unknown', $ext, $file['size'],
+        $upload_status, $rows_total, $inserted, $skipped, $new_species, $rejected_rows);
+} catch (Throwable $e) {
+    $log_error = $e->getMessage();
 }
 
 ob_end_clean();
@@ -535,4 +627,5 @@ echo json_encode([
     'inserted'    => $inserted,
     'skipped'     => $skipped,
     'new_species' => $new_species,
+    'log_error'   => $log_error,
 ]);

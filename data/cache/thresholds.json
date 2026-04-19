@@ -1,11 +1,11 @@
 {
-    "high_risk": 50,
-    "mod_risk": 30,
-    "low_risk": 15,
-    "kba_richness_weight": 25,
+    "high_risk": 60,
+    "mod_risk": 32,
+    "low_risk": 100,
+    "kba_richness_weight": 15,
     "kba_sensitive_weight": 15,
     "kba_ndvi_weight": 15,
-    "kba_alan_weight": 20,
+    "kba_alan_weight": 15,
     "kba_lst_weight": 15,
     "kba_precip_weight": 10
 }
