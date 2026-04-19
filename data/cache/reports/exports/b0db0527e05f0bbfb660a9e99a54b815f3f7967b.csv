@@ -1,0 +1,212 @@
+AviLight Statistical Reports Export
+Generated At,2026-04-19 17:00:55 UTC
+Area,All Areas
+Trend Range,2014 - 2025
+Snapshot,2025-01
+
+========================================================================
+ECOLOGICAL IMPACT - HISTORICAL TRENDS
+========================================================================
+Year,Bird Richness,ALAN (VIIRS),NDVI,LST,Precipitation
+2014,109,24.35485050089435,0.2770050750015621,43.51050588235294,2052.588853542188
+2015,132,25.74697978121029,0.28743849249075115,43.32401764705883,1732.5173364617604
+2016,137,25.924680862600525,0.2711005343766883,44.85586470588236,2179.355231298618
+2017,141,26.153259521872883,0.28286155707146143,43.72598235294118,2502.3839680575356
+2018,140,27.58408078709518,0.2658999885558625,43.187841176470585,2296.705313548008
+2019,150,29.005105400573772,0.26427170873566386,43.27980588235294,1964.261128156053
+2020,164,26.16918195259347,0.2801200869858246,44.888629411764704,2269.626381173867
+2021,172,26.135808597225825,0.27592665322373705,44.419900000000005,2052.00733352326
+2022,190,28.237110537547178,0.26983924201592363,43.094711764705885,2361.960855424753
+2023,204,28.205755581700643,0.2786290033880371,42.06474117647059,2219.4084924769486
+2024,199,30.599480272492233,0.2761706746640378,42.629788235294114,2459.508576022414
+2025,197,31.80571602259988,0.2804794090386922,43.12190588235295,2534.4021259050924
+
+========================================================================
+ECOLOGICAL IMPACT - CORRELATION MATRIX
+========================================================================
+Metric,Pearson r
+ALAN vs Richness,-0.0271
+NDVI vs Richness,0.2895
+LST vs Richness,0.1075
+Precipitation vs Richness,0.1587
+
+========================================================================
+ECOLOGICAL IMPACT - MIGRATION STATUS DISTRIBUTION
+========================================================================
+Category,Count
+Migratory,39
+Resident,85
+Unclassified,0
+
+========================================================================
+ECOLOGICAL IMPACT - LIGHT TOLERANCE DISTRIBUTION
+========================================================================
+Category,Count
+Sensitive,49
+Tolerant,75
+Unclassified,0
+
+========================================================================
+ECOLOGICAL IMPACT - ALAN VS RICHNESS
+========================================================================
+Site,Area,X,Richness
+Caloocan,Caloocan,16.9669,
+Las Piñas,Las Piñas,18.6431,16
+Makati,Makati,43.4287,37
+Malabon,Malabon,18.6865,
+Mandaluyong,Mandaluyong,36.0768,4
+Manila,Manila,48.4198,22
+Marikina,Marikina,18.2037,4
+Muntinlupa,Muntinlupa,19.1179,40
+Navotas,Navotas,12.8473,3
+Parañaque,Parañaque,30.3321,67
+Pasay,Pasay,49.861,22
+Pasig,Pasig,35.7396,
+Pateros,Pateros,32.5225,
+Quezon City,Quezon City,19.7503,97
+San Juan,San Juan,36.5149,3
+Taguig,Taguig,27.4281,28
+Valenzuela,Valenzuela,16.3417,28
+
+========================================================================
+ECOLOGICAL IMPACT - NDVI VS RICHNESS
+========================================================================
+Site,Area,X,Richness
+Caloocan,Caloocan,0.3884,
+Las Piñas,Las Piñas,0.3776,16
+Makati,Makati,0.2104,37
+Malabon,Malabon,0.1886,
+Mandaluyong,Mandaluyong,0.2179,4
+Manila,Manila,0.1699,22
+Marikina,Marikina,0.3565,4
+Muntinlupa,Muntinlupa,0.4719,40
+Navotas,Navotas,0.1848,3
+Parañaque,Parañaque,0.3337,67
+Pasay,Pasay,0.2332,22
+Pasig,Pasig,0.2496,
+Pateros,Pateros,0.2173,
+Quezon City,Quezon City,0.4504,97
+San Juan,San Juan,0.2063,3
+Taguig,Taguig,0.354,28
+Valenzuela,Valenzuela,0.2501,28
+
+========================================================================
+ECOLOGICAL IMPACT - LST VS RICHNESS
+========================================================================
+Site,Area,X,Richness
+Caloocan,Caloocan,30.5167,
+Las Piñas,Las Piñas,31.8972,16
+Makati,Makati,30.5417,37
+Malabon,Malabon,28.6532,
+Mandaluyong,Mandaluyong,32.6184,4
+Manila,Manila,30.5324,22
+Marikina,Marikina,30.5682,4
+Muntinlupa,Muntinlupa,29.9428,40
+Navotas,Navotas,31.4188,3
+Parañaque,Parañaque,31.9967,67
+Pasay,Pasay,31.588,22
+Pasig,Pasig,32.6377,
+Pateros,Pateros,32.5588,
+Quezon City,Quezon City,30.9879,97
+San Juan,San Juan,31.9312,3
+Taguig,Taguig,30.9138,28
+Valenzuela,Valenzuela,29.6679,28
+
+========================================================================
+ECOLOGICAL IMPACT - PRECIPITATION VS RICHNESS
+========================================================================
+Site,Area,X,Richness
+Las Piñas,Las Piñas,,16
+Mandaluyong,Mandaluyong,0.2972,4
+Manila,Manila,0.2094,22
+Marikina,Marikina,0.4827,4
+Muntinlupa,Muntinlupa,0.3678,40
+Parañaque,Parañaque,0.1991,67
+Pasay,Pasay,0.2575,22
+Pasig,Pasig,0.4534,
+Quezon City,Quezon City,0.4818,97
+Taguig,Taguig,0.38,28
+Valenzuela,Valenzuela,0.297,28
+
+========================================================================
+ECOLOGICAL IMPACT - TOP SITES BY RICHNESS
+========================================================================
+Rank,Area,Bird Richness
+1,Quezon City,79
+2,Parañaque,49
+3,Parañaque,43
+4,Quezon City,42
+5,Muntinlupa,33
+6,Quezon City,29
+7,Quezon City,29
+8,Valenzuela,28
+9,Parañaque,27
+10,Quezon City,26
+
+========================================================================
+MODEL DIAGNOSTICS - ENSEMBLE METRICS
+========================================================================
+Metric,Value
+RMSE,0
+MAE,0
+R2,0
+
+========================================================================
+MODEL DIAGNOSTICS - XGBOOST FEATURE IMPORTANCE (All Species)
+========================================================================
+Feature,Importance
+
+========================================================================
+MODEL DIAGNOSTICS - XGBOOST FEATURE IMPORTANCE (Light Sensitive)
+========================================================================
+Feature,Importance
+
+========================================================================
+MODEL DIAGNOSTICS - XGBOOST FEATURE IMPORTANCE (Light Tolerant)
+========================================================================
+Feature,Importance
+
+========================================================================
+MODEL DIAGNOSTICS - XGBOOST FEATURE IMPORTANCE (Migratory)
+========================================================================
+Feature,Importance
+
+========================================================================
+MODEL DIAGNOSTICS - XGBOOST FEATURE IMPORTANCE (Resident)
+========================================================================
+Feature,Importance
+
+========================================================================
+MODEL DIAGNOSTICS - CONVLSTM ACTUAL VS PREDICTED (All Species)
+========================================================================
+Year,Actual,Predicted
+
+========================================================================
+MODEL DIAGNOSTICS - CONVLSTM ACTUAL VS PREDICTED (Light Sensitive)
+========================================================================
+Year,Actual,Predicted
+
+========================================================================
+MODEL DIAGNOSTICS - CONVLSTM ACTUAL VS PREDICTED (Light Tolerant)
+========================================================================
+Year,Actual,Predicted
+
+========================================================================
+MODEL DIAGNOSTICS - CONVLSTM ACTUAL VS PREDICTED (Migratory)
+========================================================================
+Year,Actual,Predicted
+
+========================================================================
+MODEL DIAGNOSTICS - CONVLSTM ACTUAL VS PREDICTED (Resident)
+========================================================================
+Year,Actual,Predicted
+
+========================================================================
+SYSTEMS RECOMMENDATIONS - KBA/PA AUDIT
+========================================================================
+Site,Type,Species Count,Sensitive Count,Sensitive %,Light Exposure,Mean NDVI,Max LST,Precipitation Total,Grid Cells,Effectiveness,Status,Snapshot
+Manila Bay Beach Resort,PA,12,1,8.3,63.358848310222,0.1952464324444444,36.6949,209.70324174999976,45,22.7,Critical,2025-12
+Luneta National Park,PA,29,6,20.7,78.856908405,0.207336269375,37.4249,27.014770160000005,8,24.2,Critical,2025-12
+Ninoy Aquino Parks and Wildlife Center,PA,41,10,24.4,48.176220206667,0.3363029772222222,37.4249,39.97530102,9,35.8,Critical,2025-12
+Las Piñas-Parañaque Wetland Park,PA,64,21,32.8,17.531402178696,0.2969643152631579,36.2341,198.70626370000005,30,52.6,At Risk,2025-12
+Manila Bay,KBA,92,35,38,11.55968790558,0.2370127162886598,37.4249,4151.561219300033,874,56,At Risk,2025-12
