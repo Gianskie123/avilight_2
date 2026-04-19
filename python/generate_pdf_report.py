@@ -60,6 +60,47 @@ def sanitize_for_pdf(text: Any) -> str:
     return "".join(out)
 
 
+def get_kba_pa_audit_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = [r for r in safe_list(payload.get("kbaPaAuditRows")) if isinstance(r, dict)]
+    if rows:
+        return rows
+
+    # Backward-compatible fallback for environments not yet sending live audit rows.
+    kba_path = os.path.join(os.path.dirname(__file__), "..", "data", "sample_kba.json")
+    if not os.path.isfile(kba_path):
+        return []
+
+    try:
+        with open(kba_path, "r", encoding="utf-8") as fh:
+            legacy = json.load(fh)
+    except Exception:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for row in safe_list(legacy):
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            {
+                "name": row.get("name", ""),
+                "type": row.get("type", ""),
+                "species_count": row.get("species_count"),
+                "sensitive_species_count": row.get("sensitive_species_count"),
+                "sensitive_species_percent": row.get("sensitive_species_percent"),
+                "light_exposure": row.get("light_exposure"),
+                "mean_ndvi": row.get("mean_ndvi"),
+                "max_lst": row.get("max_lst"),
+                "precipitation_total": row.get("precipitation_total"),
+                "grid_cell_count": row.get("grid_cell_count"),
+                "effectiveness_score": row.get("effectiveness_score"),
+                "status": row.get("status", ""),
+                "snapshot_year": row.get("snapshot_year"),
+                "snapshot_month": row.get("snapshot_month"),
+            }
+        )
+    return out
+
+
 def read_payload() -> Dict[str, Any]:
     raw = io.TextIOWrapper(buffer=sys.stdin.buffer, encoding="utf-8").read()
     if not raw.strip():
@@ -78,6 +119,7 @@ def write_csv(payload: Dict[str, Any], output_path: str) -> None:
     metrics = safe_dict(safe_dict(payload.get("ensembleMetrics")).get("ensemble_average"))
     xgboost = safe_dict(payload.get("xgboostFeatureImportance"))
     convlstm = safe_dict(payload.get("convlstmPredictions"))
+    kba_rows = get_kba_pa_audit_rows(payload)
 
     labels = safe_list(trend.get("labels"))
     richness = safe_list(trend.get("richness"))
@@ -210,6 +252,47 @@ def write_csv(payload: Dict[str, Any], output_path: str) -> None:
                     actual[i] if i < len(actual) else "",
                     predicted[i] if i < len(predicted) else "",
                 ])
+
+        section(w, "SYSTEMS RECOMMENDATIONS - KBA/PA AUDIT")
+        w.writerow([
+            "Site",
+            "Type",
+            "Species Count",
+            "Sensitive Count",
+            "Sensitive %",
+            "Light Exposure",
+            "Mean NDVI",
+            "Max LST",
+            "Precipitation Total",
+            "Grid Cells",
+            "Effectiveness",
+            "Status",
+            "Snapshot",
+        ])
+        for row in kba_rows:
+            snap_year = row.get("snapshot_year")
+            snap_month = row.get("snapshot_month")
+            snap = ""
+            if snap_year not in (None, ""):
+                if snap_month not in (None, ""):
+                    snap = f"{snap_year}-{str(snap_month).zfill(2)}"
+                else:
+                    snap = str(snap_year)
+            w.writerow([
+                row.get("name", ""),
+                row.get("type", ""),
+                row.get("species_count", ""),
+                row.get("sensitive_species_count", ""),
+                row.get("sensitive_species_percent", ""),
+                row.get("light_exposure", ""),
+                row.get("mean_ndvi", ""),
+                row.get("max_lst", ""),
+                row.get("precipitation_total", ""),
+                row.get("grid_cell_count", ""),
+                row.get("effectiveness_score", ""),
+                row.get("status", ""),
+                snap,
+            ])
 
 
 if FPDF is not None:
@@ -542,6 +625,7 @@ def write_pdf(payload: Dict[str, Any], output_path: str) -> None:
     ensemble = safe_dict(safe_dict(payload.get("ensembleMetrics")).get("ensemble_average"))
     xgboost = safe_dict(payload.get("xgboostFeatureImportance"))
     convlstm = safe_dict(payload.get("convlstmPredictions"))
+    kba_rows = get_kba_pa_audit_rows(payload)
 
     pdf = AviLightPDF()
     pdf.set_auto_page_break(auto=True, margin=12)
@@ -764,36 +848,58 @@ def write_pdf(payload: Dict[str, Any], output_path: str) -> None:
                 numeric_cols=(0, 1, 2),
             )
 
-        kba_path = os.path.join(os.path.dirname(__file__), "..", "data", "sample_kba.json")
-        if os.path.isfile(kba_path):
-            try:
-                with open(kba_path, "r", encoding="utf-8") as fh:
-                    kba = json.load(fh)
-                if isinstance(kba, list) and kba:
-                    kba_rows: List[List[Any]] = []
-                    for row in kba:
-                        if not isinstance(row, dict):
-                            continue
-                        kba_rows.append(
-                            [
-                                row.get("name", ""),
-                                row.get("type", ""),
-                                fmt_num(row.get("species_count"), 0),
-                                fmt_num(row.get("sensitive_species_percent"), 1),
-                                fmt_num(row.get("light_exposure"), 1),
-                                fmt_num(row.get("effectiveness_score"), 1),
-                            ]
-                        )
-                    write_table_block(
-                        pdf,
-                        "Systems Recommendations: KBA/PA Audit",
-                        ["Site", "Type", "Species", "Sensitive%", "Light", "Eff.Score"],
-                        [62, 20, 22, 28, 28, 30],
-                        kba_rows,
-                        numeric_cols=(2, 3, 4, 5),
-                    )
-            except Exception:
-                pass
+        if kba_rows:
+            core_rows: List[List[Any]] = []
+            env_rows: List[List[Any]] = []
+            for row in kba_rows:
+                snap_year = row.get("snapshot_year")
+                snap_month = row.get("snapshot_month")
+                snap = "-"
+                if snap_year not in (None, ""):
+                    if snap_month not in (None, ""):
+                        snap = f"{snap_year}-{str(snap_month).zfill(2)}"
+                    else:
+                        snap = str(snap_year)
+
+                core_rows.append(
+                    [
+                        row.get("name", ""),
+                        row.get("type", ""),
+                        fmt_num(row.get("species_count"), 0),
+                        fmt_num(row.get("sensitive_species_count"), 0),
+                        fmt_num(row.get("sensitive_species_percent"), 1),
+                        fmt_num(row.get("light_exposure"), 1),
+                        fmt_num(row.get("effectiveness_score"), 1),
+                        row.get("status", ""),
+                    ]
+                )
+                env_rows.append(
+                    [
+                        row.get("name", ""),
+                        fmt_num(row.get("mean_ndvi"), 4),
+                        fmt_num(row.get("max_lst"), 2),
+                        fmt_num(row.get("precipitation_total"), 2),
+                        fmt_num(row.get("grid_cell_count"), 0),
+                        snap,
+                    ]
+                )
+
+            write_table_block(
+                pdf,
+                "Systems Recommendations: KBA/PA Audit (Core)",
+                ["Site", "Type", "Species", "Sens.Cnt", "Sens.%", "Light", "Eff.", "Status"],
+                [55, 13, 16, 18, 17, 16, 13, 42],
+                core_rows,
+                numeric_cols=(2, 3, 4, 5, 6),
+            )
+            write_table_block(
+                pdf,
+                "Systems Recommendations: KBA/PA Audit (Environment)",
+                ["Site", "Mean NDVI", "Max LST", "Precip", "Cells", "Snapshot"],
+                [72, 24, 22, 24, 16, 32],
+                env_rows,
+                numeric_cols=(1, 2, 3, 4),
+            )
 
     pdf.output(output_path)
 

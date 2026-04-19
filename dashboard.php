@@ -193,9 +193,9 @@ try {
                 .risk-site-panel {
                     display: flex;
                     flex-wrap: wrap;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 6px 10px;
+                    align-items: flex-start;
+                    gap: 8px 10px;
+                    padding: 8px 12px;
                     border-bottom: 1px solid var(--border-color);
                     background: var(--bg-card-alt);
                     color: var(--text-primary);
@@ -210,29 +210,31 @@ try {
                 .risk-site-panel .risk-site-summary {
                     font-size: 0.7rem;
                     color: var(--text-secondary);
-                    margin-right: 6px;
+                    margin-right: 0;
                     line-height: 1.35;
                 }
                 .risk-threshold-note {
                     font-size: 0.68rem;
                     color: var(--text-muted);
                     line-height: 1.35;
-                    margin-right: 8px;
+                    margin-right: 0;
                 }
                 .risk-site-list {
                     display: flex;
                     flex-wrap: wrap;
-                    gap: 6px;
+                    gap: 8px;
                     align-items: center;
                     min-width: 0;
+                    flex: 1 1 320px;
                 }
                 .risk-site-item {
                     display: inline-flex;
                     align-items: center;
-                    gap: 5px;
+                    gap: 6px;
                     border: 1px solid var(--border-color);
                     border-radius: 999px;
-                    padding: 4px 8px;
+                    padding: 5px 10px;
+                    min-height: 28px;
                     background: var(--bg-card);
                     color: var(--text-secondary);
                     cursor: pointer;
@@ -261,11 +263,11 @@ try {
                 .risk-site-item-actions {
                     display: inline-flex;
                     align-items: center;
-                    gap: 4px;
+                    gap: 5px;
                 }
                 .risk-site-toggle {
-                    width: 13px;
-                    height: 13px;
+                    width: 14px;
+                    height: 14px;
                     margin: 0;
                     accent-color: #60a5fa;
                 }
@@ -274,9 +276,9 @@ try {
                     background: var(--bg-card-alt);
                     color: var(--text-secondary);
                     border-radius: 999px;
-                    width: 18px;
-                    height: 18px;
-                    line-height: 18px;
+                    width: 20px;
+                    height: 20px;
+                    line-height: 20px;
                     padding: 0;
                     cursor: pointer;
                 }
@@ -292,7 +294,16 @@ try {
                 }
                 @media (max-width: 768px) {
                     .risk-site-panel {
-                        padding: 6px 8px;
+                        padding: 8px 10px;
+                        gap: 7px 8px;
+                    }
+                    .risk-site-list {
+                        flex-basis: 100%;
+                        gap: 6px;
+                    }
+                    .risk-site-item {
+                        padding: 4px 8px;
+                        min-height: 26px;
                     }
                 }
             </style>
@@ -1741,6 +1752,8 @@ function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
     var cityRows = (rows || []).filter(function(site) {
         return normalizeAreaKey(getHistoricalSiteCity(site)) === cityNorm;
     });
+    var speciesSet = new Set();
+    var maxSiteRichness = 0;
 
     var summary = {
         city: cityName || 'Metro Manila',
@@ -1755,12 +1768,57 @@ function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
     };
 
     cityRows.forEach(function(site) {
-        summary.richness += toNumber(site.total_unique);
+        var siteSpecies = parseSpeciesList(site.species_list);
+        siteSpecies.forEach(function(name) {
+            var normalized = String(name || '').trim().toLowerCase();
+            if (normalized) speciesSet.add(normalized);
+        });
+
+        maxSiteRichness = Math.max(maxSiteRichness, toNumber(site.total_unique));
         summary.resident += toNumber(site.total_resident);
         summary.migrant += toNumber(site.total_migrant);
         summary.tolerant += toNumber(site.total_tolerant);
         summary.sensitive += toNumber(site.total_sensitive);
     });
+
+    // City richness should represent unique species, not sum of per-site richness.
+    summary.richness = speciesSet.size > 0 ? speciesSet.size : maxSiteRichness;
+
+    // Keep category counts consistent with city-level unique species richness.
+    if (speciesSet.size > 0 && speciesLookup && typeof speciesLookup === 'object') {
+        var lookedUpSpecies = 0;
+        var residentCount = 0;
+        var migrantCount = 0;
+        var tolerantCount = 0;
+        var sensitiveCount = 0;
+
+        speciesSet.forEach(function(speciesKey) {
+            var info = speciesLookup[speciesKey];
+            if (!info) {
+                sensitiveCount += 1;
+                residentCount += 1;
+                return;
+            }
+
+            lookedUpSpecies += 1;
+
+            var tolerance = String(info.tolerance || '').toLowerCase();
+            var migration = String(info.migration || '').toLowerCase();
+
+            if (tolerance === 'tolerant') tolerantCount += 1;
+            else sensitiveCount += 1;
+
+            if (migration === 'migratory') migrantCount += 1;
+            else residentCount += 1;
+        });
+
+        if (lookedUpSpecies > 0) {
+            summary.resident = residentCount;
+            summary.migrant = migrantCount;
+            summary.tolerant = tolerantCount;
+            summary.sensitive = sensitiveCount;
+        }
+    }
 
     if (selections && selections.envType && Array.isArray(envRows) && envRows.length) {
         var cityEnv = envRows.find(function(item) {

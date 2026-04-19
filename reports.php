@@ -1966,6 +1966,7 @@ var xgboostCurrentFilter = 'all';
 var convlstmPredictionsDataByFilter = {};
 var convlstmCurrentFilter = 'all';
 var trendHistoricalDataByFilter = {};
+var diagnosticsTrendHistoricalDataByFilter = {};
 var diagnosticsLoaded = false;
 var lastFilterKey = '';
 var scopeRequestSeq = {
@@ -2500,7 +2501,8 @@ function initTrendCharts() {
     });
 }
 
-function updateSnapshotCharts(payload) {
+function updateSnapshotCharts(payload, scope) {
+    scope = scope || 'snapshot';
     var trend = payload && payload.trendHistoricalData ? payload.trendHistoricalData : {};
     var snap = payload && payload.snapshotDistributions ? payload.snapshotDistributions : {};
     var scatter = payload && payload.snapshotScatterData ? payload.snapshotScatterData : {};
@@ -2583,27 +2585,29 @@ function updateSnapshotCharts(payload) {
         setChartEmptyMessage('topSitesEmptyNote', topValues.length === 0);
     }
 
-    if (trend.labels || trend.richness) {
-        trendHistoricalDataByFilter = trend;
-    }
+    if (scope === 'diagnostics') {
+        if (trend.labels || trend.richness) {
+            diagnosticsTrendHistoricalDataByFilter = trend;
+        }
 
-    if (Object.keys(xgboostData).length > 0) {
-        xgboostFeatureImportanceDataByFilter = xgboostData;
-        switchXGBoostFilter(xgboostCurrentFilter);
-    }
+        if (Object.keys(xgboostData).length > 0) {
+            xgboostFeatureImportanceDataByFilter = xgboostData;
+            switchXGBoostFilter(xgboostCurrentFilter);
+        }
 
-    var convlstm = payload && payload.convlstmPredictions ? payload.convlstmPredictions : {};
-    if (Object.keys(convlstm).length > 0) {
-        convlstmPredictionsDataByFilter = convlstm;
-        switchConvLSTMFilter(convlstmCurrentFilter);
-    }
+        var convlstm = payload && payload.convlstmPredictions ? payload.convlstmPredictions : {};
+        if (Object.keys(convlstm).length > 0) {
+            convlstmPredictionsDataByFilter = convlstm;
+            switchConvLSTMFilter(convlstmCurrentFilter);
+        }
 
-    // Populate KPI cards with ensemble metrics
-    if (payload && payload.ensembleMetrics && payload.ensembleMetrics.ensemble_average) {
-        var metrics = payload.ensembleMetrics.ensemble_average;
-        document.getElementById('rmseValue').textContent = (metrics.rmse || 0).toFixed(4);
-        document.getElementById('maeValue').textContent = (metrics.mae || 0).toFixed(4);
-        document.getElementById('r2Value').textContent = (metrics.r2 || 0).toFixed(4);
+        // Populate KPI cards with ensemble metrics.
+        if (payload && payload.ensembleMetrics && payload.ensembleMetrics.ensemble_average) {
+            var metrics = payload.ensembleMetrics.ensemble_average;
+            document.getElementById('rmseValue').textContent = (metrics.rmse || 0).toFixed(4);
+            document.getElementById('maeValue').textContent = (metrics.mae || 0).toFixed(4);
+            document.getElementById('r2Value').textContent = (metrics.r2 || 0).toFixed(4);
+        }
     }
 
 }
@@ -2637,6 +2641,25 @@ function getFilterValues() {
     };
 }
 
+function getDiagnosticsRequestFilters() {
+    var startEl = document.getElementById('trendStartYear');
+    var endEl = document.getElementById('trendEndYear');
+    var minYear = (startEl && startEl.options && startEl.options.length)
+        ? String(startEl.options[0].value)
+        : '2014';
+    var maxYear = (endEl && endEl.options && endEl.options.length)
+        ? String(endEl.options[endEl.options.length - 1].value)
+        : '2025';
+
+    return {
+        selected_area: 'All Areas',
+        start_year: minYear,
+        end_year: maxYear,
+        snapshot_year: maxYear,
+        snapshot_month: '12'
+    };
+}
+
 function buildRequestByScope(scope, filters, includeDiagnostics) {
     var request = {
         scope: scope,
@@ -2653,6 +2676,15 @@ function buildRequestByScope(scope, filters, includeDiagnostics) {
 
     if (scope === 'snapshot') {
         request.selected_area = filters.selected_area;
+        request.snapshot_year = filters.snapshot_year;
+        request.snapshot_month = filters.snapshot_month;
+        return request;
+    }
+
+    if (scope === 'diagnostics') {
+        request.selected_area = filters.selected_area;
+        request.start_year = filters.start_year;
+        request.end_year = filters.end_year;
         request.snapshot_year = filters.snapshot_year;
         request.snapshot_month = filters.snapshot_month;
         return request;
@@ -2721,12 +2753,14 @@ function updateTrendCharts(payload) {
 async function fetchReportData(scope, options) {
     options = options || {};
     var includeDiagnostics = !!options.includeDiagnostics || scope === 'diagnostics';
-    var filters = getFilterValues();
+    var filters = scope === 'diagnostics' ? getDiagnosticsRequestFilters() : getFilterValues();
     var currentFilterKey = [filters.selected_area, filters.start_year, filters.end_year, filters.snapshot_year, filters.snapshot_month].join('|');
-    if (lastFilterKey && lastFilterKey !== currentFilterKey) {
+    if (scope !== 'diagnostics' && lastFilterKey && lastFilterKey !== currentFilterKey) {
         diagnosticsLoaded = false;
     }
-    lastFilterKey = currentFilterKey;
+    if (scope !== 'diagnostics') {
+        lastFilterKey = currentFilterKey;
+    }
 
     if (Number(filters.start_year) > Number(filters.end_year)) {
         filters.end_year = filters.start_year;
@@ -2774,9 +2808,9 @@ async function fetchReportData(scope, options) {
         if (scope === 'trend') {
             updateTrendCharts(data);
         } else if (scope === 'snapshot') {
-            updateSnapshotCharts(data);
+            updateSnapshotCharts(data, 'snapshot');
         } else if (scope === 'diagnostics') {
-            updateSnapshotCharts(data);
+            updateSnapshotCharts(data, 'diagnostics');
         }
         if (data && data.meta && data.meta.diagnostics_source && data.meta.diagnostics_source !== 'live_model_inference_db') {
             console.warn('Diagnostics source is not live model inference:', data.meta.diagnostics_source, data.meta.diagnostics_error || '');
@@ -2854,8 +2888,8 @@ function switchConvLSTMFilter(filterName) {
     var years = Array.isArray(data.years) ? data.years : [];
     var actual = Array.isArray(data.actual) ? data.actual : [];
     var predicted = Array.isArray(data.predicted) ? data.predicted : [];
-    var trendLabels = Array.isArray(trendHistoricalDataByFilter.labels) ? trendHistoricalDataByFilter.labels : [];
-    var trendRichness = Array.isArray(trendHistoricalDataByFilter.richness) ? trendHistoricalDataByFilter.richness : [];
+    var trendLabels = Array.isArray(diagnosticsTrendHistoricalDataByFilter.labels) ? diagnosticsTrendHistoricalDataByFilter.labels : [];
+    var trendRichness = Array.isArray(diagnosticsTrendHistoricalDataByFilter.richness) ? diagnosticsTrendHistoricalDataByFilter.richness : [];
 
     if (years.length && trendLabels.length && trendRichness.length) {
         var trendIndexByYear = {};
@@ -2903,7 +2937,6 @@ function wireFilterButtons() {
     if (trendBtn) {
         trendBtn.addEventListener('click', function (e) {
             e.preventDefault();
-            diagnosticsLoaded = false;
             fetchReportData('trend');
             // Area is global; keep snapshot charts in sync when trend filters are applied.
             fetchReportData('snapshot');
@@ -2913,14 +2946,12 @@ function wireFilterButtons() {
     if (snapshotBtn) {
         snapshotBtn.addEventListener('click', function (e) {
             e.preventDefault();
-            diagnosticsLoaded = false;
             fetchReportData('snapshot');
         });
     }
 
     if (globalAreaFilter) {
         globalAreaFilter.addEventListener('change', function () {
-            diagnosticsLoaded = false;
             fetchReportData('trend');
             fetchReportData('snapshot');
         });

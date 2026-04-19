@@ -24,15 +24,23 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## 3) Start Python ML Backend
+## 3) Start Python FastAPI ML Backend
 
-From the same folder, with the environment activated:
+Run the FastAPI app in a separate terminal before opening the Scenario page.
+
+Option A (recommended script):
 
 ```powershell
-python -m uvicorn model:app --reload --port 5000
+start_backend.bat
 ```
 
-Expected startup logs include model loading and a running server on port `5000`.
+Option B (direct uvicorn command, with the environment activated):
+
+```powershell
+python -m uvicorn model:app --host 127.0.0.1 --reload --port 5000
+```
+
+Expected startup logs include FastAPI app startup, model loading, and a running server on port `5000`.
 
 If `meta_learner.joblib` is not present, the backend falls back to a deterministic blend of the XGBoost and ConvLSTM outputs so the service still starts.
 
@@ -52,6 +60,8 @@ Expected: JSON response showing backend status.
    - `http://localhost/avilight-main/scenario.php`
 
 The Scenario page calls `api/run_scenario.php`, which forwards requests to the Python backend at `http://localhost:5000`.
+
+Keep the FastAPI terminal running while using the Scenario page and geospatial predictions.
 
 ## 7) Quick Troubleshooting
 
@@ -79,3 +89,7 @@ python -m pip install -r requirements.txt
   - `xgb_migrant.json`
   - `convlstm_classifier.keras`
   - `convlstm_regressor.keras`
+
+## 8) Next Step (Run This After README_BADS)
+
+After finishing all steps above and confirming the app loads, continue with additional Reports-specific setup in `README_KISH.md`.

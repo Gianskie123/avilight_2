@@ -87,16 +87,42 @@ function authenticate_user(string $email, string $password) {
         ]);
 
         if ($success) {
-            $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = :id')
-                ->execute([':id' => $user['id']]);
-            $pdo->prepare(
-                'INSERT INTO access_log (user_id, email, action, ip_address) VALUES (:uid, :email, :act, :ip)'
-            )->execute([
-                ':uid'   => $user['user_id'],
-                ':email' => $user['email'],
-                ':act'   => 'login',
-                ':ip'    => $_SERVER['REMOTE_ADDR'] ?? '',
-            ]);
+            $user_id = $user['id'] ?? $user['user_id'] ?? null;
+
+            // Keep compatibility across schemas that use either last_login_at or last_login.
+            if ($user_id !== null) {
+                $updated_last_login = false;
+                try {
+                    $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = :id')
+                        ->execute([':id' => $user_id]);
+                    $updated_last_login = true;
+                } catch (Exception $e) {
+                    // Ignore and try legacy column name below.
+                }
+
+                if (!$updated_last_login) {
+                    try {
+                        $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = :id')
+                            ->execute([':id' => $user_id]);
+                    } catch (Exception $e) {
+                        error_log('[AVILIGHT] last_login update skipped: ' . $e->getMessage());
+                    }
+                }
+            }
+
+            try {
+                $pdo->prepare(
+                    'INSERT INTO access_log (user_id, email, action, ip_address) VALUES (:uid, :email, :act, :ip)'
+                )->execute([
+                    ':uid'   => $user_id,
+                    ':email' => $user['email'],
+                    ':act'   => 'login',
+                    ':ip'    => $_SERVER['REMOTE_ADDR'] ?? '',
+                ]);
+            } catch (Exception $e) {
+                error_log('[AVILIGHT] login access_log insert skipped: ' . $e->getMessage());
+            }
+
             return $user;
         }
     } catch (Exception $e) {

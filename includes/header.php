@@ -248,6 +248,12 @@ if (in_array($current_page, $avp_pages, true)) {
             filterSearchResults(searchInput.value || '');
         });
 
+        function isTypingTarget(element) {
+            if (!element) return false;
+            var tagName = (element.tagName || '').toLowerCase();
+            return /input|textarea|select/.test(tagName) || !!element.isContentEditable;
+        }
+
         popovers.forEach(function(item) {
             if (!item.toggle || !item.menu) return;
             item.toggle.addEventListener('click', function(e) {
@@ -273,9 +279,20 @@ if (in_array($current_page, $avp_pages, true)) {
                 closePopovers(null);
                 return;
             }
+
             var activeElement = document.activeElement;
-            var tagName = activeElement ? (activeElement.tagName || '') : '';
-            var isInputFocused = /input|textarea|select/i.test(tagName) || !!(activeElement && activeElement.isContentEditable);
+            var isInputFocused = isTypingTarget(activeElement);
+            var isSearchOpen = !searchOverlay.hidden;
+
+            // When search is open, avoid global shortcuts stealing key events from typing.
+            if (isSearchOpen) {
+                var isPrintableKey = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+                if (isPrintableKey && activeElement !== searchInput) {
+                    searchInput.focus();
+                }
+                return;
+            }
+
             if (e.key === '/' && !isInputFocused) {
                 e.preventDefault();
                 openSearch();

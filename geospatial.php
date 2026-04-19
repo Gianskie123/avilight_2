@@ -49,7 +49,12 @@ $species_data = load_species_from_csv();
         <!-- ── Compact Control Bar ── -->
         <div id="geoControlBar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border-color); background:var(--bg-card-alt);">
             <div style="font-size:0.92rem; font-weight:600; color:var(--text-primary);">Metro Manila Environmental Map</div>
-            <div style="font-size:0.78rem; color:var(--text-muted);">Analytics controls are simplified to map + prediction panels.</div>
+            <div style="display:flex; align-items:center; gap:8px; min-width:260px;">
+                <span style="font-size:0.78rem; color:var(--text-secondary); white-space:nowrap;">Map Month</span>
+                <input id="mapMonthSlider" type="range" class="slider" min="1" max="12" value="1" step="1" style="flex:1; min-width:120px;">
+                <span id="mapMonthBadge" style="font-size:0.78rem; font-weight:600; color:var(--text-primary); min-width:66px; text-align:right;">January</span>
+            </div>
+            <div id="mapMonthMeta" style="font-size:0.78rem; color:var(--text-muted);">Map month: January</div>
         </div>
 
         <div id="lcDropdown" style="display:none;">
@@ -522,6 +527,7 @@ let monthlyHeatmapCache = {};
 let monthlyHeatmapInFlight = {};
 let mitigationRequestToken = 0;
 let currentMitigationBaseline = null;
+let selectedMapMonth = 1;
 const SCENARIO_CACHE_MAX = 240;
 const scenarioResponseCache = new Map();
 const scenarioRequestInFlight = new Map();
@@ -2334,12 +2340,16 @@ async function runBauPrediction() {
             modelRatio: Number(modelRatio.toFixed(3))
         };
 
-        stackedBauPredictions[cityName] = {
+        if (!stackedBauPredictions[cityName]) {
+            stackedBauPredictions[cityName] = {};
+        }
+        stackedBauPredictions[cityName][month] = {
             total: bauResult.total,
             lightSensitive: bauResult.lightSensitive,
             lightTolerant: bauResult.lightTolerant,
             resident: bauResult.resident,
             migratory: bauResult.migratory,
+            month: month,
             monthName: bauResult.monthName,
             dominantName: base.dominantName
         };
@@ -2719,6 +2729,31 @@ function initAnalyticsScenarioUI() {
     }
 }
 
+function initMapMonthControls() {
+    var mapMonthSlider = document.getElementById('mapMonthSlider');
+    var mapMonthBadge = document.getElementById('mapMonthBadge');
+    var mapMonthMeta = document.getElementById('mapMonthMeta');
+    if (!mapMonthSlider) return;
+
+    function syncMapMonth(shouldRefresh) {
+        selectedMapMonth = clamp(parseInt(mapMonthSlider.value, 10) || 1, 1, 12);
+        var monthName = MONTH_NAMES[selectedMapMonth - 1];
+        if (mapMonthBadge) mapMonthBadge.textContent = monthName;
+        if (mapMonthMeta) mapMonthMeta.textContent = 'Map month: ' + monthName;
+        if (shouldRefresh) refreshCityLayerStyles();
+    }
+
+    mapMonthSlider.addEventListener('input', function() {
+        syncMapMonth(true);
+    });
+
+    mapMonthSlider.addEventListener('change', function() {
+        syncMapMonth(true);
+    });
+
+    syncMapMonth(false);
+}
+
 window.addEventListener('resize', syncBauResultPanelHeight);
 window.addEventListener('resize', syncMitigationPanelHeight);
 
@@ -2839,16 +2874,54 @@ function buildCityPredictionDetailsForMap(monthIndex, mitigationDeltas) {
     return {};
 }
 
+function getMapCityRichnessValue(cityName) {
+    if (!cityName) return null;
+
+    var cityPredictions = stackedBauPredictions[cityName] || null;
+    var stackedPrediction = cityPredictions ? cityPredictions[Number(selectedMapMonth || 1)] : null;
+    if (!stackedPrediction) {
+        return null;
+    }
+
+    var predictionMonth = Number(stackedPrediction.month || 0);
+    if (predictionMonth > 0 && predictionMonth !== Number(selectedMapMonth || 1)) {
+        return null;
+    }
+
+    if (typeof stackedPrediction.total !== 'undefined' && stackedPrediction.total !== null) {
+        return Number(stackedPrediction.total) || 0;
+    }
+
+    return null;
+}
+
 function buildCityHoverTooltipHtml(cityName, feature) {
     var dominant = getDominantLandCoverForCity(feature);
     var dominantName = getLandCoverName(dominant.code);
-    var details = stackedBauPredictions[cityName] || null;
-    var canShowPrediction = !!details;
+    var cityPredictions = stackedBauPredictions[cityName] || null;
+    var details = cityPredictions ? cityPredictions[Number(selectedMapMonth || 1)] : null;
+    var mapRichness = getMapCityRichnessValue(cityName);
+    var canShowPrediction = mapRichness !== null;
+    var mapMonthName = MONTH_NAMES[selectedMapMonth - 1];
 
     if (!canShowPrediction) {
         return '<div style="min-width:170px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:8px; overflow:hidden;">' +
             '<div style="padding:7px 9px; font-weight:700; font-size:0.88rem;">' + cityName + '</div>' +
             '<div style="padding:0 9px 8px 9px; color:#94a3b8; font-size:0.8rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + dominantName + '</div>' +
+            '<div style="padding:0 9px 8px 9px; color:#64748b; font-size:0.75rem;">Run BAU for ' + mapMonthName + ' to display map richness.</div>' +
+        '</div>';
+    }
+
+    if (!details) {
+        return '<div style="min-width:190px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:9px; overflow:hidden;">' +
+            '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
+                '<div style="font-weight:700; font-size:0.9rem;">' + cityName + '</div>' +
+                '<div style="margin-top:2px; color:#94a3b8; font-size:0.78rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + dominantName + '</div>' +
+            '</div>' +
+            '<div style="padding:7px 9px;">' +
+                '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px;"><span style="font-size:0.74rem; color:#94a3b8;">Map Richness</span><span style="font-size:1.2rem; line-height:1; font-weight:800; color:#d8b4fe;">' + mapRichness + ' spp.</span></div>' +
+                '<div style="font-size:0.76rem; color:#94a3b8;">Month: ' + mapMonthName + '</div>' +
+            '</div>' +
         '</div>';
     }
 
@@ -2858,25 +2931,24 @@ function buildCityHoverTooltipHtml(cityName, feature) {
             '<div style="margin-top:2px; color:#94a3b8; font-size:0.78rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + details.dominantName + '</div>' +
         '</div>' +
         '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
-            '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px;"><span style="font-size:0.74rem; color:#94a3b8;">Total Predicted</span><span style="font-size:1.35rem; line-height:1; font-weight:800; color:#d8b4fe;">' + details.total + ' spp.</span></div>' +
+            '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px;"><span style="font-size:0.74rem; color:#94a3b8;">Map Richness</span><span style="font-size:1.35rem; line-height:1; font-weight:800; color:#d8b4fe;">' + mapRichness + ' spp.</span></div>' +
             '<div style="display:flex; justify-content:space-between; color:#fda4af; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#fb7185; margin-right:6px;"></span>Light Sensitive</span><strong>' + details.lightSensitive + '</strong></div>' +
             '<div style="display:flex; justify-content:space-between; color:#60a5fa; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#60a5fa; margin-right:6px;"></span>Light Tolerant</span><strong>' + details.lightTolerant + '</strong></div>' +
             '<div style="display:flex; justify-content:space-between; color:#34d399; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#34d399; margin-right:6px;"></span>Resident</span><strong>' + details.resident + '</strong></div>' +
             '<div style="display:flex; justify-content:space-between; color:#facc15; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#facc15; margin-right:6px;"></span>Migratory</span><strong>' + details.migratory + '</strong></div>' +
         '</div>' +
-        '<div style="padding:6px 9px; color:#94a3b8; font-size:0.76rem; font-style:italic;">' + details.monthName + ' · ' + details.dominantName + '</div>' +
+        '<div style="padding:6px 9px; color:#94a3b8; font-size:0.76rem; font-style:italic;">Map month: ' + mapMonthName + ' · BAU run: ' + details.monthName + '</div>' +
     '</div>';
 }
 
 function getComputedCityStyle(feature, isHover) {
     var baseStyle;
     var cityName = feature && feature.properties ? feature.properties.city_name : null;
-    var stackedPrediction = cityName ? stackedBauPredictions[cityName] : null;
 
-    if (!stackedPrediction || !cityName) {
+    if (!cityName) {
         baseStyle = { fillColor: '#9ca3af', weight: 1.5, color: '#64748b', fillOpacity: 0.35, opacity: 0.95 };
     } else {
-        var value = stackedPrediction.total;
+        var value = getMapCityRichnessValue(cityName);
         if (value === null || typeof value === 'undefined') {
             baseStyle = { fillColor: '#9ca3af', weight: 1.5, color: '#64748b', fillOpacity: 0.35, opacity: 0.95 };
         } else {
@@ -3144,14 +3216,6 @@ document.addEventListener('click', function(e) {
 
 // ── Month slider ──────────────────────────────────────────
 
-var monthSliderEl = document.getElementById('monthSlider');
-if (monthSliderEl) {
-    monthSliderEl.addEventListener('input', function() {
-        var monthValueEl = document.getElementById('monthValue');
-        if (monthValueEl) monthValueEl.textContent = MONTH_NAMES[this.value - 1];
-    });
-}
-
 document.getElementById('predMonthSlider').addEventListener('input', function() {
     document.getElementById('predMonthBadge').textContent = MONTH_NAMES[this.value - 1];
     schedulePredictionUpdate();
@@ -3220,6 +3284,7 @@ Promise.all([
 
     // City boundary layer (area-style, clickable)
     buildCityLayer();
+    initMapMonthControls();
 
     // Build city-to-sites lookup
     buildCitySitesLookup();

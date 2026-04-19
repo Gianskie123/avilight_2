@@ -1,5 +1,12 @@
 # Reports Tab - Additional Installations (KISH)
 
+## Run Order
+
+Do this file second.
+
+1. Complete all setup steps in `README_BADS.md` first (project path, Python env, FastAPI backend, Apache).
+2. Then follow the KISH instructions below for Reports-specific dependencies.
+
 This file lists only setup items that are required for the [reports.php](reports.php) features (especially PDF/CSV export) and are not already documented in the other README files.
 
 ## 1) Python packages required for report export generation and KBA/PA rebuild
