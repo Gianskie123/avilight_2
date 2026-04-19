@@ -9,12 +9,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # Updated to v4 to fix the Node 20 deprecation warning
       - uses: actions/checkout@v4
 
-      # Updated to v42 to use the modern, supported Vercel API
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v42
+        # Point to the explicit version number here:
+        uses: amondnet/vercel-action@v42.2.0
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
