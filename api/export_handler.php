@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/backend_config.php';
+require_once __DIR__ . '/../includes/db.php';
 
 if (!is_logged_in()) {
     http_response_code(401);
@@ -24,7 +25,7 @@ function get_cached_report_payload(array $filters): array {
         return [];
     }
 
-    $reportCacheVersion = 'v2';
+    $reportCacheVersion = 'v3';
     $cacheKey = 'reports:'
         . $reportCacheVersion . ':'
         . $filters['selected_area'] . ':'
@@ -46,14 +47,15 @@ function get_cached_report_payload(array $filters): array {
     return (is_array($decoded) && !empty($decoded['success'])) ? $decoded : [];
 }
 
-function fetch_json_with_session(string $url): array {
+function fetch_json_with_session(string $url, int $timeoutSeconds = 60): array {
     $cookie = session_name() . '=' . session_id();
+    $timeoutSeconds = max(30, $timeoutSeconds);
 
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 60,
+            CURLOPT_TIMEOUT => $timeoutSeconds,
             CURLOPT_HTTPHEADER => [
                 'Accept: application/json',
                 'Cookie: ' . $cookie,
@@ -75,7 +77,7 @@ function fetch_json_with_session(string $url): array {
     $opts = [
         'http' => [
             'method' => 'GET',
-            'timeout' => 60,
+            'timeout' => $timeoutSeconds,
             'header' => "Accept: application/json\r\nCookie: {$cookie}\r\nConnection: close\r\n",
         ],
     ];
@@ -90,15 +92,16 @@ function fetch_json_with_session(string $url): array {
     return is_array($decoded) ? $decoded : [];
 }
 
-function call_report_data_api(array $filters): array {
+function call_report_data_api(array $filters, bool $forceRefresh = false): array {
     $cached = get_cached_report_payload($filters);
-    if (!empty($cached)) {
+    if (!$forceRefresh && !empty($cached)) {
         return $cached;
     }
 
     $query = http_build_query(array_merge($filters, [
         'scope' => 'diagnostics',
         'include_diagnostics' => '1',
+        'force_refresh' => $forceRefresh ? '1' : '0',
     ]));
 
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -110,8 +113,75 @@ function call_report_data_api(array $filters): array {
     }
     $url = $scheme . '://' . $host . $appBase . '/api/get_report_data.php?' . $query;
 
-    $decoded = fetch_json_with_session($url);
-    return (is_array($decoded) && !empty($decoded['success'])) ? $decoded : [];
+    $decoded = fetch_json_with_session($url, $forceRefresh ? 180 : 90);
+    if (is_array($decoded) && !empty($decoded['success'])) {
+        return $decoded;
+    }
+
+    // If forced refresh fails (timeout/backend transient), retry with normal API read.
+    if ($forceRefresh) {
+        $fallbackQuery = http_build_query(array_merge($filters, [
+            'scope' => 'diagnostics',
+            'include_diagnostics' => '1',
+            'force_refresh' => '0',
+        ]));
+        $fallbackUrl = $scheme . '://' . $host . $appBase . '/api/get_report_data.php?' . $fallbackQuery;
+        $fallbackDecoded = fetch_json_with_session($fallbackUrl, 90);
+        if (is_array($fallbackDecoded) && !empty($fallbackDecoded['success'])) {
+            return $fallbackDecoded;
+        }
+    }
+
+    // Last-resort fallback so export still works even if live refresh path fails.
+    return !empty($cached) ? $cached : [];
+}
+
+function fetch_kba_pa_audit_rows(): array {
+    try {
+        $mysql = get_mysql_db();
+        $stmt = $mysql->query("SELECT
+                area_name,
+                area_type,
+                species_count,
+                sensitive_species_count,
+                sensitive_species_percent,
+                light_exposure,
+                mean_ndvi,
+                max_lst,
+                precipitation_total,
+                grid_cell_count,
+                effectiveness_score,
+                status,
+                snapshot_year,
+                snapshot_month
+            FROM kba_pa_audit_live
+            ORDER BY effectiveness_score ASC, area_name ASC");
+
+        $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'name' => (string) ($row['area_name'] ?? ''),
+                'type' => strtoupper((string) ($row['area_type'] ?? '')) === 'PA' ? 'PA' : 'KBA',
+                'species_count' => isset($row['species_count']) ? (int) $row['species_count'] : null,
+                'sensitive_species_count' => isset($row['sensitive_species_count']) ? (int) $row['sensitive_species_count'] : null,
+                'sensitive_species_percent' => isset($row['sensitive_species_percent']) ? (float) $row['sensitive_species_percent'] : null,
+                'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : null,
+                'mean_ndvi' => isset($row['mean_ndvi']) ? (float) $row['mean_ndvi'] : null,
+                'max_lst' => isset($row['max_lst']) ? (float) $row['max_lst'] : null,
+                'precipitation_total' => isset($row['precipitation_total']) ? (float) $row['precipitation_total'] : null,
+                'grid_cell_count' => isset($row['grid_cell_count']) ? (int) $row['grid_cell_count'] : null,
+                'effectiveness_score' => isset($row['effectiveness_score']) ? (float) $row['effectiveness_score'] : null,
+                'status' => (string) ($row['status'] ?? ''),
+                'snapshot_year' => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
+                'snapshot_month' => isset($row['snapshot_month']) ? (int) $row['snapshot_month'] : null,
+            ];
+        }
+
+        return $out;
+    } catch (Throwable $e) {
+        return [];
+    }
 }
 
 function run_python_report_engine(array $payload, string $format): array {
@@ -224,7 +294,7 @@ function export_cache_file_path(string $format, array $filters): string {
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0775, true);
     }
-    $cacheVersion = 'v4';
+    $cacheVersion = 'v5';
     $key = 'export:' . $cacheVersion . ':' . $format . ':'
         . $filters['selected_area'] . ':'
         . $filters['start_year'] . ':'
@@ -269,12 +339,13 @@ if (!in_array($format, ['pdf', 'csv'], true)) {
 }
 
 $filters = sanitize_filters($_GET);
-$exportCacheTtlSeconds = ($format === 'pdf') ? 300 : 0;
-if (try_send_cached_export($format, $filters, $exportCacheTtlSeconds)) {
+$exportLive = ((string) ($_GET['export_live'] ?? '0') === '1');
+$exportCacheTtlSeconds = in_array($format, ['pdf', 'csv'], true) ? 60 : 0;
+if (!$exportLive && try_send_cached_export($format, $filters, $exportCacheTtlSeconds)) {
     exit;
 }
 
-$payload = call_report_data_api($filters);
+$payload = call_report_data_api($filters, $exportLive);
 
 if (empty($payload) || empty($payload['success'])) {
     http_response_code(502);
@@ -285,6 +356,10 @@ if (empty($payload) || empty($payload['success'])) {
     ]);
     exit;
 }
+
+$payload['kbaPaAuditRows'] = fetch_kba_pa_audit_rows();
+$payload['meta'] = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
+$payload['meta']['kba_pa_audit_source'] = !empty($payload['kbaPaAuditRows']) ? 'kba_pa_audit_live' : 'none';
 
 $result = run_python_report_engine($payload, $format);
 if (empty($result['success'])) {
