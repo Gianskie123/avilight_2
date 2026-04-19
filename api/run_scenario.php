@@ -588,7 +588,7 @@ try {
     $city_polygons = $city !== '' ? city_geometry($city) : null;
     if (!$manual_mode) {
         $cache_key = bau_city_cache_key($city);
-        $cache_row = get_mysql_bau_baseline_cache($pdo, $cache_key, $month, 86400);
+        $cache_row = get_mysql_bau_baseline_cache($pdo, $cache_key, $month, 2592000);
 
         if ($cache_row !== null) {
             $base_ndvi = (float)$cache_row['base_ndvi'];

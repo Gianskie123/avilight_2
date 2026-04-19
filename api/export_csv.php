@@ -69,7 +69,7 @@ function call_report_data_api(array $filters): array {
     $queryFresh = http_build_query(array_merge($filters, [
         'scope' => 'diagnostics',
         'include_diagnostics' => '1',
-        'force_refresh' => '1',
+        'force_refresh' => '0',
     ]));
 
     $queryCached = http_build_query(array_merge($filters, [

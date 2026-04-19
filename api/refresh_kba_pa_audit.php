@@ -32,7 +32,10 @@ if (!$projectRoot || !is_file($pythonScript)) {
     exit;
 }
 
-$pythonBinary = getenv('AVILIGHT_PYTHON') ?: 'python';
+$pythonBinary = getenv('AVILIGHT_PYTHON')
+    ?: getenv('PYTHON_BIN')
+    ?: (defined('PYTHON_BIN') ? PYTHON_BIN : null)
+    ?: 'python';
 
 // Pass DB credentials via environment for the Python worker.
 $dbHost = (string)($GLOBALS['db_host'] ?? '127.0.0.1');
@@ -47,13 +50,20 @@ $descriptors = [
     2 => ['pipe', 'w'],
 ];
 
-$env = array_merge($_ENV, [
+$envVars = [
     'AVILIGHT_DB_HOST' => $dbHost,
     'AVILIGHT_DB_USER' => $dbUser,
     'AVILIGHT_DB_PASS' => $dbPass,
     'AVILIGHT_DB_NAME' => $dbName,
     'AVILIGHT_DB_PORT' => $dbPort,
-]);
+];
+
+$envPrev = [];
+foreach ($envVars as $k => $v) {
+    $prev = getenv($k);
+    $envPrev[$k] = ($prev === false) ? null : (string) $prev;
+    putenv($k . '=' . (string) $v);
+}
 
 $process = @proc_open(
     [
@@ -63,8 +73,16 @@ $process = @proc_open(
     $descriptors,
     $pipes,
     $projectRoot,
-    $env
+    null
 );
+
+foreach ($envPrev as $k => $v) {
+    if ($v === null) {
+        putenv($k);
+    } else {
+        putenv($k . '=' . $v);
+    }
+}
 
 if (!is_resource($process)) {
     http_response_code(500);
