@@ -11,6 +11,44 @@ require_login(); // Require login for all dashboard pages
 <?php
 $current_page = basename($_SERVER['PHP_SELF']);
 $avp_pages = ['home.php', 'dashboard.php', 'geospatial.php', 'species.php', 'reports.php', 'admin.php'];
+$nav_links = [
+    ['label' => 'Home', 'href' => 'home.php'],
+    ['label' => 'Dashboard', 'href' => 'dashboard.php'],
+    ['label' => 'Analytics', 'href' => 'geospatial.php'],
+    ['label' => 'Species', 'href' => 'species.php'],
+    ['label' => 'Reports', 'href' => 'reports.php'],
+    ['label' => 'Settings', 'href' => 'admin.php'],
+];
+
+if (is_file(__DIR__ . '/fetch_bmb_announcements.php')) {
+    require_once __DIR__ . '/fetch_bmb_announcements.php';
+}
+
+$header_notifications = [];
+if (function_exists('fetch_bmb_announcements')) {
+    $fetched_notifications = fetch_bmb_announcements(4, 3600, false);
+    if (is_array($fetched_notifications)) {
+        $header_notifications = $fetched_notifications;
+    }
+}
+
+function header_safe_notification_link($url): string {
+    $url = is_string($url) ? trim($url) : '';
+    if ($url === '') {
+        return 'home.php';
+    }
+    $parts = @parse_url($url);
+    $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        return 'home.php';
+    }
+    $host = strtolower((string) ($parts['host'] ?? ''));
+    if ($host !== '' && !in_array($host, ['faps.bmb.gov.ph', 'www.faps.bmb.gov.ph'], true)) {
+        return 'home.php';
+    }
+    return $url;
+}
+
 $body_classes = [];
 if (in_array($current_page, $avp_pages, true)) {
     $body_classes[] = 'avp-animated-page';
@@ -53,16 +91,12 @@ if (in_array($current_page, $avp_pages, true)) {
                 <span class="nav-title">AVILIGHT</span>
             </div>
             <ul class="nav-menu">
-                <li><a href="home.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'home.php' ? 'active' : ''; ?>">Home</a></li>
-                <li><a href="dashboard.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'dashboard.php' ? 'active' : ''; ?>">Dashboard</a></li>
-                <li><a href="geospatial.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'geospatial.php' ? 'active' : ''; ?>">Analytics</a></li>
-                <li><a href="species.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'species.php' ? 'active' : ''; ?>">Species</a></li>
-                <li><a href="reports.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">Reports</a></li>
-                <li><a href="admin.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'admin.php' ? 'active' : ''; ?>">Settings</a></li>
+                <?php foreach ($nav_links as $item): ?>
+                    <?php $is_active_nav = $current_page === $item['href']; ?>
+                    <li><a href="<?php echo htmlspecialchars($item['href']); ?>" class="<?php echo $is_active_nav ? 'active' : ''; ?>"<?php echo $is_active_nav ? ' aria-current="page"' : ''; ?>><?php echo htmlspecialchars($item['label']); ?></a></li>
+                <?php endforeach; ?>
             </ul>
             <div class="nav-user">
-                <span class="user-email"><?php echo htmlspecialchars(get_logged_user()); ?></span>
-                <a href="?logout=1" class="logout-btn">Logout</a>
                 <!-- Dark / light mode toggle -->
                 <button class="theme-toggle" id="themeToggle" aria-label="Switch to dark mode" title="Switch to dark mode">
                     <!-- Sun icon (shown in dark mode to switch to light) -->
@@ -71,12 +105,48 @@ if (in_array($current_page, $avp_pages, true)) {
                     <svg id="iconMoon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
                     <span id="themeLabel">Dark</span>
                 </button>
-                <span class="nav-icon" aria-label="Search"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg></span>
-                <span class="nav-icon" aria-label="Notifications"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg></span>
-                <span class="nav-icon" aria-label="User profile"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg></span>
+                <button class="nav-icon nav-search-btn" id="globalSearchToggle" type="button" aria-label="Global search (press slash)" title="Global search ( / )"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg></button>
+
+                <div class="nav-menu-item">
+                    <button class="nav-icon" id="notificationsToggle" type="button" aria-label="Notifications" title="Notifications">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
+                    </button>
+                    <div class="nav-popover nav-popover-notifications" id="notificationsMenu">
+                        <div class="nav-popover-title">Notifications</div>
+                        <?php foreach ($header_notifications as $notification): ?>
+                            <a class="nav-notification-row" href="<?php echo htmlspecialchars(header_safe_notification_link($notification['link'] ?? '')); ?>" target="_blank" rel="noopener noreferrer" aria-label="<?php echo htmlspecialchars(($notification['title'] ?? 'Notification') . ' (opens in new tab)'); ?>">
+                                <span class="nav-notification-title"><?php echo htmlspecialchars($notification['title'] ?? 'System update'); ?></span>
+                                <?php if (!empty($notification['date'])): ?><span class="nav-notification-date"><?php echo htmlspecialchars($notification['date']); ?></span><?php endif; ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div class="nav-menu-item">
+                    <button class="nav-icon" id="accountToggle" type="button" aria-label="Account menu" title="Account">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>
+                    </button>
+                    <div class="nav-popover nav-popover-account" id="accountMenu">
+                        <div class="nav-account-email"><?php echo htmlspecialchars(get_logged_user()); ?></div>
+                        <a href="admin.php" class="nav-account-link">Account settings</a>
+                        <a href="?logout=1" class="nav-account-link nav-account-logout">Log out</a>
+                    </div>
+                </div>
             </div>
         </div>
     </nav>
+
+    <div class="global-search-overlay" id="globalSearchOverlay" hidden>
+        <div class="global-search-dialog" role="dialog" aria-modal="true" aria-label="Global search">
+            <input type="search" id="globalSearchInput" class="global-search-input" placeholder="Search pages..." autocomplete="off" aria-label="Search pages">
+            <div class="global-search-results" id="globalSearchResults">
+                <?php foreach ($nav_links as $item): ?>
+                    <a class="global-search-result" href="<?php echo htmlspecialchars($item['href']); ?>" data-search="<?php echo htmlspecialchars(strtolower($item['label'] . ' ' . str_replace('.php', '', $item['href']))); ?>"><?php echo htmlspecialchars($item['label']); ?></a>
+                <?php endforeach; ?>
+            </div>
+            <div class="sr-only" id="globalSearchLive" aria-live="polite"></div>
+        </div>
+    </div>
 
     <script>
     // Theme toggle logic
@@ -113,6 +183,103 @@ if (in_array($current_page, $avp_pages, true)) {
             var next    = current === 'dark' ? 'light' : 'dark';
             localStorage.setItem('avilight-theme', next);
             applyTheme(next);
+        });
+
+        var searchToggle = document.getElementById('globalSearchToggle');
+        var searchOverlay = document.getElementById('globalSearchOverlay');
+        var searchInput = document.getElementById('globalSearchInput');
+        var searchResults = document.getElementById('globalSearchResults');
+        var searchLive = document.getElementById('globalSearchLive');
+        var popovers = [
+            {toggle: document.getElementById('notificationsToggle'), menu: document.getElementById('notificationsMenu')},
+            {toggle: document.getElementById('accountToggle'), menu: document.getElementById('accountMenu')}
+        ];
+
+        function closePopovers(exceptMenu) {
+            popovers.forEach(function(item) {
+                if (item.menu && item.menu !== exceptMenu) {
+                    item.menu.classList.remove('is-open');
+                }
+            });
+        }
+
+        function openSearch() {
+            searchOverlay.hidden = false;
+            closePopovers(null);
+            searchInput.value = '';
+            filterSearchResults('');
+            setTimeout(function() { searchInput.focus(); }, 0);
+        }
+
+        function closeSearch() {
+            searchOverlay.hidden = true;
+        }
+
+        function filterSearchResults(query) {
+            var normalized = query.toLowerCase().trim();
+            var visibleCount = 0;
+            searchResults.querySelectorAll('.global-search-result').forEach(function(link) {
+                var haystack = link.getAttribute('data-search') || '';
+                link.hidden = normalized !== '' && !haystack.includes(normalized);
+                if (!link.hidden) {
+                    visibleCount += 1;
+                }
+            });
+            if (searchLive) {
+                searchLive.textContent = visibleCount + ' result' + (visibleCount === 1 ? '' : 's') + ' found';
+            }
+        }
+
+        if (searchToggle) {
+            searchToggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (searchOverlay.hidden) openSearch();
+                else closeSearch();
+            });
+        }
+
+        searchOverlay.addEventListener('click', function(e) {
+            if (e.target === searchOverlay) {
+                closeSearch();
+            }
+        });
+
+        searchInput.addEventListener('input', function() {
+            filterSearchResults(searchInput.value || '');
+        });
+
+        popovers.forEach(function(item) {
+            if (!item.toggle || !item.menu) return;
+            item.toggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var willOpen = !item.menu.classList.contains('is-open');
+                closePopovers(willOpen ? item.menu : null);
+                if (willOpen) item.menu.classList.add('is-open');
+                else item.menu.classList.remove('is-open');
+                closeSearch();
+            });
+            item.menu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+
+        document.addEventListener('click', function() {
+            closePopovers(null);
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeSearch();
+                closePopovers(null);
+                return;
+            }
+            var activeElement = document.activeElement;
+            var tagName = activeElement ? (activeElement.tagName || '') : '';
+            var isInputFocused = /input|textarea|select/i.test(tagName) || !!(activeElement && activeElement.isContentEditable);
+            if (e.key === '/' && !isInputFocused) {
+                e.preventDefault();
+                openSearch();
+            }
         });
     })();
     </script>
