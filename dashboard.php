@@ -1119,6 +1119,10 @@ var selectedHistoricalSite = null;
 var envRowsExpanded = false;
 var historicalClickStep = 0;
 var historicalBarsAnimated = false;
+var HISTORICAL_DEFAULT_CITY = 'Metro Manila';
+var HISTORICAL_CLUSTER_POPUP_MAX_HEIGHT = 220;
+var HISTORICAL_CLUSTER_POPUP_MIN_WIDTH = 220;
+var HISTORICAL_CLUSTER_UNKNOWN_SITE = 'Unknown Site';
 var historicalTypingTimers = [];
 var historicalTypingInProgress = false;
 var historicalAutoSequenceTimers = [];
@@ -1476,12 +1480,12 @@ function siteMatchesHistoricalFilters(site, selections) {
 }
 
 function getHistoricalSiteCity(site) {
-    if (!site) return 'Metro Manila';
+    if (!site) return HISTORICAL_DEFAULT_CITY;
 
     var lat = toNumber(site.latitude);
     var lng = toNumber(site.longitude);
     if (!lat || !lng || !municipalityGeoData || !municipalityGeoData.features) {
-        return 'Metro Manila';
+        return HISTORICAL_DEFAULT_CITY;
     }
 
     for (var i = 0; i < municipalityGeoData.features.length; i++) {
@@ -1491,7 +1495,34 @@ function getHistoricalSiteCity(site) {
         }
     }
 
-    return 'Metro Manila';
+    return HISTORICAL_DEFAULT_CITY;
+}
+
+function getHistoricalClusterSites(markers) {
+    var siteMap = {};
+    (markers || []).forEach(function(marker) {
+        var site = marker && marker.historicalSiteData ? marker.historicalSiteData : null;
+        var name = (site && site.site_name) ? site.site_name : HISTORICAL_CLUSTER_UNKNOWN_SITE;
+        siteMap[name] = true;
+    });
+    return Object.keys(siteMap).sort();
+}
+
+function getHistoricalClusterPopupContent(markers) {
+    var sites = getHistoricalClusterSites(markers);
+    var wrapStyle = 'min-width:' + HISTORICAL_CLUSTER_POPUP_MIN_WIDTH + 'px; line-height:1.45;';
+    if (!sites.length) {
+        return '<div style="' + wrapStyle + '">No observation sites in this cluster.</div>';
+    }
+
+    var siteListHtml = sites.map(function(name) {
+        return '<li>' + escapeHtml(name) + '</li>';
+    }).join('');
+
+    return '<div style="' + wrapStyle + '">' +
+        '<strong>Sites in this cluster (' + sites.length + ')</strong>' +
+        '<ul style="margin:6px 0 0 16px; padding:0;">' + siteListHtml + '</ul>' +
+    '</div>';
 }
 
 function resetHistoricalSiteDetailPanel() {
@@ -2040,9 +2071,23 @@ function renderHistoricalMap(rows, selections, options) {
                 disableClusteringAtZoom: 15,
                 maxClusterRadius: 50,
                 spiderfyOnMaxZoom: true,
-                showCoverageOnHover: false
+                showCoverageOnHover: false,
+                // Keep click on cluster for area popup instead of immediately zooming.
+                zoomToBoundsOnClick: false
             });
             historicalObservationClusterLayer.addTo(map);
+            historicalObservationClusterLayer.on('clusterclick', function(event) {
+                var cluster = event && event.layer ? event.layer : null;
+                if (!cluster || !cluster.getAllChildMarkers) return;
+                var markers = cluster.getAllChildMarkers();
+                var popupHtml = getHistoricalClusterPopupContent(markers);
+                if (cluster.getPopup()) {
+                    cluster.setPopupContent(popupHtml);
+                } else {
+                    cluster.bindPopup(popupHtml, { maxHeight: HISTORICAL_CLUSTER_POPUP_MAX_HEIGHT, className: 'historical-cluster-popup' });
+                }
+                cluster.openPopup();
+            });
         }
 
         validSites.forEach(function(site) {
@@ -2067,6 +2112,7 @@ function renderHistoricalMap(rows, selections, options) {
                 '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive) +
                 birdFilterLine
             );
+            marker.historicalSiteData = site;
 
             marker.on('click', function() {
                 showHistoricalSiteDetail(site);
