@@ -3035,8 +3035,7 @@ function wireFilterButtons() {
 
     if (globalAreaFilter) {
         globalAreaFilter.addEventListener('change', function () {
-            fetchReportData('trend');
-            fetchReportData('snapshot');
+            // Intentionally do nothing here. The Apply Filters button is the only trigger.
         });
     }
 
