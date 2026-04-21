@@ -59,6 +59,16 @@ $cacheTtlSeconds = 30 * 24 * 60 * 60;
 $cacheDir = __DIR__ . '/../data/cache/reports';
 $reportCacheSchemaVersion = 'v3';
 
+function safeReportYearBounds(PDO $mysql): array {
+    $yearRow = $mysql->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary')->fetch(PDO::FETCH_ASSOC) ?: [];
+    $yearMin = (int) ($yearRow['min_year'] ?? 2014);
+    $yearMax = (int) ($yearRow['max_year'] ?? 2025);
+    if ($yearMin <= 0 || $yearMax <= 0 || $yearMin > $yearMax) {
+        return [2014, 2025];
+    }
+    return [$yearMin, $yearMax];
+}
+
 /**
  * Build inline SQL table for Metro Manila city names.
  */
@@ -2094,13 +2104,7 @@ function computeModelDiagnostics(PDO $pdo, string $selectedArea, int $startYear,
 try {
     $mysql = get_mysql_db();
 
-    ensureSummaryTable($mysql);
-    ensureReportQueryIndexes($mysql);
-    $spatialMapStats = refreshSpatialMaps($mysql, $metro_manila_cities, 86400);
-
-    $yearRow = $mysql->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary')->fetch(PDO::FETCH_ASSOC) ?: [];
-    $yearMin = (int) ($yearRow['min_year'] ?? 2014);
-    $yearMax = (int) ($yearRow['max_year'] ?? 2025);
+    [$yearMin, $yearMax] = safeReportYearBounds($mysql);
     if ($yearMin <= 0 || $yearMax <= 0 || $yearMin > $yearMax) {
         $yearMin = 2014;
         $yearMax = 2025;
@@ -2118,17 +2122,6 @@ try {
         $selected_area = 'All Areas';
     }
 
-    if (summaryNeedsRefresh($mysql, 3600)) {
-        $refreshChecks = refreshSummary($mysql, $metro_manila_cities);
-    } else {
-        $refreshChecks = [
-            'ndvi_out_of_range' => 0,
-            'lst_out_of_range' => 0,
-            'precip_low' => 0,
-            'precip_high' => 0,
-        ];
-    }
-
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0775, true);
     }
@@ -2139,6 +2132,21 @@ try {
     if (is_array($cached)) {
         echo json_encode($cached, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
         exit;
+    }
+
+    ensureSummaryTable($mysql);
+    ensureReportQueryIndexes($mysql);
+    $spatialMapStats = refreshSpatialMaps($mysql, $metro_manila_cities, 86400);
+
+    if (summaryNeedsRefresh($mysql, 3600)) {
+        $refreshChecks = refreshSummary($mysql, $metro_manila_cities);
+    } else {
+        $refreshChecks = [
+            'ndvi_out_of_range' => 0,
+            'lst_out_of_range' => 0,
+            'precip_low' => 0,
+            'precip_high' => 0,
+        ];
     }
 
     $xgboostFeatureImportanceData = [];

@@ -149,7 +149,9 @@ function rrc_isDeadlock(Throwable $e): bool {
     $msg = $e->getMessage();
     return strpos($msg, 'SQLSTATE[40001]') !== false
         || strpos($msg, 'Deadlock found when trying to get lock') !== false
-        || strpos($msg, '1213') !== false;
+    || strpos($msg, '1213') !== false
+    || strpos($msg, 'Lock wait timeout exceeded') !== false
+    || strpos($msg, '1205') !== false;
 }
 
 function rrc_refreshSpatialMaps(PDO $pdo, array $cities): array {
@@ -453,9 +455,12 @@ function rrc_purgeCacheFiles(string $cacheDir): int {
 
 try {
     $pdo = get_mysql_db();
+    // Give long-running refresh writes enough time when concurrent readers/writers exist.
+    $pdo->exec('SET SESSION innodb_lock_wait_timeout = 300');
     $t0  = microtime(true);
+    $summaryOnly = ((string) ($_POST['summary_only'] ?? $_GET['summary_only'] ?? '0')) === '1';
 
-    $maxAttempts = 3;
+    $maxAttempts = 5;
     $attempt = 0;
     $spatialStats = [];
     $summaryStats = [];
@@ -468,9 +473,22 @@ try {
     while ($attempt < $maxAttempts) {
         $attempt++;
         try {
-            // 1. Spatial maps
-            $spatialStats = rrc_refreshSpatialMaps($pdo, $metro_manila_cities);
-            $t1 = microtime(true);
+            // 1. Spatial maps (optional in summary-only mode to reduce lock contention)
+            if ($summaryOnly) {
+                $obsMapped = (int) $pdo->query('SELECT COUNT(*) FROM observation_city_map')->fetchColumn();
+                $gridMapped = (int) $pdo->query('SELECT COUNT(*) FROM city_grid_map')->fetchColumn();
+                $spatialStats = [
+                    'source_obs_count' => 0,
+                    'mapped_obs_count' => $obsMapped,
+                    'source_grid_count' => 0,
+                    'mapped_grid_count' => $gridMapped,
+                    'skipped' => true,
+                ];
+                $t1 = microtime(true);
+            } else {
+                $spatialStats = rrc_refreshSpatialMaps($pdo, $metro_manila_cities);
+                $t1 = microtime(true);
+            }
 
             // 2. Ecological yearly summary
             $summaryStats = rrc_refreshSummary($pdo, $metro_manila_cities);
@@ -487,14 +505,14 @@ try {
             if (!rrc_isDeadlock($e) || $attempt >= $maxAttempts) {
                 throw $e;
             }
-            // Brief backoff before retrying deadlocked refresh operations.
-            usleep(200000 * $attempt);
+            // Progressive backoff before retrying lock-contention failures.
+            usleep(500000 * $attempt);
         }
     }
 
     echo json_encode([
         'success'          => true,
-        'message'          => 'Ecological report cache refreshed.',
+        'message'          => $summaryOnly ? 'Ecological yearly summary refreshed (summary-only mode).' : 'Ecological report cache refreshed.',
         'elapsed_s'        => round($t3 - $t0, 2),
         'spatial_maps'     => array_merge($spatialStats, ['elapsed_s' => round($t1 - $t0, 2)]),
         'summary_table'    => array_merge($summaryStats, ['elapsed_s' => round($t2 - $t1, 2)]),
