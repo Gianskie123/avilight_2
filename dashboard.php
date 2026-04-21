@@ -347,6 +347,21 @@ try {
                         <input type="checkbox" id="obsToggle" checked onchange="loadHistoricalData()">
                         Observation Data
                     </label>
+                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Bird:</label>
+                    <input id="birdFilterInput" class="btn btn-secondary btn-sm" type="search" list="birdFilterOptions" placeholder="All birds" style="padding:3px 6px; min-width:180px;" onchange="loadHistoricalData()">
+                    <datalist id="birdFilterOptions"></datalist>
+                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Migration:</label>
+                    <select id="migrationFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                        <option value="">All</option>
+                        <option value="Resident">Resident</option>
+                        <option value="Migratory">Migratory</option>
+                    </select>
+                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Light:</label>
+                    <select id="lightFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                        <option value="">All</option>
+                        <option value="Tolerant">Light-tolerant</option>
+                        <option value="Sensitive">Light-sensitive</option>
+                    </select>
                     <select id="envDataSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="onEnvDataTypeChange()">
                         <option value="">Environmental Data (None)</option>
                         <option value="land_cover">Land Cover</option>
@@ -1030,12 +1045,55 @@ function playRiskViewAnimation() {
 // ── Species masterlist lookup (loaded once on init) ───────────────────────
 // Keyed by lower-cased common name → { tolerance, migration }
 var speciesLookup = {};
+var speciesDisplayToKey = {};
+
+function toDisplaySpeciesName(rawName) {
+    return String(rawName || '')
+        .split(/\s+/)
+        .filter(function(part) { return !!part; })
+        .map(function(part) {
+            return part.charAt(0).toUpperCase() + part.slice(1);
+        })
+        .join(' ');
+}
+
+function populateBirdFilterOptions() {
+    var birdInput = document.getElementById('birdFilterInput');
+    var birdOptions = document.getElementById('birdFilterOptions');
+    if (!birdInput || !birdOptions) return;
+
+    var selectedValue = String(birdInput.value || '').trim();
+    var options = [];
+    speciesDisplayToKey = {};
+    Object.keys(speciesLookup || {})
+        .sort(function(a, b) { return a.localeCompare(b); })
+        .forEach(function(speciesKey) {
+            var displayName = toDisplaySpeciesName(speciesKey);
+            speciesDisplayToKey[displayName.toLowerCase()] = speciesKey;
+            options.push('<option value="' + escapeHtml(displayName) + '"></option>');
+        });
+
+    birdOptions.innerHTML = options.join('');
+    birdInput.value = selectedValue;
+}
+
+function getSelectedBirdKey() {
+    var birdInput = document.getElementById('birdFilterInput');
+    if (!birdInput) return '';
+    var raw = String(birdInput.value || '').trim();
+    if (!raw) return '';
+    var normalized = raw.toLowerCase();
+    if (speciesLookup[normalized]) return normalized;
+    if (speciesDisplayToKey[normalized]) return speciesDisplayToKey[normalized];
+    return '';
+}
 
 fetch('api/get_species_lookup.php')
     .then(function(r) { return r.json(); })
     .then(function(data) {
         if (data && data.success && data.lookup) {
             speciesLookup = data.lookup;
+            populateBirdFilterOptions();
         }
     })
     .catch(function() { /* non-critical – badges simply won't show */ });
@@ -1044,6 +1102,7 @@ fetch('api/get_species_lookup.php')
 
 var currentMapView = 'risk';
 var historicalObservationLayers = [];
+var historicalObservationClusterLayer = null;
 var historicalEnvLayers = [];
 var historicalPointAnimationTimers = [];
 var historicalPointAnimationToken = 0;
@@ -1093,6 +1152,13 @@ function clearHistoricalObservationLayers() {
     while (historicalPointAnimationTimers.length) {
         clearTimeout(historicalPointAnimationTimers.pop());
     }
+    if (historicalObservationClusterLayer && map.hasLayer(historicalObservationClusterLayer)) {
+        map.removeLayer(historicalObservationClusterLayer);
+    }
+    if (historicalObservationClusterLayer && historicalObservationClusterLayer.clearLayers) {
+        historicalObservationClusterLayer.clearLayers();
+    }
+    historicalObservationClusterLayer = null;
     historicalObservationLayers.forEach(function(l) { map.removeLayer(l); });
     historicalObservationLayers = [];
 }
@@ -1344,6 +1410,71 @@ function parseSpeciesList(rawValue) {
         .filter(function(item) { return !!item; });
 }
 
+function matchesMigrationValue(infoMigration, expected) {
+    if (!expected) return true;
+    return String(infoMigration || '').toLowerCase() === String(expected).toLowerCase();
+}
+
+function matchesLightValue(infoTolerance, expected) {
+    if (!expected) return true;
+    return String(infoTolerance || '').toLowerCase() === String(expected).toLowerCase();
+}
+
+function siteHasSpeciesByTrait(speciesNames, traitKey, expectedValue) {
+    if (!expectedValue) return true;
+    return speciesNames.some(function(name) {
+        var info = speciesLookup[String(name || '').toLowerCase()];
+        if (!info) return false;
+        return String(info[traitKey] || '').toLowerCase() === String(expectedValue).toLowerCase();
+    });
+}
+
+function siteMatchesHistoricalFilters(site, selections) {
+    var speciesNames = parseSpeciesList(site && site.species_list);
+    var selectedBird = String((selections && selections.selectedBird) || '').trim().toLowerCase();
+    var migrationFilter = String((selections && selections.migrationFilter) || '').trim();
+    var lightFilter = String((selections && selections.lightFilter) || '').trim();
+
+    if (selectedBird) {
+        var hasSelectedBird = speciesNames.some(function(name) {
+            return String(name || '').trim().toLowerCase() === selectedBird;
+        });
+        if (!hasSelectedBird) return false;
+
+        var selectedInfo = speciesLookup[selectedBird] || null;
+        if (!matchesMigrationValue(selectedInfo && selectedInfo.migration, migrationFilter)) return false;
+        if (!matchesLightValue(selectedInfo && selectedInfo.tolerance, lightFilter)) return false;
+        return true;
+    }
+
+    var migrationMatches = siteHasSpeciesByTrait(speciesNames, 'migration', migrationFilter);
+    var lightMatches = siteHasSpeciesByTrait(speciesNames, 'tolerance', lightFilter);
+
+    if (migrationFilter && !migrationMatches) {
+        var migrationFilterNorm = migrationFilter.toLowerCase();
+        var fallbackMigrationCount = 0;
+        if (migrationFilterNorm === 'migratory') {
+            fallbackMigrationCount = toNumber(site.total_migrant);
+        } else if (migrationFilterNorm === 'resident') {
+            fallbackMigrationCount = toNumber(site.total_resident);
+        }
+        migrationMatches = fallbackMigrationCount > 0;
+    }
+
+    if (lightFilter && !lightMatches) {
+        var lightFilterNorm = lightFilter.toLowerCase();
+        var fallbackLightCount = 0;
+        if (lightFilterNorm === 'tolerant') {
+            fallbackLightCount = toNumber(site.total_tolerant);
+        } else if (lightFilterNorm === 'sensitive') {
+            fallbackLightCount = toNumber(site.total_sensitive);
+        }
+        lightMatches = fallbackLightCount > 0;
+    }
+
+    return migrationMatches && lightMatches;
+}
+
 function getHistoricalSiteCity(site) {
     if (!site) return 'Metro Manila';
 
@@ -1472,6 +1603,9 @@ function getHistoricalSelections() {
         year: parseInt(document.getElementById('histYearSelect').value, 10),
         month: parseInt(document.getElementById('histMonthSelect').value, 10),
         showObservation: document.getElementById('obsToggle').checked,
+        selectedBird: getSelectedBirdKey(),
+        migrationFilter: document.getElementById('migrationFilterSelect').value,
+        lightFilter: document.getElementById('lightFilterSelect').value,
         envType: document.getElementById('envDataSelect').value,
         selectedLandCoverTypes: selectedLandCoverTypes,
         landTempPeriod: document.getElementById('landTempPeriod').value
@@ -1506,7 +1640,10 @@ function getHistoricalObservationKey(selections) {
     return [
         selections.year,
         selections.month,
-        selections.showObservation ? 1 : 0
+        selections.showObservation ? 1 : 0,
+        selections.selectedBird || '',
+        selections.migrationFilter || '',
+        selections.lightFilter || ''
     ].join('|');
 }
 
@@ -1860,6 +1997,7 @@ function getHistoricalBoundaryPopupContent(cityName, rows, envRows, selections) 
 function renderHistoricalMap(rows, selections, options) {
     options = options || {};
     var preserveObservation = !!options.preserveObservation;
+    rows = rows || [];
 
     latestHistoricalContext = { rows: rows, selections: selections, envRows: [] };
 
@@ -1897,12 +2035,24 @@ function renderHistoricalMap(rows, selections, options) {
             return !!lat && !!lng;
         });
 
+        if (typeof L !== 'undefined' && L.markerClusterGroup) {
+            historicalObservationClusterLayer = L.markerClusterGroup({
+                disableClusteringAtZoom: 15,
+                maxClusterRadius: 50,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false
+            });
+            historicalObservationClusterLayer.addTo(map);
+        }
+
         validSites.forEach(function(site) {
             var lat = toNumber(site.latitude);
             var lng = toNumber(site.longitude);
 
             var richness = toNumber(site.total_unique);
             var color = getRichnessColor(richness);
+            var selectedBirdLabel = selections.selectedBird ? toDisplaySpeciesName(selections.selectedBird) : '';
+            var birdFilterLine = selectedBirdLabel ? ('<br>Bird Filter: ' + escapeHtml(selectedBirdLabel)) : '';
             var marker = L.circleMarker([lat, lng], {
                 radius: 8,
                 color: '#fff',
@@ -1914,14 +2064,19 @@ function renderHistoricalMap(rows, selections, options) {
                 '<br>Year: ' + site.year + '  Month: ' + site.month +
                 '<br>Unique Species: <strong>' + richness + '</strong>' +
                 '<br>Resident: ' + toNumber(site.total_resident) + '  Migrant: ' + toNumber(site.total_migrant) +
-                '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive)
+                '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive) +
+                birdFilterLine
             );
 
             marker.on('click', function() {
                 showHistoricalSiteDetail(site);
             });
 
-            marker.addTo(map);
+            if (historicalObservationClusterLayer) {
+                historicalObservationClusterLayer.addLayer(marker);
+            } else {
+                marker.addTo(map);
+            }
             historicalObservationLayers.push(marker);
             if (marker && marker.bringToFront) {
                 marker.bringToFront();
@@ -2059,6 +2214,9 @@ function renderObservationSidebar(rows, selections) {
     var siteCount = rows.length;
     var monthLabel = getMonthName(selections.month);
     var badgeText = selections.year + ' · ' + monthLabel;
+    if (selections.selectedBird) {
+        badgeText += ' · ' + toDisplaySpeciesName(selections.selectedBird);
+    }
     document.getElementById('histObsHeaderBadge').textContent = badgeText;
     document.getElementById('histObsHeaderMeta').textContent = selections.year + ' · ' + monthLabel + ' · Metro Manila (' + siteCount + ' sites)';
 }
@@ -2226,12 +2384,17 @@ function loadHistoricalData() {
                 historicalObservationLayers.length > 0 &&
                 lastHistoricalObservationKey === observationKey;
 
-            latestHistoricalRows = resp.data || [];
-            renderHistoricalMap(latestHistoricalRows, selections, {
+            var rawRows = resp.data || [];
+            var filteredRows = rawRows.filter(function(site) {
+                return siteMatchesHistoricalFilters(site, selections);
+            });
+
+            latestHistoricalRows = filteredRows;
+            renderHistoricalMap(filteredRows, selections, {
                 preserveObservation: preserveObservation
             });
-            renderObservationSidebar(latestHistoricalRows, selections);
-            renderEnvironmentalSidebar(latestHistoricalRows, selections);
+            renderObservationSidebar(filteredRows, selections);
+            renderEnvironmentalSidebar(filteredRows, selections);
             renderHistoricalRecentUpdates(selections);
             prepareHistoricalDeferredPanels();
             runHistoricalAutoSequence();
