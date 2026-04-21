@@ -302,7 +302,16 @@ function invokeGetReportData(array $params, string $apiPath): array {
     }
 
     $body = trim(implode("\n", $output));
-    $json = json_decode($body, true);
+    
+    // Extract JSON from output that may contain PHP warnings
+    $jsonStart = strpos($body, '{');
+    $jsonEnd = strrpos($body, '}');
+    if ($jsonStart === false || $jsonEnd === false || $jsonStart > $jsonEnd) {
+        return [false, 'No JSON found in response from get_report_data.php'];
+    }
+    $jsonStr = substr($body, $jsonStart, $jsonEnd - $jsonStart + 1);
+    
+    $json = json_decode($jsonStr, true);
     if (!is_array($json)) {
         return [false, 'Invalid JSON response from get_report_data.php'];
     }
