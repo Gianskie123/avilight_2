@@ -286,6 +286,12 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <p style="margin:12px 0 0;font-size:0.78rem;color:var(--text-muted);">
+                * <strong>Status</strong> is derived from the KBA/PA effectiveness score computed in the
+                <a href="reports.php#kba-audit-table" style="color:var(--accent-blue,#3b82f6);text-decoration:none;">Reports tab</a>.
+                Scoring weights (Richness, Sensitive Ratio, NDVI, ALAN, LST, Precipitation) can be adjusted in
+                <a href="admin.php#threshold-config" style="color:var(--accent-blue,#3b82f6);text-decoration:none;">Admin &rsaquo; Threshold Configuration</a>.
+            </p>
         </div>
     </div>
 

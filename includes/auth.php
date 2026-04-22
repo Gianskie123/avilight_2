@@ -87,26 +87,14 @@ function authenticate_user(string $email, string $password) {
         ]);
 
         if ($success) {
-            $user_id = $user['id'] ?? $user['user_id'] ?? null;
+            $user_id = $user['user_id'] ?? $user['id'] ?? null;
 
-            // Keep compatibility across schemas that use either last_login_at or last_login.
             if ($user_id !== null) {
-                $updated_last_login = false;
                 try {
-                    $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = :id')
+                    $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE user_id = :id')
                         ->execute([':id' => $user_id]);
-                    $updated_last_login = true;
                 } catch (Exception $e) {
-                    // Ignore and try legacy column name below.
-                }
-
-                if (!$updated_last_login) {
-                    try {
-                        $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = :id')
-                            ->execute([':id' => $user_id]);
-                    } catch (Exception $e) {
-                        error_log('[AVILIGHT] last_login update skipped: ' . $e->getMessage());
-                    }
+                    error_log('[AVILIGHT] last_login update skipped: ' . $e->getMessage());
                 }
             }
 
@@ -146,15 +134,15 @@ function change_password(string $current_password, string $new_password) {
     try {
         $pdo  = get_mysql_db();
         _ensure_users_table($pdo);
-        $stmt = $pdo->prepare('SELECT id, password_hash FROM users WHERE email = :email LIMIT 1');
+        $stmt = $pdo->prepare('SELECT user_id, password_hash FROM users WHERE email = :email LIMIT 1');
         $stmt->execute([':email' => $_SESSION['user_email']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$user || !password_verify($current_password, $user['password_hash'])) {
             return 'Current password is incorrect.';
         }
         $new_hash = password_hash($new_password, PASSWORD_BCRYPT);
-        $pdo->prepare('UPDATE users SET password_hash = :hash WHERE id = :id')
-            ->execute([':hash' => $new_hash, ':id' => $user['id']]);
+        $pdo->prepare('UPDATE users SET password_hash = :hash WHERE user_id = :id')
+            ->execute([':hash' => $new_hash, ':id' => $user['user_id']]);
         return true;
     } catch (Exception $e) {
         error_log('[AVILIGHT] change_password error: ' . $e->getMessage());

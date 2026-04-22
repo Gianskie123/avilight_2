@@ -97,7 +97,7 @@ try {
         'SELECT email, action, ip_address, logged_at
          FROM access_log
          ORDER BY logged_at DESC
-         LIMIT 20'
+         LIMIT 15'
     )->fetchAll(PDO::FETCH_ASSOC);
 
     $recent_failures = $log_db->query(
@@ -105,7 +105,7 @@ try {
          FROM login_attempts
          WHERE success = 0
          ORDER BY attempted_at DESC
-         LIMIT 20'
+         LIMIT 15'
     )->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     // Non-fatal – tables may not exist yet; logs will show empty
@@ -307,7 +307,7 @@ require_once 'includes/header.php';
 </div>
 
 <!-- Threshold Configuration -->
-<div class="card">
+<div class="card" id="threshold-config">
     <h2 class="card-header">Threshold Configuration</h2>
     <div class="card-body">
 
@@ -379,21 +379,25 @@ require_once 'includes/header.php';
 <div class="card">
     <h2 class="card-header">Validation & Error Logs</h2>
     <div class="card-body">
-        <h4>Recent Data Quality Issues</h4>
+
+        <h4>Ingestion Summary &mdash; Last 24 Hours</h4>
         <table>
             <thead>
                 <tr>
                     <th>Timestamp</th>
                     <th>Uploaded By</th>
-                    <th>Type</th>
-                    <th>Issue</th>
+                    <th>Category</th>
+                    <th>Details</th>
+                    <th style="text-align:right;">Count</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody id="validationLogBody">
-                <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
+                <tr><td colspan="6" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
             </tbody>
         </table>
+
+
     </div>
 </div>
 
@@ -495,9 +499,22 @@ require_once 'includes/header.php';
 
             <!-- Recent Activity -->
             <div>
-                <h4 style="margin-bottom:10px;">Recent Activity</h4>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <h4 style="margin:0;">Recent Activity</h4>
+                    <select id="accessLogFilter" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-card,#1e293b);color:var(--text-primary,#f1f5f9);">
+                        <option value="">All Actions</option>
+                        <?php
+                        $action_types = array_unique(array_map(function($r) {
+                            return strtok($r['action'] ?? '', ':');
+                        }, $recent_access));
+                        sort($action_types);
+                        foreach ($action_types as $type): ?>
+                            <option value="<?= htmlspecialchars($type) ?>"><?= htmlspecialchars(ucfirst($type)) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div style="overflow-x:auto;">
-                    <table style="font-size:0.85rem; width:100%;">
+                    <table style="font-size:0.85rem; width:100%;" id="accessLogTable">
                         <thead>
                             <tr>
                                 <th>User</th>
@@ -510,7 +527,7 @@ require_once 'includes/header.php';
                             <?php if (empty($recent_access)): ?>
                                 <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
                             <?php else: foreach ($recent_access as $row): ?>
-                                <tr>
+                                <tr data-action="<?= htmlspecialchars(strtok($row['action'] ?? '', ':')) ?>">
                                     <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
                                     <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
                                     <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
@@ -560,6 +577,14 @@ $extra_scripts = <<<'EOD'
 #toastContainer > div { transition: opacity .3s ease; }
 </style>
 <script>
+// ── Access log action filter ──────────────────────────────────────────────────
+document.getElementById('accessLogFilter')?.addEventListener('change', function () {
+    const val = this.value;
+    document.querySelectorAll('#accessLogTable tbody tr').forEach(tr => {
+        tr.style.display = (!val || tr.dataset.action === val) ? '' : 'none';
+    });
+});
+
 // ── Toast notifications ───────────────────────────────────────────────────────
 
 function showToast(title, lines, type = 'info') {
@@ -590,12 +615,12 @@ function showToast(title, lines, type = 'info') {
 // ── Validation log loader ─────────────────────────────────────────────────────
 
 const REASON_META = {
-    out_of_bounds:     ['warning',   'Spatial',   (n, f) => `${n} observation(s) outside Metro Manila bounding box (lat 14.3–14.8 / lon 120.9–121.15) in "${f}"`,    'Rejected', 'danger'],
-    missing_fields:    ['info',      'Format',    (n, f) => `${n} row(s) missing GLOBAL UNIQUE IDENTIFIER or COMMON NAME in "${f}"`,                                  'Rejected', 'danger'],
-    uncertain_species: ['warning',   'Species',   (n, f) => `${n} uncertain species record(s) (contains " sp." or "/") in "${f}"`,                                   'Rejected', 'danger'],
-    invalid_date:      ['info',      'Format',    (n, f) => `${n} row(s) with unparseable OBSERVATION DATE in "${f}"`,                                                'Resolved', 'success'],
-    duplicate_in_file: ['secondary', 'Duplicate', (n, f) => `${n} duplicate GLOBAL UNIQUE IDENTIFIER(s) removed within file "${f}"`,                                 'Cleaned',  'success'],
-    duplicate_in_db:   ['danger',    'Duplicate', (n, f) => `${n} observation ID(s) already exist in the database — upload from "${f}" was aborted and rolled back`, 'Aborted',  'danger'],
+    out_of_bounds:     ['warning',   'Spatial',   (n, f) => `${n} observation(s) outside Metro Manila bounding box (lat 14.3–14.8 / lon 120.9–121.15)`,    'Rejected', 'danger'],
+    missing_fields:    ['info',      'Format',    (n, f) => `${n} row(s) missing GLOBAL UNIQUE IDENTIFIER or COMMON NAME`,                                  'Rejected', 'danger'],
+    uncertain_species: ['warning',   'Species',   (n, f) => `${n} uncertain species record(s) (contains " sp." or "/")`,                                   'Rejected', 'danger'],
+    invalid_date:      ['info',      'Format',    (n, f) => `${n} row(s) with unparseable OBSERVATION DATE`,                                                'Resolved', 'success'],
+    duplicate_in_file: ['secondary', 'Duplicate', (n, f) => `${n} duplicate GLOBAL UNIQUE IDENTIFIER(s) removed within the file`,                          'Cleaned',  'success'],
+    duplicate_in_db:   ['danger',    'Duplicate', (n, f) => `${n} observation ID(s) already exist in the database — upload was aborted and rolled back`,    'Aborted',  'danger'],
 };
 
 function loadValidationLog() {
@@ -603,25 +628,70 @@ function loadValidationLog() {
         .then(r => r.json())
         .then(data => {
             const tbody = document.getElementById('validationLogBody');
-            if (!tbody) return;
-            if (!data.success || !data.rows.length) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">No validation issues in the last hour. Issues are logged automatically when CSV/XLSX files are uploaded.</td></tr>`;
+
+            if (!data.success) {
+                const msg = `⚠ Could not load validation log${data.error ? ': ' + data.error : '.'}`;
+                if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#f87171;padding:16px;">${msg}</td></tr>`;
                 return;
             }
-            tbody.innerHTML = data.rows.map(row => {
-                const meta   = REASON_META[row.reason] || ['secondary', row.reason, (n, f) => `${n} issue(s) in "${f}"`, 'Rejected', 'danger'];
-                const [typeBadge, typeLabel, issueFn, statusLabel, statusBadge] = meta;
-                const issue  = issueFn(row.cnt, row.filename ? row.filename.split(/[\\/]/).pop() : '');
-                return `<tr>
-                    <td style="white-space:nowrap;">${row.uploaded_at || '—'}</td>
-                    <td>${row.uploaded_by || '—'}</td>
-                    <td><span class="badge badge-${typeBadge}">${typeLabel}</span></td>
-                    <td>${issue}</td>
-                    <td><span class="badge badge-${statusBadge}">${statusLabel}</span></td>
-                </tr>`;
-            }).join('');
+
+            if (!data.uploads || !data.uploads.length) {
+                if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#888;padding:16px;">No uploads in the last 24 hours.</td></tr>`;
+                return;
+            }
+
+            const rows = [];
+            for (const upload of data.uploads) {
+                const fname      = (upload.filename || '').split(/[\\/]/).pop() || '—';
+                const statusMap  = { success: ['badge-success', 'Success'], partial: ['badge-warning', 'Partial'], failed: ['badge-danger', 'Failed'] };
+                const [sBadge, sLabel] = statusMap[upload.status] || ['badge-secondary', upload.status || '—'];
+                const ins   = Number(upload.rows_inserted || 0).toLocaleString();
+                const skip  = Number(upload.rows_skipped  || 0).toLocaleString();
+                const tot   = Number(upload.rows_total    || 0).toLocaleString();
+                const newSp = Number(upload.new_species   || 0);
+
+                // Upload summary row
+                rows.push(`<tr style="border-top:2px solid var(--border-color,#334155);">
+                    <td style="white-space:nowrap;font-size:0.83rem;vertical-align:top;">${upload.uploaded_at || '—'}</td>
+                    <td style="font-size:0.83rem;vertical-align:top;">${upload.uploaded_by || '—'}</td>
+                    <td style="vertical-align:top;"><span class="badge badge-info">Upload</span></td>
+                    <td style="font-size:0.85rem;">
+                        <strong>${fname}</strong><br>
+                        <span style="color:var(--text-secondary,#94a3b8);font-size:0.8rem;">
+                            Total: ${tot} &nbsp;&middot;&nbsp;
+                            Inserted: <strong style="color:#4ade80;">${ins}</strong> &nbsp;&middot;&nbsp;
+                            Skipped: <strong style="color:#fbbf24;">${skip}</strong>
+                            ${newSp > 0 ? ` &nbsp;&middot;&nbsp; New species: <strong style="color:#60a5fa;">${newSp}</strong>` : ''}
+                        </span>
+                        ${upload.fail_reason ? `<br><span style="color:#f87171;font-size:0.78rem;">Reason: ${upload.fail_reason}</span>` : ''}
+                    </td>
+                    <td style="text-align:right;vertical-align:top;font-size:0.83rem;">${tot}</td>
+                    <td style="vertical-align:top;"><span class="badge ${sBadge}">${sLabel}</span></td>
+                </tr>`);
+
+                // Per-reason rejection sub-rows
+                const rejections = upload.rejections || {};
+                for (const [reason, cnt] of Object.entries(rejections)) {
+                    const meta = REASON_META[reason] || ['secondary', reason, (n) => `${n} issue(s)`, 'Rejected', 'danger'];
+                    const [typeBadge, typeLabel, issueFn, statusLbl, rBadge] = meta;
+                    rows.push(`<tr style="background:rgba(0,0,0,0.04);">
+                        <td></td>
+                        <td></td>
+                        <td><span class="badge badge-${typeBadge}">${typeLabel}</span></td>
+                        <td style="font-size:0.82rem;color:var(--text-secondary,#94a3b8);">&#8627; ${issueFn(cnt, fname)}</td>
+                        <td style="text-align:right;color:#fbbf24;font-size:0.83rem;">${Number(cnt).toLocaleString()}</td>
+                        <td><span class="badge badge-${rBadge}">${statusLbl}</span></td>
+                    </tr>`);
+                }
+            }
+
+            tbody.innerHTML = rows.join('');
         })
-        .catch(() => {});
+        .catch(err => {
+            const tbody = document.getElementById('validationLogBody');
+            if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#f87171;padding:16px;">
+                Network error: ${err.message}</td></tr>`;
+        });
 }
 
 // ── Spatial checks loader ────────────────────────────────────────────────────
@@ -763,6 +833,7 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
                 statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
                 loadValidationLog();
                 loadSpatialChecks();
+                loadCovariateStatus();
             } else {
                 statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
                 loadValidationLog();

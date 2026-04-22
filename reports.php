@@ -1558,7 +1558,7 @@ require_once 'includes/header.php';
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card" id="kba-audit-table">
                         <h2 class="card-header">Key Biodiversity Area &amp; Protected Areas Audit Table</h2>
                         <div class="card-body">
                             <div class="chart-guidance" style="margin-bottom:12px;">

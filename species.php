@@ -234,29 +234,26 @@ $all_species = $pdo->query(
         <div class="stat-label">Total Species</div>
         <div class="stat-value"><?php echo number_format($total_species); ?></div>
     </div>
-    <div class="stat-card danger" style="flex:1;min-width:120px;">
+    <div class="stat-card" style="flex:1;min-width:120px;">
         <div class="stat-label">Sensitive</div>
         <div class="stat-value"><?php echo number_format($sensitive_count); ?></div>
     </div>
-    <div class="stat-card success" style="flex:1;min-width:120px;">
+    <div class="stat-card" style="flex:1;min-width:120px;">
         <div class="stat-label">Tolerant</div>
         <div class="stat-value"><?php echo number_format($tolerant_count); ?></div>
     </div>
-    <div class="stat-card info" style="flex:1;min-width:120px;">
+    <div class="stat-card" style="flex:1;min-width:120px;">
         <div class="stat-label">Migratory</div>
         <div class="stat-value"><?php echo number_format($migratory_count); ?></div>
     </div>
-    <div class="stat-card" style="flex:1;min-width:120px;border-left-color:#6366f1;">
+    <div class="stat-card" style="flex:1;min-width:120px;">
         <div class="stat-label">Resident</div>
         <div class="stat-value"><?php echo number_format($resident_count); ?></div>
     </div>
 </div>
 
 <?php
-$edit_total = count(array_unique(array_merge(
-    array_column($no_category,    'id'),
-    array_column($lacking_details,'id')
-)));
+$edit_total = count($no_category);
 ?>
 
 <!-- Main Tab Navigation -->
@@ -325,8 +322,8 @@ $edit_total = count(array_unique(array_merge(
     <?php
     $tol_val = strtolower($species['light_tolerance']);
     $mig_val = strtolower($species['migration_status']);
-    $tolerance_class = $tol_val === 'sensitive' ? 'badge-danger'  : 'badge-success';
-    $migration_class = $mig_val === 'migratory'  ? 'badge-info'   : 'badge-success';
+    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-success' : 'badge-danger';
+    $migration_class = $mig_val === 'migratory' ? 'badge-danger' : 'badge-success';
     $tol_label = ucfirst($tol_val);
     $mig_label = ucfirst($mig_val);
     ?>
@@ -410,8 +407,7 @@ $page_url = function(int $p) use ($base_query): string {
     <!-- Subtitle -->
     <p class="page-subtitle" style="margin-bottom:20px;">
         Managing <?php echo number_format($total_species); ?> bird species —
-        <strong><?php echo count($no_category); ?></strong> need categorization,
-        <strong><?php echo count($lacking_details); ?></strong> have incomplete details
+        <strong><?php echo count($no_category); ?></strong> need categorization
     </p>
 
     <!-- Sub-tab nav (same pill style as main tabs) -->
@@ -421,14 +417,9 @@ $page_url = function(int $p) use ($base_query): string {
             No Categories
             <span style="background:var(--danger-color,#dc2626);color:#fff;border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;"><?php echo count($no_category); ?></span>
         </button>
-        <button class="edit-tab-btn" data-etab="lacking-details"
-                style="flex:1;padding:8px 16px;border-radius:6px;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-size:.9rem;font-weight:500;transition:all .2s;">
-            Incomplete Details
-            <span style="background:var(--bg-card-alt);border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;border:1px solid var(--border-color);"><?php echo count($lacking_details); ?></span>
-        </button>
         <button class="edit-tab-btn" data-etab="edit-details"
                 style="flex:1;padding:8px 16px;border-radius:6px;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-size:.9rem;font-weight:500;transition:all .2s;">
-            Edit Details
+            Edit / Incomplete
             <span style="background:var(--bg-card-alt);border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;border:1px solid var(--border-color);"><?php echo count($all_species); ?></span>
         </button>
     </div>
@@ -482,7 +473,7 @@ $page_url = function(int $p) use ($base_query): string {
                     <?php else: ?>
                     <td style="padding:10px 14px;">
                         <?php if ($r['light_tolerance']): ?>
-                            <span class="badge <?php echo $r['light_tolerance']==='sensitive'?'badge-danger':'badge-success'; ?>">
+                            <span class="badge <?php echo $r['light_tolerance']==='tolerant' ? 'badge-success' : 'badge-danger'; ?>">
                                 <?php echo ucfirst($r['light_tolerance']); ?>
                             </span>
                         <?php else: ?>
@@ -491,7 +482,7 @@ $page_url = function(int $p) use ($base_query): string {
                     </td>
                     <td style="padding:10px 14px;">
                         <?php if ($r['migration_status']): ?>
-                            <span class="badge <?php echo $r['migration_status']==='migratory'?'badge-info':'badge-success'; ?>">
+                            <span class="badge <?php echo $r['migration_status']==='migratory'?'badge-danger':'badge-success'; ?>">
                                 <?php echo ucfirst($r['migration_status']); ?>
                             </span>
                         <?php else: ?>
@@ -533,12 +524,8 @@ $page_url = function(int $p) use ($base_query): string {
     <div id="etab-no-category" class="edit-tab-panel">
         <?php render_edit_table($no_category, 'These species are missing a light tolerance or migration status. Assign both to include them in analysis.'); ?>
     </div>
-    <div id="etab-lacking-details" class="edit-tab-panel" style="display:none;">
-        <?php render_edit_table($lacking_details, 'These species are missing a photo, a description, or both. Use the Edit button to fill in the gaps.'); ?>
-    </div>
-
     <div id="etab-edit-details" class="edit-tab-panel" style="display:none;">
-        <?php render_edit_table($all_species, 'All species — click Edit to update any entry.'); ?>
+        <?php render_edit_table($all_species, 'All species — species missing a photo or description are flagged below. Click Edit to update any entry.'); ?>
     </div>
 
 </div><!-- /tab-edit -->
@@ -740,8 +727,8 @@ function showSpeciesDetails(speciesId) {
     const mig      = (species.migration_status || '').toLowerCase();
     const tolLabel = tol.charAt(0).toUpperCase() + tol.slice(1);
     const migLabel = mig.charAt(0).toUpperCase() + mig.slice(1);
-    const tolClass = tol === 'sensitive' ? 'badge-danger' : 'badge-success';
-    const migClass = mig === 'migratory'  ? 'badge-info'  : 'badge-success';
+    const tolClass = tol === 'tolerant'  ? 'badge-success' : 'badge-danger';
+    const migClass = mig === 'migratory' ? 'badge-danger' : 'badge-success';
 
     const description = (species.description && species.description.trim())
         ? species.description.trim()
@@ -764,14 +751,40 @@ function showSpeciesDetails(speciesId) {
                     <strong style="color:var(--text-primary);">Migratory Status:</strong><br>
                     <span class="badge \${migClass}" style="font-size:.9rem;margin-top:4px;">\${migLabel}</span>
                 </div>
-                <div>
+                <div style="margin-bottom:16px;">
                     <strong style="color:var(--text-primary);">Description:</strong>
                     <p style="margin:6px 0 0;color:var(--text-secondary);font-size:.9rem;">\${description}</p>
+                </div>
+                <div>
+                    <strong style="color:var(--text-primary);">Sighted At:</strong>
+                    <div id="speciesLocations" style="margin-top:6px;color:var(--text-secondary);font-size:.85rem;">
+                        <span style="color:var(--text-muted);">Loading locations…</span>
+                    </div>
                 </div>
             </div>
         </div>
     `;
     document.getElementById('speciesModal').style.display = 'block';
+
+    fetch(`api/get_species_locations.php?species_id=\${speciesId}`)
+        .then(r => r.json())
+        .then(data => {
+            const el = document.getElementById('speciesLocations');
+            if (!el) return;
+            if (!data.success || !data.locations.length) {
+                el.innerHTML = '<span style="color:var(--text-muted);">No sighting records found.</span>';
+                return;
+            }
+            el.innerHTML = data.locations.map(loc => `
+                <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border-color);">
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="\${loc.site_name}">\${loc.site_name}</span>
+                    <span style="flex-shrink:0;margin-left:12px;color:var(--text-muted);font-size:0.78rem;">\${Number(loc.sighting_count).toLocaleString()} sighting\${loc.sighting_count == 1 ? '' : 's'}</span>
+                </div>`).join('');
+        })
+        .catch(() => {
+            const el = document.getElementById('speciesLocations');
+            if (el) el.innerHTML = '<span style="color:var(--text-muted);">Could not load locations.</span>';
+        });
 }
 
 function closeModal() {
