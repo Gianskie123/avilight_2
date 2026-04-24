@@ -5,8 +5,10 @@
  * Dedicated pre-computation endpoint for the Reports tab.
  * Forces a rebuild of:
  *   1. Spatial city maps (observation_city_map, city_grid_map)
- *   2. Ecological yearly summary (ecological_yearly_summary)
- *   3. File-based report JSON caches (data/cache/reports/)
+ *   2. File-based report JSON caches (data/cache/reports/)
+ *
+ * ecological_yearly_summary is NOT touched by a plain POST.
+ * To rebuild it, POST with summary_only=1 (or run precompute_ecological_yearly_summary_cli.php).
  *
  * Intended to be called:
  *   - Manually from the admin panel after new data is uploaded.
@@ -490,8 +492,16 @@ try {
                 $t1 = microtime(true);
             }
 
-            // 2. Ecological yearly summary
-            $summaryStats = rrc_refreshSummary($pdo, $metro_manila_cities);
+            // 2. Ecological yearly summary — only when explicitly requested (summary_only=1).
+            // Plain POST calls only rebuild spatial maps; the summary must be triggered separately.
+            if ($summaryOnly) {
+                $summaryStats = rrc_refreshSummary($pdo, $metro_manila_cities);
+            } else {
+                $summaryStats = [
+                    'skipped'    => true,
+                    'total_rows' => (int) $pdo->query('SELECT COUNT(*) FROM ecological_yearly_summary')->fetchColumn(),
+                ];
+            }
             $t2 = microtime(true);
 
             // 3. Purge stale file-cache entries so the next request rebuilds fresh
@@ -512,7 +522,7 @@ try {
 
     echo json_encode([
         'success'          => true,
-        'message'          => $summaryOnly ? 'Ecological yearly summary refreshed (summary-only mode).' : 'Ecological report cache refreshed.',
+        'message'          => $summaryOnly ? 'Ecological yearly summary refreshed (summary-only mode).' : 'Spatial maps rebuilt and report cache purged. Ecological summary not modified.',
         'elapsed_s'        => round($t3 - $t0, 2),
         'spatial_maps'     => array_merge($spatialStats, ['elapsed_s' => round($t1 - $t0, 2)]),
         'summary_table'    => array_merge($summaryStats, ['elapsed_s' => round($t2 - $t1, 2)]),
