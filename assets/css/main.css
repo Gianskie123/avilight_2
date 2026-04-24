@@ -130,10 +130,30 @@ body {
     background: var(--bg-input);
 }
 
+.nav-menu li a.active:hover {
+    color: #ffffff;
+    background: var(--accent-blue);
+}
+
 .nav-menu li a.active {
-    color: var(--accent-blue);
-    background: transparent;
-    font-weight: 600;
+    color: #ffffff;
+    background: var(--accent-blue);
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    position: relative;
+}
+
+.nav-menu li a.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 3px;
+    background: #ffffff;
+    border-radius: 2px;
+    opacity: 0.7;
 }
 
 .nav-divider {
@@ -174,25 +194,7 @@ body {
     position: relative;
 }
 
-.nav-search-btn {
-    position: relative;
-}
-
-.nav-search-btn::after {
-    content: '/';
-    position: absolute;
-    right: -2px;
-    bottom: -3px;
-    font-size: 0.62rem;
-    line-height: 1;
-    color: var(--text-muted);
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 1px 3px;
-}
-
-.nav-popover {
+/* Main Content */.nav-popover {
     position: absolute;
     right: 0;
     top: calc(100% + 8px);
@@ -267,66 +269,6 @@ body {
 
 .nav-account-logout {
     color: var(--accent-red);
-}
-
-.global-search-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1200;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 70px 16px 16px;
-}
-
-.global-search-dialog {
-    width: min(560px, 100%);
-    margin: 0 auto;
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-}
-
-.global-search-input {
-    width: 100%;
-    border: 0;
-    border-bottom: 1px solid var(--border-color);
-    background: transparent;
-    color: var(--text-primary);
-    padding: 14px 16px;
-    font-size: 0.95rem;
-    outline: none;
-}
-
-.global-search-results {
-    max-height: 340px;
-    overflow-y: auto;
-    padding: 6px;
-}
-
-.global-search-result {
-    display: block;
-    text-decoration: none;
-    color: var(--text-primary);
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 0.92rem;
-}
-
-.global-search-result:hover {
-    background: var(--bg-input);
-}
-
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
 }
 
 /* Main Content */
