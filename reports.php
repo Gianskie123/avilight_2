@@ -4,8 +4,12 @@ $page_title = 'Statistical Reports';
 $selected_area = 'All Areas';
 $start_year = (int) ($_GET['start_year'] ?? 2014);
 $end_year = (int) ($_GET['end_year'] ?? 2025);
-$snapshot_year = (int) ($_GET['snapshot_year'] ?? 2025);
-$snapshot_month = (int) ($_GET['snapshot_month'] ?? 1);
+$snapshot_start_year = (int) ($_GET['snapshot_start_year'] ?? ($_GET['snapshot_year'] ?? 2025));
+$snapshot_start_month = (int) ($_GET['snapshot_start_month'] ?? ($_GET['snapshot_month'] ?? 1));
+$snapshot_end_year = (int) ($_GET['snapshot_end_year'] ?? ($_GET['snapshot_year'] ?? 2025));
+$snapshot_end_month = (int) ($_GET['snapshot_end_month'] ?? ($_GET['snapshot_month'] ?? 1));
+$snapshot_year = $snapshot_end_year;
+$snapshot_month = $snapshot_end_month;
 $kba_audit_data_json = '[]';
 
 $available_areas = [
@@ -565,6 +569,20 @@ if ($kba_audit_data_json === false) {
     $kba_audit_data_json = '[]';
 }
 
+$kba_recommendations_export = array_map(static function (array $r): array {
+    return [
+        'title'    => (string) ($r['title'] ?? ''),
+        'source'   => (string) ($r['source'] ?? ''),
+        'message'  => (string) ($r['message'] ?? ''),
+        'evidence' => array_values(array_filter((array) ($r['evidence'] ?? []))),
+        'class'    => (string) ($r['class'] ?? ''),
+    ];
+}, $kba_recommendations);
+$kba_recommendations_json = json_encode($kba_recommendations_export, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+if ($kba_recommendations_json === false) {
+    $kba_recommendations_json = '[]';
+}
+
 if (!in_array($selected_area, array_merge(['All Areas'], $available_areas), true)) {
     $selected_area = 'All Areas';
 }
@@ -574,8 +592,24 @@ $end_year = max($year_min, min($year_max, $end_year));
 if ($start_year > $end_year) {
     $end_year = $start_year;
 }
-$snapshot_year = max($year_min, min($year_max, $snapshot_year));
-$snapshot_month = max(1, min(12, $snapshot_month));
+$snapshot_start_year = max($year_min, min($year_max, $snapshot_start_year));
+$snapshot_end_year = max($year_min, min($year_max, $snapshot_end_year));
+$snapshot_start_month = max(1, min(12, $snapshot_start_month));
+$snapshot_end_month = max(1, min(12, $snapshot_end_month));
+
+$snapshot_start_ym = ($snapshot_start_year * 100) + $snapshot_start_month;
+$snapshot_end_ym = ($snapshot_end_year * 100) + $snapshot_end_month;
+if ($snapshot_start_ym > $snapshot_end_ym) {
+    $tmpYear = $snapshot_start_year;
+    $tmpMonth = $snapshot_start_month;
+    $snapshot_start_year = $snapshot_end_year;
+    $snapshot_start_month = $snapshot_end_month;
+    $snapshot_end_year = $tmpYear;
+    $snapshot_end_month = $tmpMonth;
+}
+
+$snapshot_year = $snapshot_end_year;
+$snapshot_month = $snapshot_end_month;
 
 $extra_head = <<<'HTML'
 <style>
@@ -742,9 +776,12 @@ $extra_head = <<<'HTML'
     max-width: none;
 }
 
-.filter-grid.snapshot,
 .filter-grid.trend {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.filter-grid.snapshot {
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
 }
 
 .filter-actions {
@@ -1234,6 +1271,89 @@ $extra_head = <<<'HTML'
     min-width: 112px;
 }
 
+.export-section-overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: color-mix(in srgb, var(--bg-body) 42%, #000 58%);
+    backdrop-filter: blur(2px);
+    z-index: 1300;
+}
+
+.export-section-overlay.is-active {
+    display: flex;
+}
+
+.export-section-card {
+    width: min(540px, calc(100vw - 28px));
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-top: 3px solid var(--accent-blue);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+}
+
+.export-section-title {
+    margin: 0 0 14px;
+    color: var(--text-primary);
+    font-size: 1.02rem;
+    font-weight: 700;
+}
+
+.export-section-top-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.export-section-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.export-section-group-heading {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.export-section-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 3px 0;
+    user-select: none;
+}
+
+.export-section-group label input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.export-section-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 14px;
+}
+
 @media (max-width: 980px) {
     .reports-header-row {
         flex-direction: column;
@@ -1290,6 +1410,45 @@ require_once 'includes/header.php';
         <p id="exportLoadingMeta" class="export-loading-meta">You can cancel now if you want to adjust filters first.</p>
         <div class="export-loading-actions">
             <button id="cancelPdfExportBtn" class="btn btn-secondary export-loading-cancel" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="exportSectionOverlay" class="export-section-overlay" aria-hidden="true">
+    <div class="export-section-card" role="dialog" aria-modal="true" aria-labelledby="exportSectionTitle">
+        <h3 id="exportSectionTitle" class="export-section-title">Select Sections to Export</h3>
+        <div class="export-section-top-actions">
+            <button type="button" class="btn btn-sm btn-secondary" id="selectAllSectionsBtn">Select All</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="deselectAllSectionsBtn">Deselect All</button>
+        </div>
+        <div class="export-section-groups">
+            <div class="export-section-group">
+                <p class="export-section-group-heading">Ecological Impact</p>
+                <label><input type="checkbox" name="export_section" value="historical_trends" checked> Historical Trends</label>
+                <label><input type="checkbox" name="export_section" value="correlation_matrix" checked> Correlation Matrix</label>
+                <label><input type="checkbox" name="export_section" value="migration_status" checked> Migration Status Distribution</label>
+                <label><input type="checkbox" name="export_section" value="light_tolerance" checked> Light Tolerance Distribution</label>
+                <label><input type="checkbox" name="export_section" value="alan_richness" checked> ALAN vs Richness</label>
+                <label><input type="checkbox" name="export_section" value="ndvi_richness" checked> NDVI vs Richness</label>
+                <label><input type="checkbox" name="export_section" value="lst_richness" checked> LST vs Richness</label>
+                <label><input type="checkbox" name="export_section" value="precipitation_richness" checked> Precipitation vs Richness</label>
+                <label><input type="checkbox" name="export_section" value="top_sites" checked> Top Sites by Richness</label>
+            </div>
+            <div class="export-section-group">
+                <p class="export-section-group-heading">Model Diagnostics</p>
+                <label><input type="checkbox" name="export_section" value="ensemble_metrics" checked> Ensemble Metrics</label>
+                <label><input type="checkbox" name="export_section" value="xgboost_importance" checked> XGBoost Feature Importance</label>
+                <label><input type="checkbox" name="export_section" value="convlstm_predictions" checked> ConvLSTM Actual vs Predicted</label>
+            </div>
+            <div class="export-section-group">
+                <p class="export-section-group-heading">Systems Recommendations</p>
+                <label><input type="checkbox" name="export_section" value="kba_pa_audit" checked> Key Biodiversity Area &amp; Protected Areas Audit Table</label>
+                <label><input type="checkbox" name="export_section" value="systems_recommendations" checked> Rule-Based Recommendations</label>
+            </div>
+        </div>
+        <div class="export-section-footer">
+            <button type="button" class="btn btn-secondary" id="cancelExportSectionBtn">Cancel</button>
+            <button type="button" class="btn btn-danger" id="proceedExportBtn">Export</button>
         </div>
     </div>
 </div>
@@ -1392,34 +1551,59 @@ require_once 'includes/header.php';
 
                 <section class="section-card">
                     <h2 class="card-header">Immediate Site Assessment & Vulnerability</h2>
-                    <div class="section-subtitle">Year and Month control only the charts in this section.</div>
+                    <div class="section-subtitle">From and To Year/Month control only the charts in this section.</div>
                     <hr class="section-divider">
 
                     <div class="global-filter-card" style="margin-bottom: 16px; background: var(--bg-card-alt);">
                         <div class="filter-grid snapshot">
                             <div class="form-group" style="margin: 0;">
-                                <label class="form-label" for="snapshotYear">Year</label>
-                                <select id="snapshotYear" class="report-select">
+                                <label class="form-label" for="snapshotStartYear">From Year</label>
+                                <select id="snapshotStartYear" class="report-select">
                                     <?php for ($year = $year_min; $year <= $year_max; $year++): ?>
-                                        <option value="<?php echo $year; ?>" <?php echo $year === $snapshot_year ? 'selected' : ''; ?>><?php echo $year; ?></option>
+                                        <option value="<?php echo $year; ?>" <?php echo $year === $snapshot_start_year ? 'selected' : ''; ?>><?php echo $year; ?></option>
                                     <?php endfor; ?>
                                 </select>
                             </div>
                             <div class="form-group" style="margin: 0;">
-                                <label class="form-label" for="snapshotMonth">Month</label>
-                                <select id="snapshotMonth" class="report-select">
-                                    <option value="1" <?php echo $snapshot_month === 1 ? 'selected' : ''; ?>>January</option>
-                                    <option value="2" <?php echo $snapshot_month === 2 ? 'selected' : ''; ?>>February</option>
-                                    <option value="3" <?php echo $snapshot_month === 3 ? 'selected' : ''; ?>>March</option>
-                                    <option value="4" <?php echo $snapshot_month === 4 ? 'selected' : ''; ?>>April</option>
-                                    <option value="5" <?php echo $snapshot_month === 5 ? 'selected' : ''; ?>>May</option>
-                                    <option value="6" <?php echo $snapshot_month === 6 ? 'selected' : ''; ?>>June</option>
-                                    <option value="7" <?php echo $snapshot_month === 7 ? 'selected' : ''; ?>>July</option>
-                                    <option value="8" <?php echo $snapshot_month === 8 ? 'selected' : ''; ?>>August</option>
-                                    <option value="9" <?php echo $snapshot_month === 9 ? 'selected' : ''; ?>>September</option>
-                                    <option value="10" <?php echo $snapshot_month === 10 ? 'selected' : ''; ?>>October</option>
-                                    <option value="11" <?php echo $snapshot_month === 11 ? 'selected' : ''; ?>>November</option>
-                                    <option value="12" <?php echo $snapshot_month === 12 ? 'selected' : ''; ?>>December</option>
+                                <label class="form-label" for="snapshotStartMonth">From Month</label>
+                                <select id="snapshotStartMonth" class="report-select">
+                                    <option value="1" <?php echo $snapshot_start_month === 1 ? 'selected' : ''; ?>>January</option>
+                                    <option value="2" <?php echo $snapshot_start_month === 2 ? 'selected' : ''; ?>>February</option>
+                                    <option value="3" <?php echo $snapshot_start_month === 3 ? 'selected' : ''; ?>>March</option>
+                                    <option value="4" <?php echo $snapshot_start_month === 4 ? 'selected' : ''; ?>>April</option>
+                                    <option value="5" <?php echo $snapshot_start_month === 5 ? 'selected' : ''; ?>>May</option>
+                                    <option value="6" <?php echo $snapshot_start_month === 6 ? 'selected' : ''; ?>>June</option>
+                                    <option value="7" <?php echo $snapshot_start_month === 7 ? 'selected' : ''; ?>>July</option>
+                                    <option value="8" <?php echo $snapshot_start_month === 8 ? 'selected' : ''; ?>>August</option>
+                                    <option value="9" <?php echo $snapshot_start_month === 9 ? 'selected' : ''; ?>>September</option>
+                                    <option value="10" <?php echo $snapshot_start_month === 10 ? 'selected' : ''; ?>>October</option>
+                                    <option value="11" <?php echo $snapshot_start_month === 11 ? 'selected' : ''; ?>>November</option>
+                                    <option value="12" <?php echo $snapshot_start_month === 12 ? 'selected' : ''; ?>>December</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label" for="snapshotEndYear">To Year</label>
+                                <select id="snapshotEndYear" class="report-select">
+                                    <?php for ($year = $year_min; $year <= $year_max; $year++): ?>
+                                        <option value="<?php echo $year; ?>" <?php echo $year === $snapshot_end_year ? 'selected' : ''; ?>><?php echo $year; ?></option>
+                                    <?php endfor; ?>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label" for="snapshotEndMonth">To Month</label>
+                                <select id="snapshotEndMonth" class="report-select">
+                                    <option value="1" <?php echo $snapshot_end_month === 1 ? 'selected' : ''; ?>>January</option>
+                                    <option value="2" <?php echo $snapshot_end_month === 2 ? 'selected' : ''; ?>>February</option>
+                                    <option value="3" <?php echo $snapshot_end_month === 3 ? 'selected' : ''; ?>>March</option>
+                                    <option value="4" <?php echo $snapshot_end_month === 4 ? 'selected' : ''; ?>>April</option>
+                                    <option value="5" <?php echo $snapshot_end_month === 5 ? 'selected' : ''; ?>>May</option>
+                                    <option value="6" <?php echo $snapshot_end_month === 6 ? 'selected' : ''; ?>>June</option>
+                                    <option value="7" <?php echo $snapshot_end_month === 7 ? 'selected' : ''; ?>>July</option>
+                                    <option value="8" <?php echo $snapshot_end_month === 8 ? 'selected' : ''; ?>>August</option>
+                                    <option value="9" <?php echo $snapshot_end_month === 9 ? 'selected' : ''; ?>>September</option>
+                                    <option value="10" <?php echo $snapshot_end_month === 10 ? 'selected' : ''; ?>>October</option>
+                                    <option value="11" <?php echo $snapshot_end_month === 11 ? 'selected' : ''; ?>>November</option>
+                                    <option value="12" <?php echo $snapshot_end_month === 12 ? 'selected' : ''; ?>>December</option>
                                 </select>
                             </div>
                         </div>
@@ -1558,7 +1742,7 @@ require_once 'includes/header.php';
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card" id="kba-audit-table">
                         <h2 class="card-header">Key Biodiversity Area &amp; Protected Areas Audit Table</h2>
                         <div class="card-body">
                             <div class="chart-guidance" style="margin-bottom:12px;">
@@ -1936,7 +2120,9 @@ function setChartEmptyMessage(messageId, shouldShow, messageText) {
 }
 
 function formatSnapshotFiltersText(filters) {
-    return 'Filters: Area=' + filters.selected_area + ' | Snapshot=' + filters.snapshot_year + '-' + String(filters.snapshot_month).padStart(2, '0');
+    return 'Filters: Area=' + filters.selected_area
+        + ' | From=' + filters.snapshot_start_year + '-' + String(filters.snapshot_start_month).padStart(2, '0')
+        + ' | To=' + filters.snapshot_end_year + '-' + String(filters.snapshot_end_month).padStart(2, '0');
 }
 
 function formatTrendFiltersText(filters) {
@@ -1967,10 +2153,10 @@ function updateReportsExportState(payload, scope) {
     reportsExportState.filters = clonePlainObject(getFilterValues());
     reportsExportState.meta = clonePlainObject(payload.meta || reportsExportState.meta || {});
 
-    if (payload.trendHistoricalData) {
+    if (payload.trendHistoricalData && scope !== 'snapshot') {
         reportsExportState.trendHistoricalData = clonePlainObject(payload.trendHistoricalData);
     }
-    if (payload.trendCorrelationData) {
+    if (payload.trendCorrelationData && scope !== 'snapshot') {
         reportsExportState.trendCorrelationData = clonePlainObject(payload.trendCorrelationData);
     }
     if (payload.snapshotDistributions) {
@@ -2011,7 +2197,8 @@ function buildExportPayload() {
         xgboostFeatureImportance: clonePlainObject(reportsExportState.xgboostFeatureImportance || {}),
         convlstmPredictions: clonePlainObject(reportsExportState.convlstmPredictions || {}),
         ensembleMetrics: clonePlainObject(reportsExportState.ensembleMetrics || {}),
-        kbaPaAuditRows: clonePlainObject(reportsExportState.kbaPaAuditRows || [])
+        kbaPaAuditRows: clonePlainObject(reportsExportState.kbaPaAuditRows || []),
+        systemsRecommendations: clonePlainObject(reportsExportState.systemsRecommendations || [])
     };
 }
 
@@ -2049,13 +2236,15 @@ var reportsExportState = {
     xgboostFeatureImportance: {},
     convlstmPredictions: {},
     ensembleMetrics: {},
-    kbaPaAuditRows: {$kba_audit_data_json}
+    kbaPaAuditRows: {$kba_audit_data_json},
+    systemsRecommendations: {$kba_recommendations_json}
 };
 var scopeRequestSeq = {
     trend: 0,
     snapshot: 0,
     diagnostics: 0
 };
+var scopeDataLoaded = { trend: false, snapshot: false, diagnostics: false };
 
 var PRECIP_SCALE_POWER = 2;
 var PRECIP_SCALE_FACTOR = Math.pow(10, PRECIP_SCALE_POWER);
@@ -2718,8 +2907,10 @@ function getFilterValues() {
         selected_area: (document.getElementById('globalAreaFilter') || {}).value || 'All Areas',
         start_year: (document.getElementById('trendStartYear') || {}).value || '2014',
         end_year: (document.getElementById('trendEndYear') || {}).value || '2025',
-        snapshot_year: (document.getElementById('snapshotYear') || {}).value || '2025',
-        snapshot_month: (document.getElementById('snapshotMonth') || {}).value || '1'
+        snapshot_start_year: (document.getElementById('snapshotStartYear') || {}).value || '2025',
+        snapshot_start_month: (document.getElementById('snapshotStartMonth') || {}).value || '1',
+        snapshot_end_year: (document.getElementById('snapshotEndYear') || {}).value || '2025',
+        snapshot_end_month: (document.getElementById('snapshotEndMonth') || {}).value || '1'
     };
 }
 
@@ -2737,12 +2928,48 @@ function getDiagnosticsRequestFilters() {
         selected_area: 'All Areas',
         start_year: minYear,
         end_year: maxYear,
-        snapshot_year: maxYear,
-        snapshot_month: '12'
+        snapshot_start_year: minYear,
+        snapshot_start_month: '1',
+        snapshot_end_year: maxYear,
+        snapshot_end_month: '12'
     };
 }
 
+function normalizeSnapshotRange(filters) {
+    var sy = Number(filters.snapshot_start_year || filters.snapshot_year || 2025);
+    var sm = Number(filters.snapshot_start_month || filters.snapshot_month || 1);
+    var ey = Number(filters.snapshot_end_year || filters.snapshot_year || sy || 2025);
+    var em = Number(filters.snapshot_end_month || filters.snapshot_month || sm || 1);
+
+    sm = Math.max(1, Math.min(12, sm));
+    em = Math.max(1, Math.min(12, em));
+    var from = (sy * 100) + sm;
+    var to = (ey * 100) + em;
+
+    if (from > to) {
+        var tYear = sy;
+        var tMonth = sm;
+        sy = ey;
+        sm = em;
+        ey = tYear;
+        em = tMonth;
+    }
+
+    filters.snapshot_start_year = String(sy);
+    filters.snapshot_start_month = String(sm);
+    filters.snapshot_end_year = String(ey);
+    filters.snapshot_end_month = String(em);
+
+    // Backward-compatible aliases still consumed by some export flows.
+    filters.snapshot_year = filters.snapshot_end_year;
+    filters.snapshot_month = filters.snapshot_end_month;
+
+    return filters;
+}
+
 function buildRequestByScope(scope, filters, includeDiagnostics) {
+    filters = normalizeSnapshotRange(filters);
+
     var request = {
         scope: scope,
         _ts: String(Date.now()),
@@ -2758,6 +2985,10 @@ function buildRequestByScope(scope, filters, includeDiagnostics) {
 
     if (scope === 'snapshot') {
         request.selected_area = filters.selected_area;
+        request.snapshot_start_year = filters.snapshot_start_year;
+        request.snapshot_start_month = filters.snapshot_start_month;
+        request.snapshot_end_year = filters.snapshot_end_year;
+        request.snapshot_end_month = filters.snapshot_end_month;
         request.snapshot_year = filters.snapshot_year;
         request.snapshot_month = filters.snapshot_month;
         return request;
@@ -2767,6 +2998,10 @@ function buildRequestByScope(scope, filters, includeDiagnostics) {
         request.selected_area = filters.selected_area;
         request.start_year = filters.start_year;
         request.end_year = filters.end_year;
+        request.snapshot_start_year = filters.snapshot_start_year;
+        request.snapshot_start_month = filters.snapshot_start_month;
+        request.snapshot_end_year = filters.snapshot_end_year;
+        request.snapshot_end_month = filters.snapshot_end_month;
         request.snapshot_year = filters.snapshot_year;
         request.snapshot_month = filters.snapshot_month;
         return request;
@@ -2775,6 +3010,10 @@ function buildRequestByScope(scope, filters, includeDiagnostics) {
     request.selected_area = filters.selected_area;
     request.start_year = filters.start_year;
     request.end_year = filters.end_year;
+    request.snapshot_start_year = filters.snapshot_start_year;
+    request.snapshot_start_month = filters.snapshot_start_month;
+    request.snapshot_end_year = filters.snapshot_end_year;
+    request.snapshot_end_month = filters.snapshot_end_month;
     request.snapshot_year = filters.snapshot_year;
     request.snapshot_month = filters.snapshot_month;
     return request;
@@ -2836,7 +3075,16 @@ async function fetchReportData(scope, options) {
     options = options || {};
     var includeDiagnostics = !!options.includeDiagnostics || scope === 'diagnostics';
     var filters = scope === 'diagnostics' ? getDiagnosticsRequestFilters() : getFilterValues();
-    var currentFilterKey = [filters.selected_area, filters.start_year, filters.end_year, filters.snapshot_year, filters.snapshot_month].join('|');
+    filters = normalizeSnapshotRange(filters);
+    var currentFilterKey = [
+        filters.selected_area,
+        filters.start_year,
+        filters.end_year,
+        filters.snapshot_start_year,
+        filters.snapshot_start_month,
+        filters.snapshot_end_year,
+        filters.snapshot_end_month
+    ].join('|');
     if (scope !== 'diagnostics' && lastFilterKey && lastFilterKey !== currentFilterKey) {
         diagnosticsLoaded = false;
     }
@@ -2895,6 +3143,7 @@ async function fetchReportData(scope, options) {
             updateSnapshotCharts(data, 'diagnostics');
         }
         updateReportsExportState(data, scope);
+        scopeDataLoaded[scope] = true;
         if (data && data.meta && data.meta.diagnostics_source && data.meta.diagnostics_source !== 'live_model_inference_db') {
             console.warn('Diagnostics source is not live model inference:', data.meta.diagnostics_source, data.meta.diagnostics_error || '');
         }
@@ -3058,15 +3307,106 @@ function wireFilterButtons() {
     });
 }
 
+var pendingExportFormat = '';
+
 function exportPDF() {
-    exportReport('pdf');
+    showExportSectionModal('pdf');
 }
 
 function exportCSV() {
-    exportReport('csv');
+    showExportSectionModal('csv');
 }
 
-function exportReport(format) {
+function showExportSectionModal(format) {
+    pendingExportFormat = format;
+    var overlay = document.getElementById('exportSectionOverlay');
+    if (overlay) {
+        overlay.classList.add('is-active');
+        overlay.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function hideExportSectionModal() {
+    var overlay = document.getElementById('exportSectionOverlay');
+    if (overlay) {
+        overlay.classList.remove('is-active');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function getSelectedExportSections() {
+    var checkboxes = document.querySelectorAll('#exportSectionOverlay input[name="export_section"]:checked');
+    var sections = [];
+    checkboxes.forEach(function (cb) { sections.push(cb.value); });
+    return sections;
+}
+
+function initExportSectionModal() {
+    var cancelBtn = document.getElementById('cancelExportSectionBtn');
+    var proceedBtn = document.getElementById('proceedExportBtn');
+    var selectAllBtn = document.getElementById('selectAllSectionsBtn');
+    var deselectAllBtn = document.getElementById('deselectAllSectionsBtn');
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', hideExportSectionModal);
+    }
+    if (proceedBtn) {
+        proceedBtn.addEventListener('click', async function () {
+            var selectedSections = getSelectedExportSections();
+            if (selectedSections.length === 0) {
+                window.alert('Please select at least one section to export.');
+                return;
+            }
+            var snapshotSections = ['migration_status', 'light_tolerance', 'alan_richness',
+                                    'ndvi_richness', 'lst_richness', 'precipitation_richness', 'top_sites'];
+            var diagnosticSections = ['ensemble_metrics', 'xgboost_importance', 'convlstm_predictions'];
+            var needsSnapshot = selectedSections.some(function (s) { return snapshotSections.indexOf(s) >= 0; });
+            var needsDiagnostics = selectedSections.some(function (s) { return diagnosticSections.indexOf(s) >= 0; });
+            var fetchTasks = [];
+            if (needsSnapshot && !scopeDataLoaded.snapshot) {
+                fetchTasks.push(fetchReportData('snapshot'));
+            }
+            if (needsDiagnostics && !scopeDataLoaded.diagnostics) {
+                fetchTasks.push(fetchReportData('diagnostics', { includeDiagnostics: true }));
+            }
+            if (fetchTasks.length > 0) {
+                proceedBtn.disabled = true;
+                cancelBtn.disabled = true;
+                proceedBtn.textContent = 'Loading data…';
+                try {
+                    await Promise.all(fetchTasks);
+                } catch (e) {
+                    proceedBtn.textContent = 'Export';
+                    proceedBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    window.alert('Some data could not be loaded. Export may be incomplete.');
+                    return;
+                }
+                proceedBtn.disabled = false;
+                cancelBtn.disabled = false;
+                proceedBtn.textContent = 'Export';
+            }
+            hideExportSectionModal();
+            exportReport(pendingExportFormat, selectedSections);
+        });
+    }
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', function () {
+            document.querySelectorAll('#exportSectionOverlay input[name="export_section"]').forEach(function (cb) {
+                cb.checked = true;
+            });
+        });
+    }
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', function () {
+            document.querySelectorAll('#exportSectionOverlay input[name="export_section"]').forEach(function (cb) {
+                cb.checked = false;
+            });
+        });
+    }
+}
+
+function exportReport(format, selectedSections) {
     if (window.exportRequestInFlight) {
         return;
     }
@@ -3078,7 +3418,8 @@ function exportReport(format) {
         format: format,
         export_live: '0',
         filters: exportPayload.filters,
-        report_payload: exportPayload
+        report_payload: exportPayload,
+        selected_sections: Array.isArray(selectedSections) ? selectedSections : []
     });
 
     var overlay = document.getElementById('exportLoadingOverlay');
@@ -3191,8 +3532,44 @@ function exportReport(format) {
 
 initTrendCharts();
 wireFilterButtons();
+initExportSectionModal();
+
+// Load trend immediately; defer snapshot until user scrolls near it or clicks a tab
+var snapshotLoaded = false;
+function loadSnapshotOnDemand() {
+    if (!snapshotLoaded) {
+        snapshotLoaded = true;
+        console.log('Snapshot data loading deferred: user interaction detected');
+        fetchReportData('snapshot');
+    }
+}
+
+// Lazy-load snapshot when user scrolls near snapshot section
+var snapshotObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+        if (entry.isIntersecting && !snapshotLoaded) {
+            loadSnapshotOnDemand();
+            snapshotObserver.unobserve(entry.target);
+        }
+    });
+}, { rootMargin: '300px' });
+
+// Observe the first snapshot chart for lazy loading
+var snapshotChart = document.getElementById('lightToleranceChart');
+if (snapshotChart && snapshotChart.parentElement) {
+    snapshotObserver.observe(snapshotChart.parentElement);
+}
+
+// Fallback: load snapshot if user scrolls down explicitly or waits a few seconds
+setTimeout(function() {
+    if (!snapshotLoaded) {
+        console.log('Snapshot data loading after initial delay');
+        loadSnapshotOnDemand();
+    }
+}, 5000);
+
+// Load trend immediately
 fetchReportData('trend');
-fetchReportData('snapshot');
 
 window.addEventListener('storage', function (event) {
     if (event && event.key === 'avilight-thresholds-updated') {
@@ -3203,6 +3580,7 @@ window.addEventListener('storage', function (event) {
 HTML;
 
 $extra_scripts = str_replace('{$kba_audit_data_json}', $kba_audit_data_json, $extra_scripts);
+$extra_scripts = str_replace('{$kba_recommendations_json}', $kba_recommendations_json, $extra_scripts);
 
 require_once 'includes/footer.php';
 ?>
