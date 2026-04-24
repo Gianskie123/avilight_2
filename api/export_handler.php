@@ -10,12 +10,35 @@ if (!is_logged_in()) {
 }
 
 function sanitize_filters(array $input): array {
+    $snapshotStartYear = (int) ($input['snapshot_start_year'] ?? ($input['snapshot_year'] ?? 2025));
+    $snapshotStartMonth = (int) ($input['snapshot_start_month'] ?? ($input['snapshot_month'] ?? 12));
+    $snapshotEndYear = (int) ($input['snapshot_end_year'] ?? ($input['snapshot_year'] ?? 2025));
+    $snapshotEndMonth = (int) ($input['snapshot_end_month'] ?? ($input['snapshot_month'] ?? 12));
+
+    $snapshotStartMonth = max(1, min(12, $snapshotStartMonth));
+    $snapshotEndMonth = max(1, min(12, $snapshotEndMonth));
+
+    $startYm = ($snapshotStartYear * 100) + $snapshotStartMonth;
+    $endYm = ($snapshotEndYear * 100) + $snapshotEndMonth;
+    if ($startYm > $endYm) {
+        $tmpYear = $snapshotStartYear;
+        $tmpMonth = $snapshotStartMonth;
+        $snapshotStartYear = $snapshotEndYear;
+        $snapshotStartMonth = $snapshotEndMonth;
+        $snapshotEndYear = $tmpYear;
+        $snapshotEndMonth = $tmpMonth;
+    }
+
     return [
         'selected_area' => trim((string) ($input['selected_area'] ?? 'All Areas')),
         'start_year' => (int) ($input['start_year'] ?? 2014),
         'end_year' => (int) ($input['end_year'] ?? 2025),
-        'snapshot_year' => (int) ($input['snapshot_year'] ?? 2025),
-        'snapshot_month' => (int) ($input['snapshot_month'] ?? 12),
+        'snapshot_start_year' => $snapshotStartYear,
+        'snapshot_start_month' => $snapshotStartMonth,
+        'snapshot_end_year' => $snapshotEndYear,
+        'snapshot_end_month' => $snapshotEndMonth,
+        'snapshot_year' => $snapshotEndYear,
+        'snapshot_month' => $snapshotEndMonth,
     ];
 }
 
@@ -47,14 +70,16 @@ function get_cached_report_payload(array $filters): array {
         return [];
     }
 
-    $reportCacheVersion = 'v3';
+    $reportCacheVersion = 'v4';
     $cacheKey = 'reports:'
         . $reportCacheVersion . ':'
         . $filters['selected_area'] . ':'
         . $filters['start_year'] . ':'
         . $filters['end_year'] . ':'
-        . $filters['snapshot_year'] . ':'
-        . $filters['snapshot_month'] . ':diag=1';
+        . ($filters['snapshot_start_year'] ?? $filters['snapshot_year']) . ':'
+        . ($filters['snapshot_start_month'] ?? $filters['snapshot_month']) . ':'
+        . ($filters['snapshot_end_year'] ?? $filters['snapshot_year']) . ':'
+        . ($filters['snapshot_end_month'] ?? $filters['snapshot_month']) . ':diag=1';
     $cacheFile = $cacheDir . '/' . sha1($cacheKey) . '.json';
     if (!is_file($cacheFile) || !is_readable($cacheFile)) {
         return [];
@@ -364,9 +389,15 @@ if (!in_array($format, ['pdf', 'csv'], true)) {
 $filters = sanitize_filters($requestData);
 $exportLive = ((string) ($requestData['export_live'] ?? '0') === '1');
 $clientPayload = (isset($requestData['report_payload']) && is_array($requestData['report_payload'])) ? $requestData['report_payload'] : [];
+$selectedSections = [];
+if (isset($requestData['selected_sections']) && is_array($requestData['selected_sections'])) {
+    $selectedSections = array_values(array_filter(array_map('strval', $requestData['selected_sections'])));
+}
+sort($selectedSections);
 $clientPayloadHash = '';
 if (!empty($clientPayload)) {
-    $clientPayloadHash = sha1(json_encode($clientPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
+    $hashData = ['payload' => $clientPayload, 'sections' => $selectedSections];
+    $clientPayloadHash = sha1(json_encode($hashData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
 }
 $exportCacheTtlSeconds = in_array($format, ['pdf', 'csv'], true) ? 1800 : 0;
 if (!$exportLive && try_send_cached_export($format, $filters, $exportCacheTtlSeconds, $clientPayloadHash)) {
@@ -401,6 +432,7 @@ $payload['kbaPaAuditRows'] = !empty($payload['kbaPaAuditRows']) ? $payload['kbaP
 $payload['meta'] = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
 $payload['meta']['kba_pa_audit_source'] = !empty($payload['kbaPaAuditRows']) ? 'kba_pa_audit_live' : 'none';
 $payload['meta']['export_payload_hash'] = $clientPayloadHash;
+$payload['selected_sections'] = $selectedSections;
 
 $result = run_python_report_engine($payload, $format);
 if (empty($result['success'])) {
