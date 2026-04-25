@@ -2745,7 +2745,7 @@ function initTrendCharts() {
                 tooltip: {
                     callbacks: {
                         label: function (context) {
-                            return context.dataset.label + ': ' + Number(context.parsed.y || 0).toFixed(2);
+                            return context.dataset.label + ': ' + Math.round(Number(context.parsed.y || 0));
                         }
                     }
                 }
@@ -3223,7 +3223,7 @@ function switchConvLSTMFilter(filterName) {
     var trendLabels = Array.isArray(diagnosticsTrendHistoricalDataByFilter.labels) ? diagnosticsTrendHistoricalDataByFilter.labels : [];
     var trendRichness = Array.isArray(diagnosticsTrendHistoricalDataByFilter.richness) ? diagnosticsTrendHistoricalDataByFilter.richness : [];
 
-    if (years.length && trendLabels.length && trendRichness.length) {
+    if (filterName === 'all' && years.length && trendLabels.length && trendRichness.length) {
         var trendIndexByYear = {};
         trendLabels.forEach(function (label, index) {
             trendIndexByYear[String(label)] = index;
@@ -3233,10 +3233,14 @@ function switchConvLSTMFilter(filterName) {
             if (typeof trendIndex === 'number' && trendIndex >= 0 && trendIndex < trendRichness.length) {
                 var trendValue = trendRichness[trendIndex];
                 if (trendValue !== null && trendValue !== undefined && trendValue !== '') {
-                    return Number(trendValue);
+                    return Math.round(Number(trendValue));
                 }
             }
             return index < actual.length ? actual[index] : null;
+        });
+    } else {
+        actual = actual.map(function (v) {
+            return (v !== null && v !== undefined && v !== 0) ? Math.round(Number(v)) : null;
         });
     }
 

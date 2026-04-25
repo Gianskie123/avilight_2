@@ -409,6 +409,17 @@ function ensureSummaryTable(PDO $pdo): void {
     if ($idxExists === 0) {
         $pdo->exec('CREATE INDEX idx_area_year ON ecological_yearly_summary(area, year)');
     }
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS metro_yearly_richness (
+        year                INT    NOT NULL,
+        bird_richness       INT    NULL,
+        viirs_avg           DOUBLE NULL,
+        ndvi_avg            DOUBLE NULL,
+        lst_avg             DOUBLE NULL,
+        precipitation_total DOUBLE NULL,
+        updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (year)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
 /**
@@ -2558,15 +2569,13 @@ try {
         if ($selected_area === 'All Areas') {
             $trendSql = "SELECT
                     year,
-                    AVG(bird_richness) AS bird_richness,
-                    AVG(viirs_avg) AS viirs,
-                    AVG(ndvi_avg) AS ndvi,
-                    AVG(lst_avg) AS lst,
-                    AVG(precipitation_total) AS precipitation
-                FROM ecological_yearly_summary
+                    bird_richness,
+                    viirs_avg           AS viirs,
+                    ndvi_avg            AS ndvi,
+                    lst_avg             AS lst,
+                    precipitation_total AS precipitation
+                FROM metro_yearly_richness
                 WHERE year BETWEEN :start_year AND :end_year
-                  AND area IN ({$areaListSql})
-                GROUP BY year
                 ORDER BY year ASC";
             $trendStmt = $mysql->prepare($trendSql);
             if (!$trendStmt) {
