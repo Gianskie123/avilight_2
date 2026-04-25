@@ -1126,6 +1126,7 @@ var HISTORICAL_CLUSTER_UNKNOWN_SITE = 'Unknown Site';
 var historicalTypingTimers = [];
 var historicalTypingInProgress = false;
 var historicalAutoSequenceTimers = [];
+var expandedSpokeGroup = null;
 
 function getRichnessColor(value) {
     var stops = [
@@ -1152,6 +1153,7 @@ function getRichnessColor(value) {
 }
 
 function clearHistoricalObservationLayers() {
+    expandedSpokeGroup = null;
     historicalPointAnimationToken += 1;
     while (historicalPointAnimationTimers.length) {
         clearTimeout(historicalPointAnimationTimers.pop());
@@ -1165,6 +1167,86 @@ function clearHistoricalObservationLayers() {
     historicalObservationClusterLayer = null;
     historicalObservationLayers.forEach(function(l) { map.removeLayer(l); });
     historicalObservationLayers = [];
+}
+
+function collapseHistoricalSpokes() {
+    if (!expandedSpokeGroup) return;
+    if (expandedSpokeGroup.aggregate) {
+        var agg = expandedSpokeGroup.aggregate;
+        if (typeof agg.setOpacity === 'function') {
+            agg.setOpacity(1);
+        } else if (typeof agg.setStyle === 'function') {
+            agg.setStyle({ opacity: 1, fillOpacity: 0.85 });
+        }
+    }
+    expandedSpokeGroup.layers.forEach(function(l) {
+        if (map.hasLayer(l)) map.removeLayer(l);
+        var idx = historicalObservationLayers.indexOf(l);
+        if (idx !== -1) historicalObservationLayers.splice(idx, 1);
+    });
+    expandedSpokeGroup = null;
+}
+
+function expandHistoricalSpokes(aggregateMarker, baseLat, baseLng, records) {
+    collapseHistoricalSpokes();
+    if (typeof aggregateMarker.setOpacity === 'function') {
+        aggregateMarker.setOpacity(0.3);
+    } else if (typeof aggregateMarker.setStyle === 'function') {
+        aggregateMarker.setStyle({ opacity: 0.3, fillOpacity: 0.3 });
+    }
+
+    var selections = getHistoricalSelections();
+    var zoom = map.getZoom();
+    var metersPerPx = 156543.03392 * Math.cos(baseLat * Math.PI / 180) / Math.pow(2, zoom);
+    var offsetLat = (35 * metersPerPx) / 111320;
+    var offsetLng = offsetLat / Math.cos(baseLat * Math.PI / 180);
+
+    var spawnedLayers = [];
+
+    var hub = L.circleMarker([baseLat, baseLng], {
+        radius: 3, color: '#555', weight: 1.5,
+        fillColor: '#fff', fillOpacity: 1, interactive: false
+    }).addTo(map);
+    spawnedLayers.push(hub);
+    historicalObservationLayers.push(hub);
+
+    records.forEach(function(site, i) {
+        var richness = toNumber(site.total_unique);
+        var color = getRichnessColor(richness);
+        var selectedBirdLabel = selections.selectedBird ? toDisplaySpeciesName(selections.selectedBird) : '';
+        var birdFilterLine = selectedBirdLabel ? ('<br>Bird Filter: ' + escapeHtml(selectedBirdLabel)) : '';
+
+        var angle = (2 * Math.PI * i / records.length) - Math.PI / 2;
+        var markerLat = baseLat + offsetLat * Math.sin(angle);
+        var markerLng = baseLng + offsetLng * Math.cos(angle);
+
+        var spoke = L.polyline([[baseLat, baseLng], [markerLat, markerLng]], {
+            color: '#888', weight: 1.5, dashArray: '5 4', opacity: 0.75, interactive: false
+        }).addTo(map);
+        spawnedLayers.push(spoke);
+        historicalObservationLayers.push(spoke);
+
+        var marker = L.circleMarker([markerLat, markerLng], {
+            radius: 8, color: '#fff', weight: 1.3, fillColor: color, fillOpacity: 0.85
+        }).bindPopup(
+            '<strong>' + site.site_name + '</strong>' +
+            '<br>Year: ' + site.year + '  ' + getMonthName(toNumber(site.month)) +
+            '<br>Unique Species: <strong>' + richness + '</strong>' +
+            '<br>Resident: ' + toNumber(site.total_resident) + '  Migrant: ' + toNumber(site.total_migrant) +
+            '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive) +
+            birdFilterLine
+        );
+        marker.on('click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            showHistoricalSiteDetail(site);
+        });
+        marker.addTo(map);
+        if (marker.bringToFront) marker.bringToFront();
+        spawnedLayers.push(marker);
+        historicalObservationLayers.push(marker);
+    });
+
+    expandedSpokeGroup = { aggregate: aggregateMarker, layers: spawnedLayers };
 }
 
 function clearHistoricalEnvLayers() {
@@ -2090,42 +2172,103 @@ function renderHistoricalMap(rows, selections, options) {
             });
         }
 
+        // Group by exact location for click-to-expand multi-month spoke visualization
+        var siteLocationGroups = {};
         validSites.forEach(function(site) {
             var lat = toNumber(site.latitude);
             var lng = toNumber(site.longitude);
+            var locKey = lat.toFixed(5) + ',' + lng.toFixed(5);
+            if (!siteLocationGroups[locKey]) {
+                siteLocationGroups[locKey] = { lat: lat, lng: lng, records: [] };
+            }
+            siteLocationGroups[locKey].records.push(site);
+        });
 
-            var richness = toNumber(site.total_unique);
+        // Register map click handler once to collapse open spokes
+        if (!map._historicalSpokeClickBound) {
+            map._historicalSpokeClickBound = true;
+            map.on('click', function() { collapseHistoricalSpokes(); });
+        }
+
+        Object.keys(siteLocationGroups).forEach(function(locKey) {
+            var group = siteLocationGroups[locKey];
+            var baseLat = group.lat;
+            var baseLng = group.lng;
+            var records = group.records;
+            records.sort(function(a, b) { return toNumber(a.month) - toNumber(b.month); });
+
+            var isMulti = records.length > 1;
+
+            // Use the highest-richness month as the representative for the aggregate marker
+            var repRecord = records.reduce(function(best, r) {
+                return toNumber(r.total_unique) >= toNumber(best.total_unique) ? r : best;
+            }, records[0]);
+
+            var richness = toNumber(repRecord.total_unique);
             var color = getRichnessColor(richness);
             var selectedBirdLabel = selections.selectedBird ? toDisplaySpeciesName(selections.selectedBird) : '';
             var birdFilterLine = selectedBirdLabel ? ('<br>Bird Filter: ' + escapeHtml(selectedBirdLabel)) : '';
-            var marker = L.circleMarker([lat, lng], {
-                radius: 8,
-                color: '#fff',
-                weight: 1.3,
-                fillColor: color,
-                fillOpacity: 0.85
-            }).bindPopup(
-                '<strong>' + site.site_name + '</strong>' +
-                '<br>Year: ' + site.year + '  Month: ' + site.month +
-                '<br>Unique Species: <strong>' + richness + '</strong>' +
-                '<br>Resident: ' + toNumber(site.total_resident) + '  Migrant: ' + toNumber(site.total_migrant) +
-                '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive) +
-                birdFilterLine
-            );
-            marker.historicalSiteData = site;
 
-            marker.on('click', function() {
-                showHistoricalSiteDetail(site);
-            });
+            var aggregateMarker;
+            if (isMulti) {
+                aggregateMarker = L.marker([baseLat, baseLng], {
+                    icon: L.divIcon({
+                        className: '',
+                        html: '<div style="width:14px;height:14px;background:' + color + ';border:2.5px solid rgba(255,255,255,0.9);box-sizing:border-box;"></div>',
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7],
+                        popupAnchor: [0, -7]
+                    })
+                });
+            } else {
+                aggregateMarker = L.circleMarker([baseLat, baseLng], {
+                    radius: 8,
+                    color: '#fff',
+                    weight: 1.3,
+                    fillColor: color,
+                    fillOpacity: 0.85
+                });
+            }
+            aggregateMarker.historicalSiteData = repRecord;
+
+            if (isMulti) {
+                aggregateMarker.bindTooltip(
+                    records.length + ' months — click to expand',
+                    { direction: 'top', offset: [0, -10] }
+                );
+                (function(aggMarker, bLat, bLng, recs) {
+                    aggMarker.on('click', function(e) {
+                        L.DomEvent.stopPropagation(e);
+                        if (expandedSpokeGroup && expandedSpokeGroup.aggregate === aggMarker) {
+                            collapseHistoricalSpokes();
+                        } else {
+                            expandHistoricalSpokes(aggMarker, bLat, bLng, recs);
+                        }
+                    });
+                })(aggregateMarker, baseLat, baseLng, records);
+            } else {
+                aggregateMarker.bindPopup(
+                    '<strong>' + repRecord.site_name + '</strong>' +
+                    '<br>Year: ' + repRecord.year + '  ' + getMonthName(toNumber(repRecord.month)) +
+                    '<br>Unique Species: <strong>' + richness + '</strong>' +
+                    '<br>Resident: ' + toNumber(repRecord.total_resident) + '  Migrant: ' + toNumber(repRecord.total_migrant) +
+                    '<br>Light Tolerant: ' + toNumber(repRecord.total_tolerant) + '  Light Sensitive: ' + toNumber(repRecord.total_sensitive) +
+                    birdFilterLine
+                );
+                aggregateMarker.on('click', function(e) {
+                    L.DomEvent.stopPropagation(e);
+                    showHistoricalSiteDetail(repRecord);
+                });
+            }
 
             if (historicalObservationClusterLayer) {
-                historicalObservationClusterLayer.addLayer(marker);
+                historicalObservationClusterLayer.addLayer(aggregateMarker);
             } else {
-                marker.addTo(map);
+                aggregateMarker.addTo(map);
             }
-            historicalObservationLayers.push(marker);
-            if (marker && marker.bringToFront) {
-                marker.bringToFront();
+            historicalObservationLayers.push(aggregateMarker);
+            if (aggregateMarker && aggregateMarker.bringToFront) {
+                aggregateMarker.bringToFront();
             }
         });
     }
