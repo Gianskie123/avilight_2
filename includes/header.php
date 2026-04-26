@@ -93,7 +93,7 @@ if (in_array($current_page, $avp_pages, true)) {
             <div class="nav-brand">
                 <span class="nav-title">AVILIGHT</span>
             </div>
-            <ul class="nav-menu">
+            <ul class="nav-menu" id="navMenuList">
                 <?php foreach ($nav_links as $item): ?>
                     <?php $is_active_nav = $current_page === $item['href']; ?>
                     <li><a href="<?php echo htmlspecialchars($item['href']); ?>" class="<?php echo $is_active_nav ? 'active' : ''; ?>"<?php echo $is_active_nav ? ' aria-current="page"' : ''; ?>><?php echo htmlspecialchars($item['label']); ?></a></li>
@@ -133,6 +133,10 @@ if (in_array($current_page, $avp_pages, true)) {
                         <a href="?logout=1" class="nav-account-link nav-account-logout">Log out</a>
                     </div>
                 </div>
+                <!-- Hamburger button (visible on mobile only) -->
+                <button class="nav-hamburger" id="navHamburger" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="navMenuList">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+                </button>
             </div>
         </div>
     </nav>
@@ -210,6 +214,36 @@ if (in_array($current_page, $avp_pages, true)) {
                 closePopovers(null);
             }
         });
+
+        // Hamburger menu toggle
+        var hamburger = document.getElementById('navHamburger');
+        var navbarEl = hamburger ? hamburger.closest('.navbar') : null;
+        if (hamburger && navbarEl) {
+            function setHamburgerState(open) {
+                navbarEl.classList.toggle('nav-open', open);
+                hamburger.setAttribute('aria-expanded', open ? 'true' : 'false');
+                hamburger.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+            }
+            hamburger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                setHamburgerState(!navbarEl.classList.contains('nav-open'));
+            });
+            document.addEventListener('click', function(e) {
+                if (navbarEl.classList.contains('nav-open') && !navbarEl.contains(e.target)) {
+                    setHamburgerState(false);
+                }
+            });
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && navbarEl.classList.contains('nav-open')) {
+                    setHamburgerState(false);
+                }
+            });
+            // Close menu when a nav link is clicked (navigating away)
+            var menuLinks = document.querySelectorAll('#navMenuList a');
+            menuLinks.forEach(function(link) {
+                link.addEventListener('click', function() { setHamburgerState(false); });
+            });
+        }
     })();
     </script>
     
