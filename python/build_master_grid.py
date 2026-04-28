@@ -346,9 +346,9 @@ def build(years: list) -> None:
             .mean().reset_index())
     mg = mg.merge(vi_a, on=['cell_id', 'year', 'month'], how='left')
 
-    # ── F. Hierarchical fill for NDVI and LST ─────────────────────────────────
-    emit('Applying hierarchical gap-fill (NDVI, LST)...')
-    mg = fill_hierarchical(mg, ['ndvi', 'lst_day', 'lst_night'])
+    # ── F. Hierarchical fill for NDVI, LST, and VIIRS ────────────────────────
+    emit('Applying hierarchical gap-fill (NDVI, LST, VIIRS)...')
+    mg = fill_hierarchical(mg, ['ndvi', 'lst_day', 'lst_night', 'viirs_avg_rad'])
 
     # ── G. Bird observations ──────────────────────────────────────────────────
     emit('Snapping bird observations...')
