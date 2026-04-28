@@ -54,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-card {
             width: 360px;
+            max-width: calc(100% - 32px);
             background: var(--bg-card, #fff);
             border: 1px solid var(--border-color, #e2e8f0);
             border-radius: 14px;
@@ -113,6 +114,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 18px;
             font-size: 0.78rem;
             color: var(--text-muted, #94a3b8);
+        }
+        @media (max-width: 400px) {
+            .login-card {
+                max-width: 100%;
+                border-radius: 0;
+                border-left: none;
+                border-right: none;
+                padding: 36px 20px;
+            }
         }
     </style>
 </head>

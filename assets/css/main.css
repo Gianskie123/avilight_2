@@ -70,6 +70,7 @@ body {
     background: var(--bg-dark);
     color: var(--text-primary);
     line-height: 1.6;
+    overflow-x: hidden;
 }
 
 /* Navigation Bar */
@@ -194,7 +195,34 @@ body {
     position: relative;
 }
 
-/* Main Content */.nav-popover {
+/* Hamburger toggle button — hidden on desktop, shown on mobile */
+.nav-hamburger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    padding: 0;
+    transition: color 0.2s, background 0.2s;
+}
+
+.nav-hamburger:hover {
+    color: var(--text-primary);
+    background: var(--bg-input);
+}
+
+.nav-hamburger svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Main Content */
+.nav-popover {
     position: absolute;
     right: 0;
     top: calc(100% + 8px);
@@ -1138,34 +1166,100 @@ tr:hover {
 }
 
 @media (max-width: 768px) {
+    /* Show hamburger; keep navbar as a single row */
+    .nav-hamburger {
+        display: flex;
+    }
+
     .nav-container {
-        flex-direction: column;
-        height: auto;
-        padding: 15px;
+        padding: 0 14px;
+        height: 60px;
+        position: relative;
     }
-    
+
+    /* Nav menu becomes a collapsible dropdown below the navbar */
     .nav-menu {
+        display: none;
+        position: absolute;
+        top: 60px;
+        left: 0;
+        right: 0;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border-color);
         flex-direction: column;
-        width: 100%;
-        gap: 5px;
-        margin: 15px 0;
+        padding: 8px 14px 14px;
+        gap: 4px;
+        z-index: 999;
+        box-shadow: var(--shadow-lg);
+        flex: unset;
+        justify-content: unset;
     }
-    
+
+    .navbar.nav-open .nav-menu {
+        display: flex;
+    }
+
     .nav-menu li a {
         display: block;
-        text-align: center;
+        text-align: left;
+        padding: 10px 12px;
     }
-    
+
+    /* Reduce main content padding */
+    .main-content {
+        padding: 14px 12px;
+    }
+
+    /* Grids: single column */
     .grid-2, .grid-3 {
         grid-template-columns: 1fr;
     }
-    
+
     .stats-grid {
         grid-template-columns: 1fr;
     }
 
     .dash-stats {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    /* Allow cards to scroll horizontally (handles wide tables) */
+    .card {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Map heights */
+    #map {
+        height: 350px;
+    }
+
+    .dashboard-map-col #map {
+        height: 350px;
+        min-height: 300px;
+    }
+
+    /* Chart height */
+    .chart-container {
+        height: 260px;
+    }
+
+    /* Page header font */
+    .page-title {
+        font-size: 1.35rem;
+    }
+
+    /* Side panel: bottom sheet on mobile */
+    .side-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        max-width: 100%;
+        border-radius: 16px 16px 0 0;
+        max-height: 65vh;
     }
 }
 
@@ -1751,4 +1845,32 @@ tr:hover {
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+}
+
+/* ── Extra small screens (≤480px) ───────────────────────── */
+@media (max-width: 480px) {
+    /* Stack stat cards to single column */
+    .dash-stats {
+        grid-template-columns: 1fr;
+    }
+
+    /* Tighten main content padding */
+    .main-content {
+        padding: 10px 8px;
+    }
+
+    /* Smaller page title */
+    .page-title {
+        font-size: 1.15rem;
+    }
+
+    /* Hide theme label text to save space */
+    #themeLabel {
+        display: none;
+    }
+
+    /* Tighter nav icon gap on very small screens */
+    .nav-user {
+        gap: 6px;
+    }
 }
