@@ -201,6 +201,62 @@ function _ensure_access_log_table(PDO $pdo): void {
 }
 
 /**
+ * Check whether the currently logged-in user has accepted the User Responsibility Agreement.
+ * Session flag is checked first for performance; falls back to the database.
+ */
+function has_accepted_agreement(): bool {
+    if (!is_logged_in()) {
+        return false;
+    }
+    // Fast path: already recorded in session
+    if (!empty($_SESSION['agreement_accepted'])) {
+        return true;
+    }
+    // Slow path: query the database
+    try {
+        require_once __DIR__ . '/db.php';
+        $pdo = get_mysql_db();
+        _ensure_user_agreements_table($pdo);
+        $stmt = $pdo->prepare('SELECT id FROM user_agreements WHERE email = :email LIMIT 1');
+        $stmt->execute([':email' => $_SESSION['user_email']]);
+        if ($stmt->fetch()) {
+            $_SESSION['agreement_accepted'] = true;
+            return true;
+        }
+    } catch (Exception $e) {
+        error_log('[AVILIGHT] has_accepted_agreement error: ' . $e->getMessage());
+    }
+    return false;
+}
+
+/**
+ * Record that the currently logged-in user has accepted the User Responsibility Agreement.
+ */
+function record_agreement_acceptance(): void {
+    if (!is_logged_in()) {
+        return;
+    }
+    try {
+        require_once __DIR__ . '/db.php';
+        $pdo = get_mysql_db();
+        _ensure_user_agreements_table($pdo);
+        $pdo->prepare(
+            'INSERT INTO user_agreements (user_id, email, ip_address)
+             VALUES (:uid, :email, :ip)
+             ON DUPLICATE KEY UPDATE accepted_at = NOW(), ip_address = :ip2'
+        )->execute([
+            ':uid'   => $_SESSION['user_id'] ?? null,
+            ':email' => $_SESSION['user_email'],
+            ':ip'    => $_SERVER['REMOTE_ADDR'] ?? '',
+            ':ip2'   => $_SERVER['REMOTE_ADDR'] ?? '',
+        ]);
+        $_SESSION['agreement_accepted'] = true;
+    } catch (Exception $e) {
+        error_log('[AVILIGHT] record_agreement_acceptance error: ' . $e->getMessage());
+    }
+}
+
+/**
  * Ensure the MySQL users table exists (created on first use).
  */
 function _ensure_users_table(PDO $pdo): void {
@@ -227,4 +283,21 @@ function _ensure_users_table(PDO $pdo): void {
             ':role'  => 'admin',
         ]);
     }
+}
+
+/**
+ * Ensure the MySQL user_agreements table exists.
+ * Columns: id, user_id, email, accepted_at, ip_address
+ */
+function _ensure_user_agreements_table(PDO $pdo): void {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS user_agreements (
+        id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        user_id     INT UNSIGNED NULL,
+        email       VARCHAR(255) NOT NULL,
+        accepted_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        ip_address  VARCHAR(45)  NOT NULL DEFAULT '',
+        PRIMARY KEY (id),
+        UNIQUE KEY uidx_ua_email (email),
+        KEY idx_ua_user_id (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
