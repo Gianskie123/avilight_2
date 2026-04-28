@@ -213,9 +213,17 @@ require_once 'includes/header.php';
         <hr style="margin: 24px 0;">
 
         <!-- Merge to Master Grid -->
-        <h4>Merge Covariates → Master Grid</h4>
+        <h4>Prepare Analysis Data</h4>
+        <p style="margin: 0 0 10px; color: var(--text-secondary, #94a3b8); font-size: 13px;">
+            Combines all bird observation records with environmental data (light, vegetation, temperature, rainfall, land type) into one unified dataset ready for analysis.<br><br>
+            <strong>Press this button whenever:</strong>
+            <ul style="margin: 6px 0 0 16px; padding: 0; font-size: 13px;">
+                <li>New bird observation records have been uploaded <em>and</em> environmental data for the same year is already fetched</li>
+                <li>A bird species' category (light tolerance or migratory status) has been changed</li>
+            </ul>
+        </p>
         <button class="btn btn-success" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
-            Build Master Grid
+            Prepare Analysis Data
         </button>
         <div id="masterGridStatus" style="margin-top: 10px;"></div>
 
@@ -1093,6 +1101,7 @@ function buildMasterGrid(btn) {
             if (result.success) {
                 const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
                 statusEl.innerHTML = `<span style="color:#4ade80;">✓ ${lastMsg}</span>${logHtml}`;
+                loadSpatialChecks();
             } else {
                 const errMsg = result.error || 'Did not complete successfully.';
                 statusEl.innerHTML = `<span style="color:#f87171;">✗ ${errMsg}</span>${logHtml}`;
