@@ -9,6 +9,7 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
+api_assert_active();
 
 $limit = max(1, min(20, (int) ($_GET['limit'] ?? 5)));
 $items = fetch_bmb_announcements($limit);

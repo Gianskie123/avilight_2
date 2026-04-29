@@ -4,6 +4,8 @@ require_once 'includes/auth.php';
 require_admin(); // Require admin access
 require_once 'includes/db.php';
 
+$is_it_admin = is_it_admin();
+
 // ── Handle change-password POST ───────────────────────────────────────────
 $pw_success = '';
 $pw_error   = '';
@@ -85,32 +87,6 @@ if (file_exists($thresholds_file)) {
     }
 }
 
-// ── Security logs from MySQL ──────────────────────────────────────────────
-$recent_access    = [];
-$recent_failures  = [];
-try {
-    $log_db = get_mysql_db();
-    _ensure_access_log_table($log_db);
-    _ensure_login_attempts_table($log_db);
-
-    $recent_access = $log_db->query(
-        'SELECT email, action, ip_address, logged_at
-         FROM access_log
-         ORDER BY logged_at DESC
-         LIMIT 15'
-    )->fetchAll(PDO::FETCH_ASSOC);
-
-    $recent_failures = $log_db->query(
-        'SELECT email, ip_address, attempted_at
-         FROM login_attempts
-         WHERE success = 0
-         ORDER BY attempted_at DESC
-         LIMIT 15'
-    )->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) {
-    // Non-fatal – tables may not exist yet; logs will show empty
-    error_log('[AVILIGHT] admin security log query error: ' . $e->getMessage());
-}
 
 require_once 'includes/header.php';
 ?>
@@ -230,6 +206,7 @@ require_once 'includes/header.php';
     </div>
 </div>
 
+<?php if ($is_it_admin): ?>
 <!-- Model Versioning -->
 <div class="card">
     <h2 class="card-header">Model Versioning & Management</h2>
@@ -313,6 +290,7 @@ require_once 'includes/header.php';
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <!-- Threshold Configuration -->
 <div class="card" id="threshold-config">
@@ -417,88 +395,67 @@ require_once 'includes/header.php';
     </div>
 </div>
 
+<?php if ($is_it_admin): ?>
 <!-- Account Management -->
 <div class="card">
     <h2 class="card-header">Account Management</h2>
     <div class="card-body">
-        <div class="grid-2">
-            <!-- Change Password -->
-            <div>
-                <h4>Change Password</h4>
-                <p style="color: #666; font-size: 0.9rem; margin-bottom: 12px;">
-                    Logged in as <strong><?= htmlspecialchars(get_logged_user()) ?></strong>
-                </p>
-                <?php if ($pw_success): ?>
-                    <div class="alert alert-success" style="margin-bottom:10px;"><?= htmlspecialchars($pw_success) ?></div>
-                <?php endif; ?>
-                <?php if ($pw_error): ?>
-                    <div class="alert alert-danger" style="margin-bottom:10px;"><?= htmlspecialchars($pw_error) ?></div>
-                <?php endif; ?>
-                <form method="POST">
-                    <input type="hidden" name="action" value="change_password">
-                    <div class="form-group">
-                        <label class="form-label">Current Password</label>
-                        <input type="password" name="current_password" class="form-control" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">New Password <small style="color:#666;">(min. 8 characters)</small></label>
-                        <input type="password" name="new_password" class="form-control" minlength="8" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Confirm New Password</label>
-                        <input type="password" name="confirm_password" class="form-control" minlength="8" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Update Password</button>
-                </form>
-            </div>
 
-            <!-- User Management -->
-            <div>
-                <h4>System Users</h4>
-                <?php if ($add_user_success): ?>
-                    <div class="alert alert-success" style="margin-bottom:10px;"><?= $add_user_success ?></div>
-                <?php endif; ?>
-                <table style="font-size: 0.88rem; width:100%; margin-bottom:16px;">
-                    <thead>
-                        <tr>
-                            <th>Email</th>
-                            <th>Last Login</th>
-                        </tr>
-                    </thead>
-                    <tbody id="userListBody">
-                        <?php foreach (list_users() as $u): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($u['email']) ?></td>
-                            <td style="color:#666; font-size:0.82rem;"><?= !empty($u['last_login']) ? htmlspecialchars(substr($u['last_login'], 0, 16)) . ' UTC' : 'Never' ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-
-                <details id="addUserDetails">
-                    <summary style="cursor:pointer; font-size:0.9rem; color:var(--accent-blue,#3b82f6); margin-bottom:10px;">+ Add new user</summary>
-                    <div id="addUserStatus" style="margin-bottom:8px;"></div>
-                    <form id="addUserForm" style="margin-top:10px;">
-                        <div class="form-group">
-                            <label class="form-label">Full Name</label>
-                            <input type="text" id="newUserFullName" class="form-control" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Email</label>
-                            <input type="email" id="newUserEmail" class="form-control" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Password <small style="color:#666;">(min. 8 characters)</small></label>
-                            <input type="password" id="newUserPassword" class="form-control" minlength="8" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary" id="addUserBtn">Add User</button>
-                    </form>
-                </details>
-            </div>
+        <!-- User list -->
+        <div style="overflow-x:auto; margin-bottom:24px;">
+            <table style="font-size:0.88rem; width:100%;" id="userListTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Last Login</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userListBody">
+                    <tr><td colspan="6" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
+                </tbody>
+            </table>
         </div>
+
+        <!-- Add new user -->
+        <details id="addUserDetails">
+            <summary style="cursor:pointer;font-size:0.9rem;color:var(--accent-blue,#3b82f6);margin-bottom:12px;">+ Add new account</summary>
+            <div id="addUserStatus" style="margin-bottom:8px;"></div>
+            <form id="addUserForm" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Full Name</label>
+                    <input type="text" id="newUserFullName" class="form-control" required>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Email</label>
+                    <input type="email" id="newUserEmail" class="form-control" required>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Password <small style="color:#666;">(min. 8 characters)</small></label>
+                    <input type="password" id="newUserPassword" class="form-control" minlength="8" required>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Account Type</label>
+                    <select id="newUserType" class="form-control" required>
+                        <option value="EMS">EMS</option>
+                        <option value="IT_admin">IT Admin</option>
+                    </select>
+                </div>
+                <div style="grid-column:1/-1;">
+                    <button type="submit" class="btn btn-primary" id="addUserBtn">Add Account</button>
+                </div>
+            </form>
+        </details>
+
+        <div id="manageUserStatus" style="margin-top:12px;"></div>
     </div>
 </div>
+<?php endif; ?>
 
+<?php if ($is_it_admin): ?>
 <!-- Security & Activity Logs -->
 <div class="card">
     <h2 class="card-header">Security & Access Logs</h2>
@@ -507,76 +464,73 @@ require_once 'includes/header.php';
 
             <!-- Recent Activity -->
             <div>
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                    <h4 style="margin:0;">Recent Activity</h4>
-                    <select id="accessLogFilter" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-card,#1e293b);color:var(--text-primary,#f1f5f9);">
+                <h4 style="margin-bottom:10px;">Recent Activity</h4>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;">
+                    <select id="accessLogAction" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                         <option value="">All Actions</option>
-                        <?php
-                        $action_types = array_unique(array_map(function($r) {
-                            return strtok($r['action'] ?? '', ':');
-                        }, $recent_access));
-                        sort($action_types);
-                        foreach ($action_types as $type): ?>
-                            <option value="<?= htmlspecialchars($type) ?>"><?= htmlspecialchars(ucfirst($type)) ?></option>
-                        <?php endforeach; ?>
+                        <option value="login">Login</option>
+                        <option value="logout">Logout</option>
+                        <option value="add_user">Add User</option>
+                        <option value="activate_user">Activate User</option>
+                        <option value="deactivate_user">Deactivate User</option>
+                        <option value="reset_password">Change Password</option>
+                        <option value="delete_user">Delete User</option>
                     </select>
+                    <input type="date" id="accessLogFrom" title="From date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <span style="font-size:0.8rem;color:#94a3b8;">–</span>
+                    <input type="date" id="accessLogTo" title="To date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <button onclick="loadAuditLog()" class="btn btn-secondary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
+                    <button onclick="clearAuditFilters()" style="background:none;border:none;color:#94a3b8;font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
-                    <table style="font-size:0.85rem; width:100%;" id="accessLogTable">
+                    <table style="font-size:0.85rem; width:100%;">
                         <thead>
                             <tr>
                                 <th>User</th>
                                 <th>Action</th>
                                 <th>IP</th>
-                                <th style="white-space:nowrap;">Time (UTC)</th>
+                                <th style="white-space:nowrap;">Time</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <?php if (empty($recent_access)): ?>
-                                <tr><td colspan="4" style="color:#94a3b8; text-align:center;">No activity recorded yet.</td></tr>
-                            <?php else: foreach ($recent_access as $row): ?>
-                                <tr data-action="<?= htmlspecialchars(strtok($row['action'] ?? '', ':')) ?>">
-                                    <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                    <td style="font-size:0.8rem;"><?= htmlspecialchars(ucfirst($row['action'])) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['logged_at'], 0, 16)) ?></td>
-                                </tr>
-                            <?php endforeach; endif; ?>
+                        <tbody id="accessLogBody">
+                            <tr><td colspan="4" style="color:#94a3b8; text-align:center; padding:12px;">Loading…</td></tr>
                         </tbody>
                     </table>
                 </div>
+                <div id="accessLogPager"></div>
             </div>
 
             <!-- Failed Login Attempts -->
             <div>
-                <h4 style="margin-bottom:10px;">Recent Failed Login Attempts</h4>
+                <h4 style="margin-bottom:10px;">Failed Login Attempts</h4>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;">
+                    <input type="date" id="failLogFrom" title="From date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <span style="font-size:0.8rem;color:#94a3b8;">–</span>
+                    <input type="date" id="failLogTo" title="To date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <button onclick="loadFailedAttempts()" class="btn btn-secondary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
+                    <button onclick="clearFailFilters()" style="background:none;border:none;color:#94a3b8;font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
+                </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
                         <thead>
                             <tr>
                                 <th>Email</th>
                                 <th>IP</th>
-                                <th style="white-space:nowrap;">Time (UTC)</th>
+                                <th style="white-space:nowrap;">Time</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <?php if (empty($recent_failures)): ?>
-                                <tr><td colspan="3" style="color:#94a3b8; text-align:center;">No failed attempts recorded.</td></tr>
-                            <?php else: foreach ($recent_failures as $row): ?>
-                                <tr>
-                                    <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($row['email']) ?>"><?= htmlspecialchars($row['email']) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem;"><?= htmlspecialchars($row['ip_address']) ?></td>
-                                    <td style="color:#64748b; font-size:0.8rem; white-space:nowrap;"><?= htmlspecialchars(substr($row['attempted_at'], 0, 16)) ?></td>
-                                </tr>
-                            <?php endforeach; endif; ?>
+                        <tbody id="failLogBody">
+                            <tr><td colspan="3" style="color:#94a3b8; text-align:center; padding:12px;">Loading…</td></tr>
                         </tbody>
                     </table>
                 </div>
+                <div id="failLogPager"></div>
             </div>
 
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <?php
 $extra_scripts = <<<'EOD'
@@ -585,13 +539,129 @@ $extra_scripts = <<<'EOD'
 #toastContainer > div { transition: opacity .3s ease; }
 </style>
 <script>
-// ── Access log action filter ──────────────────────────────────────────────────
-document.getElementById('accessLogFilter')?.addEventListener('change', function () {
-    const val = this.value;
-    document.querySelectorAll('#accessLogTable tbody tr').forEach(tr => {
-        tr.style.display = (!val || tr.dataset.action === val) ? '' : 'none';
-    });
-});
+// ── Audit log loaders (paginated) ────────────────────────────────────────────
+let _auditPage = 1;
+let _failPage  = 1;
+
+function loadAuditLog(page) {
+    _auditPage = page || 1;
+    const action   = document.getElementById('accessLogAction')?.value || '';
+    const dateFrom = document.getElementById('accessLogFrom')?.value   || '';
+    const dateTo   = document.getElementById('accessLogTo')?.value     || '';
+    const tbody    = document.getElementById('accessLogBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:12px;">Loading…</td></tr>';
+
+    const params = new URLSearchParams({ type: 'activity', page: _auditPage });
+    if (action)   params.set('action',    action);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo)   params.set('date_to',   dateTo);
+
+    fetch('api/get_audit_logs.php?' + params)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.rows.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:12px;">No records found.</td></tr>';
+                renderPager('accessLogPager', 1, 1, null);
+                return;
+            }
+            tbody.innerHTML = data.rows.map(r => `
+                <tr>
+                    <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.email)}">${escHtml(r.email)}</td>
+                    <td style="font-size:0.8rem;">${escHtml(r.action.charAt(0).toUpperCase() + r.action.slice(1))}</td>
+                    <td style="color:#64748b;font-size:0.8rem;">${escHtml(r.ip_address)}</td>
+                    <td style="color:#64748b;font-size:0.8rem;white-space:nowrap;">${escHtml(r.logged_at.substring(0,16))}</td>
+                </tr>`).join('');
+            renderPager('accessLogPager', data.page, data.total_pages, 'loadAuditLog');
+        })
+        .catch(() => {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f87171;padding:12px;">Failed to load logs.</td></tr>';
+        });
+}
+
+function loadFailedAttempts(page) {
+    _failPage = page || 1;
+    const dateFrom = document.getElementById('failLogFrom')?.value || '';
+    const dateTo   = document.getElementById('failLogTo')?.value   || '';
+    const tbody    = document.getElementById('failLogBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:12px;">Loading…</td></tr>';
+
+    const params = new URLSearchParams({ type: 'failures', page: _failPage });
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo)   params.set('date_to',   dateTo);
+
+    fetch('api/get_audit_logs.php?' + params)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.rows.length) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:12px;">No failed attempts recorded.</td></tr>';
+                renderPager('failLogPager', 1, 1, null);
+                return;
+            }
+            tbody.innerHTML = data.rows.map(r => `
+                <tr>
+                    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.email)}">${escHtml(r.email)}</td>
+                    <td style="color:#64748b;font-size:0.8rem;">${escHtml(r.ip_address)}</td>
+                    <td style="color:#64748b;font-size:0.8rem;white-space:nowrap;">${escHtml(r.attempted_at.substring(0,16))}</td>
+                </tr>`).join('');
+            renderPager('failLogPager', data.page, data.total_pages, 'loadFailedAttempts');
+        })
+        .catch(() => {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#f87171;padding:12px;">Failed to load logs.</td></tr>';
+        });
+}
+
+function clearAuditFilters() {
+    document.getElementById('accessLogAction').value = '';
+    document.getElementById('accessLogFrom').value   = '';
+    document.getElementById('accessLogTo').value     = '';
+    loadAuditLog(1);
+}
+
+function clearFailFilters() {
+    document.getElementById('failLogFrom').value = '';
+    document.getElementById('failLogTo').value   = '';
+    loadFailedAttempts(1);
+}
+
+function renderPager(containerId, page, totalPages, fnName) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!fnName || totalPages <= 1) { el.innerHTML = ''; return; }
+
+    const btn = (label, p, disabled) => {
+        const base = 'border-radius:4px;padding:2px 9px;font-size:0.8rem;cursor:pointer;line-height:1.6;';
+        if (disabled) return `<button disabled style="${base}background:none;border:1px solid var(--border-color,#334155);color:#64748b;opacity:0.4;cursor:default;">${label}</button>`;
+        if (p === page) return `<span style="${base}background:var(--accent-blue,#3b82f6);border:1px solid var(--accent-blue,#3b82f6);color:#fff;font-weight:600;">${label}</span>`;
+        return `<button onclick="${fnName}(${p})" style="${base}background:none;border:1px solid var(--border-color,#334155);color:var(--text-primary,#f1f5f9);">${label}</button>`;
+    };
+
+    // Build page number list with ellipsis for large ranges
+    let pages = [];
+    if (totalPages <= 7) {
+        pages = Array.from({length: totalPages}, (_, i) => i + 1);
+    } else {
+        const set = new Set([1, totalPages, page]);
+        if (page > 1) set.add(page - 1);
+        if (page < totalPages) set.add(page + 1);
+        pages = [...set].sort((a, b) => a - b);
+    }
+
+    let html = '<div style="display:flex;align-items:center;gap:3px;justify-content:center;margin-top:8px;flex-wrap:wrap;">';
+    html += btn('&#8592;', page - 1, page === 1);
+
+    let prev = 0;
+    for (const p of pages) {
+        if (prev && p - prev > 1) html += '<span style="color:#64748b;font-size:0.8rem;padding:0 2px;">…</span>';
+        html += btn(p, p, false);
+        prev = p;
+    }
+
+    html += btn('&#8594;', page + 1, page === totalPages);
+    html += '</div>';
+    el.innerHTML = html;
+}
 
 // ── Toast notifications ───────────────────────────────────────────────────────
 
@@ -785,11 +855,24 @@ function loadCovariateStatus() {
         });
 }
 
-// Load on page ready, then refresh every 60 seconds
+// Load on page ready — staggered by priority to avoid session-lock contention
+// and to keep the critical parts of the UI fast.
 document.addEventListener('DOMContentLoaded', () => {
+    // Tier 1 — critical, load immediately
     loadCovariateStatus();
-    loadValidationLog();
-    loadSpatialChecks();
+    loadUserList();
+
+    // Tier 2 — important but not above the fold on first glance
+    setTimeout(() => {
+        loadValidationLog();
+        loadSpatialChecks();
+    }, 250);
+
+    // Tier 3 — audit logs are below the fold; load last
+    setTimeout(() => {
+        loadAuditLog();
+        loadFailedAttempts();
+    }, 500);
 });
 setInterval(loadCovariateStatus, 60000);
 
@@ -1203,7 +1286,7 @@ function updateKbaWeightTotal() {
     }
 }
 
-// ── Add User ──────────────────────────────────────────────────────────────────
+// ── User Management ───────────────────────────────────────────────────────────
 
 function loadUserList() {
     fetch('api/list_users.php')
@@ -1211,25 +1294,135 @@ function loadUserList() {
         .then(data => {
             const tbody = document.getElementById('userListBody');
             if (!tbody || !data.success) return;
+            if (!data.users.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:16px;">No accounts found.</td></tr>';
+                return;
+            }
             tbody.innerHTML = data.users.map(u => {
-                const lastLogin = u.last_login_at
-                    ? u.last_login_at.substring(0, 16) + ' UTC'
-                    : 'Never';
+                const lastLogin  = u.last_login_at ? u.last_login_at.substring(0, 16) + ' UTC' : 'Never';
+                const isActive   = u.is_active == 1;
+                const statusBadge = isActive
+                    ? `<span class="badge badge-success">Active</span>`
+                    : `<span class="badge badge-secondary">Inactive</span>`;
+                const typeBadge  = u.user_type === 'IT_admin'
+                    ? `<span class="badge badge-info">IT Admin</span>`
+                    : `<span class="badge badge-secondary">EMS</span>`;
+                const toggleBtn  = isActive
+                    ? `<button class="btn btn-secondary" style="padding:3px 8px;font-size:0.8rem;" onclick="manageUser(${u.user_id},'deactivate')">Deactivate</button>`
+                    : `<button class="btn btn-primary"   style="padding:3px 8px;font-size:0.8rem;" onclick="manageUser(${u.user_id},'activate')">Activate</button>`;
                 return `<tr>
-                    <td>${u.full_name ? u.full_name + ' <span style="color:#888;font-size:0.85em;">(' + u.email + ')</span>' : u.email}</td>
+                    <td>${u.full_name ? escHtml(u.full_name) : '—'}</td>
+                    <td style="font-size:0.82rem;">${escHtml(u.email)}</td>
+                    <td>${typeBadge}</td>
+                    <td>${statusBadge}</td>
                     <td style="color:#666;font-size:0.82rem;">${lastLogin}</td>
+                    <td style="white-space:nowrap;">
+                        ${toggleBtn}
+                        <button class="btn btn-secondary" style="padding:3px 8px;font-size:0.8rem;margin-left:4px;" onclick="showPasswordChangeModal(${u.user_id})">Change Password</button>
+                        <button class="btn btn-danger"    style="padding:3px 8px;font-size:0.8rem;margin-left:4px;" onclick="manageUser(${u.user_id},'delete','${escHtml(u.email)}')">Delete</button>
+                    </td>
                 </tr>`;
             }).join('');
         })
         .catch(() => {});
 }
 
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-document.getElementById('addUserForm').addEventListener('submit', function (e) {
+function manageUser(userId, action, label) {
+    const statusEl = document.getElementById('manageUserStatus');
+    if (action === 'delete' && !confirm(`Delete account "${label}"? This cannot be undone.`)) return;
+
+    const body = new FormData();
+    body.append('user_id', userId);
+    body.append('action',  action);
+
+    fetch('api/manage_user.php', { method: 'POST', body })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                let msg = data.message || 'Done.';
+                if (action === 'reset_password' && data.temp_password) {
+                    msg += `<br><strong>Temporary password:</strong> <code style="font-size:1em;">${escHtml(data.temp_password)}</code><br><small>Share this with the user and ask them to change it on first login.</small>`;
+                }
+                statusEl.innerHTML = `<div class="alert alert-success">${msg}</div>`;
+                loadUserList();
+            } else {
+                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Action failed.'}</div>`;
+            }
+        })
+        .catch(() => {
+            statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
+        });
+}
+
+function showPasswordChangeModal(userId) {
+    document.getElementById('pwChangeModal')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'pwChangeModal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+        <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border-color,#334155);border-radius:12px;padding:28px 24px;width:360px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+            <h4 style="margin:0 0 18px;font-size:1rem;">Change Password</h4>
+            <div style="margin-bottom:12px;">
+                <label class="form-label">New Password</label>
+                <input type="password" id="pwNew" class="form-control" placeholder="Minimum 8 characters" autocomplete="new-password">
+            </div>
+            <div style="margin-bottom:16px;">
+                <label class="form-label">Confirm Password</label>
+                <input type="password" id="pwConfirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password">
+            </div>
+            <div id="pwModalErr" style="color:#f87171;font-size:0.85rem;margin-bottom:10px;min-height:1.2em;"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button onclick="document.getElementById('pwChangeModal').remove()" class="btn btn-secondary">Cancel</button>
+                <button onclick="submitPasswordChange(${userId})" class="btn btn-primary">Update Password</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    // Close on backdrop click
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.getElementById('pwNew').focus();
+}
+
+function submitPasswordChange(userId) {
+    const pw  = document.getElementById('pwNew')?.value    || '';
+    const pw2 = document.getElementById('pwConfirm')?.value || '';
+    const err = document.getElementById('pwModalErr');
+
+    if (pw.length < 8) { err.textContent = 'Password must be at least 8 characters.'; return; }
+    if (pw !== pw2)    { err.textContent = 'Passwords do not match.'; return; }
+    err.textContent = '';
+
+    const body = new FormData();
+    body.append('user_id',      userId);
+    body.append('action',       'change_password');
+    body.append('new_password', pw);
+
+    fetch('api/manage_user.php', { method: 'POST', body })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('pwChangeModal')?.remove();
+            const statusEl = document.getElementById('manageUserStatus');
+            if (data.success) {
+                statusEl.innerHTML = `<div class="alert alert-success">${escHtml(data.message)}</div>`;
+            } else {
+                statusEl.innerHTML = `<div class="alert alert-danger">${escHtml(data.error || 'Failed to update password.')}</div>`;
+            }
+        })
+        .catch(() => {
+            document.getElementById('pwChangeModal')?.remove();
+            document.getElementById('manageUserStatus').innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
+        });
+}
+
+document.getElementById('addUserForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     const fullName = document.getElementById('newUserFullName').value.trim();
     const email    = document.getElementById('newUserEmail').value.trim();
     const password = document.getElementById('newUserPassword').value;
+    const userType = document.getElementById('newUserType').value;
     const statusEl = document.getElementById('addUserStatus');
     const btn      = document.getElementById('addUserBtn');
 
@@ -1237,9 +1430,10 @@ document.getElementById('addUserForm').addEventListener('submit', function (e) {
     statusEl.innerHTML = '';
 
     const body = new FormData();
-    body.append('full_name', fullName);
-    body.append('email',     email);
-    body.append('password',  password);
+    body.append('full_name',  fullName);
+    body.append('email',      email);
+    body.append('password',   password);
+    body.append('user_type',  userType);
 
     fetch('api/add_user.php', { method: 'POST', body })
         .then(r => r.json())
@@ -1249,6 +1443,7 @@ document.getElementById('addUserForm').addEventListener('submit', function (e) {
                 document.getElementById('newUserFullName').value = '';
                 document.getElementById('newUserEmail').value    = '';
                 document.getElementById('newUserPassword').value = '';
+                document.getElementById('newUserType').value     = 'EMS';
                 loadUserList();
             } else {
                 statusEl.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;

@@ -45,6 +45,7 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'error' => 'Session expired.']);
     exit;
 }
+api_assert_active();
 
 require_once __DIR__ . '/../includes/db.php';
 

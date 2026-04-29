@@ -14,6 +14,7 @@ function require_login() {
         header('Location: login.php');
         exit;
     }
+    _assert_user_active();
 }
 
 function require_admin() {
@@ -21,9 +22,82 @@ function require_admin() {
         header('Location: login.php');
         exit;
     }
+    _assert_user_active();
     if (($_SESSION['user_role'] ?? 'user') !== 'admin') {
         header('Location: home.php');
         exit;
+    }
+}
+
+/**
+ * Kill the current session if the user's account has been deactivated.
+ * Called on every authenticated request so deactivation takes effect immediately.
+ * Uses email (always present in session) so the check works even when user_id is unset.
+ */
+function _assert_user_active(): void {
+    $email = $_SESSION['user_email'] ?? null;
+    if (!$email) {
+        return;
+    }
+    try {
+        require_once __DIR__ . '/db.php';
+        $pdo  = get_mysql_db();
+        $stmt = $pdo->prepare('SELECT is_active FROM users WHERE email = :email LIMIT 1');
+        $stmt->execute([':email' => $email]);
+        $row  = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row && (int)$row['is_active'] === 0) {
+            session_destroy();
+            header('Location: login.php');
+            exit;
+        }
+    } catch (Exception $e) {
+        error_log('[AVILIGHT] _assert_user_active error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Single call for JSON API endpoints: checks login + active status.
+ * Replaces the manual is_logged_in() block in API files.
+ */
+function require_api_auth(): void {
+    if (!is_logged_in()) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'error' => 'Session expired. Please log in again.']);
+        exit;
+    }
+    api_assert_active();
+}
+
+/**
+ * For JSON API endpoints: return 401 and exit if the user is deactivated.
+ * Releases the PHP session file lock before doing any DB work so concurrent
+ * AJAX requests are not serialized waiting for the session lock.
+ */
+function api_assert_active(): void {
+    $email = $_SESSION['user_email'] ?? null;
+    // Release the session lock immediately — we only needed to read the email.
+    // This allows other concurrent requests to proceed without queuing.
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    if (!$email) {
+        return;
+    }
+    try {
+        require_once __DIR__ . '/db.php';
+        $pdo  = get_mysql_db();
+        $stmt = $pdo->prepare('SELECT is_active FROM users WHERE email = :email LIMIT 1');
+        $stmt->execute([':email' => $email]);
+        $row  = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row && (int)$row['is_active'] === 0) {
+            session_start();
+            session_destroy();
+            http_response_code(401);
+            echo json_encode(['success' => false, 'error' => 'Account deactivated.', 'redirect' => 'login.php']);
+            exit;
+        }
+    } catch (Exception $e) {
+        error_log('[AVILIGHT] api_assert_active error: ' . $e->getMessage());
     }
 }
 
@@ -33,6 +107,14 @@ function get_logged_user() {
 
 function get_logged_role() {
     return $_SESSION['user_role'] ?? 'user';
+}
+
+function get_logged_user_type(): string {
+    return $_SESSION['user_type'] ?? 'EMS';
+}
+
+function is_it_admin(): bool {
+    return get_logged_user_type() === 'IT_admin';
 }
 
 function logout() {
@@ -59,6 +141,37 @@ function logout() {
 }
 
 /**
+ * Check whether an email is temporarily locked out due to repeated failures.
+ * 5 failed attempts within 15 minutes blocks further attempts for that window.
+ * Also logs the blocked attempt so the count keeps rising during the lockout.
+ * Returns an error string if locked, null if the account can proceed.
+ */
+function check_login_lockout(string $email): ?string {
+    try {
+        require_once __DIR__ . '/db.php';
+        $pdo = get_mysql_db();
+        _ensure_login_attempts_table($pdo);
+
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM login_attempts
+             WHERE email = :email AND success = 0
+             AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)"
+        );
+        $stmt->execute([':email' => trim($email)]);
+        if ((int)$stmt->fetchColumn() >= 5) {
+            // Log the blocked attempt so the window keeps extending
+            $pdo->prepare(
+                "INSERT INTO login_attempts (email, ip_address, success) VALUES (:email, :ip, 0)"
+            )->execute([':email' => trim($email), ':ip' => $_SERVER['REMOTE_ADDR'] ?? '']);
+            return 'Too many failed login attempts. Please wait 15 minutes and try again.';
+        }
+    } catch (Exception $e) {
+        error_log('[AVILIGHT] check_login_lockout error: ' . $e->getMessage());
+    }
+    return null;
+}
+
+/**
  * Validate credentials against the MySQL users table.
  * Records the attempt in login_attempts and logs a successful access event.
  * Returns the user row on success or false on failure.
@@ -75,6 +188,11 @@ function authenticate_user(string $email, string $password) {
         $stmt->execute([':email' => trim($email)]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
+        // Reject deactivated accounts before even checking the password
+        if ($user && empty($user['is_active'])) {
+            return false;
+        }
+
         $success = $user && password_verify($password, $user['password_hash']);
 
         // Always record the attempt
@@ -87,6 +205,7 @@ function authenticate_user(string $email, string $password) {
         ]);
 
         if ($success) {
+            $_SESSION['user_type'] = $user['user_type'] ?? 'EMS';
             $user_id = $user['user_id'] ?? $user['id'] ?? null;
 
             if ($user_id !== null) {

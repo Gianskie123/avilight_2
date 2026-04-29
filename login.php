@@ -16,15 +16,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$email || !$password) {
         $error = 'Please enter your email and password.';
     } else {
-        $user = authenticate_user($email, $password);
-        if ($user) {
-            $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_role']  = $user['role'] ?? 'admin';
-            $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
-            header('Location: loading.php?next=home.php');
-            exit;
+        $lockout = check_login_lockout($email);
+        if ($lockout) {
+            $error = $lockout;
         } else {
-            $error = 'Invalid email or password.';
+            $user = authenticate_user($email, $password);
+            if ($user) {
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_role']  = $user['role'] ?? 'admin';
+                $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
+                header('Location: loading.php?next=home.php');
+                exit;
+            } else {
+                $error = 'Invalid email or password.';
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'uploads' => []]);
     exit;
 }
+api_assert_active();
 
 try {
     $pdo = get_mysql_db();

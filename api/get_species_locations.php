@@ -7,6 +7,7 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'locations' => [], 'available_years' => []]);
     exit;
 }
+api_assert_active();
 
 $species_id = filter_input(INPUT_GET, 'species_id', FILTER_VALIDATE_INT);
 if (!$species_id) {
