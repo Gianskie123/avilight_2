@@ -217,7 +217,28 @@ function mapPointToCity(float $lat, float $lon, array $cityPolygons, array $orde
             }
         }
     }
-    return null;
+
+    // Fallback: snap coastal/reclaimed-land points that missed all polygons to the
+    // nearest city boundary vertex, but only within ~500 m (≈0.005°) so points
+    // genuinely outside Metro Manila are still excluded.
+    $maxDistSq   = 0.005 * 0.005;
+    $nearestCity = null;
+    $nearestDist = PHP_FLOAT_MAX;
+    foreach ($orderedCities as $city) {
+        foreach (($cityPolygons[$city] ?? []) as $poly) {
+            $outerRing = $poly[0] ?? [];
+            foreach ($outerRing as $coord) {
+                $dx = $lon - (float) ($coord[0] ?? 0);
+                $dy = $lat - (float) ($coord[1] ?? 0);
+                $d  = $dx * $dx + $dy * $dy;
+                if ($d < $nearestDist) {
+                    $nearestDist = $d;
+                    $nearestCity = $city;
+                }
+            }
+        }
+    }
+    return ($nearestDist <= $maxDistSq) ? $nearestCity : null;
 }
 
 function ensureSpatialMapTables(PDO $pdo): void {
@@ -1385,16 +1406,18 @@ function emptySnapshotScatterData(): array {
 
 function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea, int $snapshotStartYear, int $snapshotStartMonth, int $snapshotEndYear, int $snapshotEndMonth, int $limit = 10): array {
     if (snapshotSummaryHasRows($pdo, $selectedArea, $snapshotStartYear, $snapshotStartMonth, $snapshotEndYear, $snapshotEndMonth)) {
+        $selectArea  = ($selectedArea === 'All Areas') ? "'All Areas' AS area" : 'm.area AS area';
+        $groupByArea = ($selectedArea === 'All Areas') ? '' : 'm.area,';
         $sql = "SELECT
                                 COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site') AS site_name,
-                                m.area AS area,
+                                {$selectArea},
                                 COUNT(DISTINCT r.species_id) AS bird_richness
                         FROM raw_bird_observation r
                         JOIN observation_city_map m ON m.rbo_id = r.id
                         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
                             AND " . buildSnapshotRangeSql('r') . "
                             AND (:selected_area_all = 'All Areas' OR m.area = :selected_area_value)
-                        GROUP BY m.area, COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site')
+                        GROUP BY {$groupByArea} COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site')
                         HAVING COUNT(DISTINCT r.species_id) > 0
             ORDER BY bird_richness DESC, site_name ASC
             LIMIT :lim";
@@ -1453,16 +1476,18 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
     }
     $snapshotRangeSql = buildSnapshotRangeSql('r');
 
+    $selectArea2  = ($selectedArea === 'All Areas') ? "'All Areas' AS area" : 'm.area AS area';
+    $groupByArea2 = ($selectedArea === 'All Areas') ? '' : 'm.area,';
     $sql = "SELECT STRAIGHT_JOIN
                         COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site') AS site_name,
-            m.area AS area,
+            {$selectArea2},
                         COUNT(DISTINCT r.species_id) AS bird_richness
                 FROM raw_bird_observation r
                 JOIN observation_city_map m ON m.rbo_id = r.id
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
           AND {$snapshotRangeSql}
           {$areaClause}
-                GROUP BY m.area, COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site')
+                GROUP BY {$groupByArea2} COALESCE(NULLIF(TRIM(r.site_name), ''), 'Unknown Site')
         HAVING COUNT(DISTINCT r.species_id) > 0
         ORDER BY bird_richness DESC, site_name ASC
         LIMIT :lim";
