@@ -9,12 +9,27 @@ if (is_logged_in()) {
 
 $error = '';
 
+/** How long (seconds) a CAPTCHA challenge stays valid after it was generated. */
+const CAPTCHA_EXPIRY_SECONDS = 300;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = trim($_POST['email']    ?? '');
     $password = trim($_POST['password'] ?? '');
+    $captcha  = strtoupper(trim($_POST['captcha'] ?? ''));
+
+    // ── CAPTCHA check ──────────────────────────────────────────────────────
+    $captcha_ok      = false;
+    $captcha_expired = (time() - ($_SESSION['captcha_time'] ?? 0)) > CAPTCHA_EXPIRY_SECONDS;
+    if (!empty($_SESSION['captcha_text']) && !$captcha_expired) {
+        $captcha_ok = hash_equals($_SESSION['captcha_text'], $captcha);
+    }
+    // Always invalidate after one attempt (success or failure)
+    unset($_SESSION['captcha_text'], $_SESSION['captcha_time']);
 
     if (!$email || !$password) {
         $error = 'Please enter your email and password.';
+    } elseif (!$captcha_ok) {
+        $error = 'Incorrect CAPTCHA. Please try again.';
     } else {
         $lockout = check_login_lockout($email);
         if ($lockout) {
@@ -22,10 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $user = authenticate_user($email, $password);
             if ($user) {
-                $_SESSION['user_email'] = $user['email'];
-                $_SESSION['user_role']  = $user['role'] ?? 'admin';
-                $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
-                header('Location: loading.php?next=home.php');
+                // Credentials correct — start 2FA OTP flow
+                generate_and_send_otp($user);
+                header('Location: login_otp.php');
                 exit;
             } else {
                 $error = 'Invalid email or password.';
@@ -120,6 +134,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 0.78rem;
             color: var(--text-muted, #94a3b8);
         }
+        .captcha-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0 4px;
+        }
+        .captcha-row img {
+            width: auto;
+            height: 70px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color, #cbd5e1);
+            cursor: pointer;
+            flex: 1;
+        }
+        .captcha-refresh {
+            background: var(--bg-input, #f1f5f9);
+            border: 1px solid var(--border-color, #cbd5e1);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            color: var(--text-secondary, #64748b);
+            transition: background 0.2s;
+            line-height: 1;
+        }
+        .captcha-refresh:hover { background: var(--border-color, #e2e8f0); }
         @media (max-width: 400px) {
             .login-card {
                 max-width: 100%;
@@ -140,6 +180,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <form method="POST" autocomplete="on">
         <input type="email"    name="email"    placeholder="email@domain.com" required autofocus>
         <input type="password" name="password" placeholder="Password"         required>
+
+        <div class="captcha-row">
+            <img id="captcha-img" src="captcha.php" alt="CAPTCHA" title="Click to refresh">
+            <button type="button" class="captcha-refresh" onclick="refreshCaptcha()" title="Refresh CAPTCHA">&#x21bb;</button>
+        </div>
+        <input type="text" name="captcha" placeholder="Enter the characters above" required autocomplete="off" spellcheck="false">
+
         <button type="submit" class="login-btn">Sign in</button>
     </form>
 
@@ -151,5 +198,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         First-time setup? Use your administrator credentials to sign in.
     </div>
 </div>
+<script>
+function refreshCaptcha() {
+    var img = document.getElementById('captcha-img');
+    img.src = 'captcha.php?' + Date.now();
+}
+// Also refresh when clicking the image directly
+document.getElementById('captcha-img').addEventListener('click', refreshCaptcha);
+</script>
 </body>
 </html>

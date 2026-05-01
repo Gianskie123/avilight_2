@@ -420,3 +420,138 @@ function _ensure_user_agreements_table(PDO $pdo): void {
         KEY idx_ua_user_id (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
+
+// ── Two-Factor Authentication (Email OTP) ─────────────────────────────────────
+
+/** How long (seconds) an OTP code remains valid. */
+define('AVILIGHT_OTP_EXPIRY_SECONDS', 600);
+
+/** Sender address used in OTP emails; override via AVILIGHT_OTP_FROM env var. */
+define('AVILIGHT_OTP_FROM', getenv('AVILIGHT_OTP_FROM') ?: 'noreply@avilight.ph');
+
+/**
+ * Generate a 6-digit OTP, store it in the session (with expiry), and email it.
+ * Called after password is verified but BEFORE the session is fully established.
+ *
+ * @param array $user  The authenticated user row from the database.
+ * @return bool  True if the email was handed to the MTA; false on failure.
+ */
+function generate_and_send_otp(array $user): bool {
+    $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+    // Store in session so login_otp.php can verify it
+    $_SESSION['otp_code']    = $code;
+    $_SESSION['otp_email']   = $user['email'];
+    $_SESSION['otp_user_id'] = $user['user_id'] ?? $user['id'] ?? null;
+    $_SESSION['otp_role']    = $user['role']     ?? 'user';
+    $_SESSION['otp_type']    = $user['user_type'] ?? 'EMS';
+    $_SESSION['otp_expires'] = time() + AVILIGHT_OTP_EXPIRY_SECONDS;
+    $_SESSION['otp_attempts'] = 0;
+
+    return _send_otp_email($user['email'], $code);
+}
+
+/**
+ * Verify the OTP entered by the user.
+ * Returns true on success, or an error string on failure.
+ *
+ * @param string $submitted  The code typed by the user.
+ * @return true|string
+ */
+function verify_otp(string $submitted) {
+    // Guard: session must have a pending OTP
+    if (empty($_SESSION['otp_code']) || empty($_SESSION['otp_email'])) {
+        return 'No pending verification. Please log in again.';
+    }
+
+    // Expiry check
+    if (time() > ($_SESSION['otp_expires'] ?? 0)) {
+        _clear_otp_session();
+        return 'The verification code has expired. Please log in again.';
+    }
+
+    // Rate-limit: max 5 wrong guesses per OTP session
+    $_SESSION['otp_attempts'] = ($_SESSION['otp_attempts'] ?? 0) + 1;
+    if ($_SESSION['otp_attempts'] > 5) {
+        _clear_otp_session();
+        return 'Too many incorrect attempts. Please log in again.';
+    }
+
+    if (!hash_equals($_SESSION['otp_code'], trim($submitted))) {
+        return 'Incorrect verification code. Please try again.';
+    }
+
+    // ── Success: promote pending OTP data into a full session ──
+    $email   = $_SESSION['otp_email'];
+    $user_id = $_SESSION['otp_user_id'];
+    $role    = $_SESSION['otp_role'];
+    $type    = $_SESSION['otp_type'];
+
+    _clear_otp_session();
+
+    $_SESSION['user_email'] = $email;
+    $_SESSION['user_role']  = $role;
+    $_SESSION['user_id']    = $user_id;
+    $_SESSION['user_type']  = $type;
+
+    // Log successful login
+    try {
+        require_once __DIR__ . '/db.php';
+        $pdo = get_mysql_db();
+        if ($user_id !== null) {
+            $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE user_id = :id')
+                ->execute([':id' => $user_id]);
+        }
+        $pdo->prepare(
+            'INSERT INTO access_log (user_id, email, action, ip_address) VALUES (:uid, :email, :act, :ip)'
+        )->execute([
+            ':uid'   => $user_id,
+            ':email' => $email,
+            ':act'   => 'login',
+            ':ip'    => $_SERVER['REMOTE_ADDR'] ?? '',
+        ]);
+    } catch (Exception $e) {
+        error_log('[AVILIGHT] verify_otp login log error: ' . $e->getMessage());
+    }
+
+    return true;
+}
+
+/**
+ * Resend the OTP to the same email (regenerate code, reset expiry).
+ * Returns true on success, or an error string.
+ */
+function resend_otp(): bool {
+    if (empty($_SESSION['otp_email'])) {
+        return false;
+    }
+    $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    $_SESSION['otp_code']     = $code;
+    $_SESSION['otp_expires']  = time() + AVILIGHT_OTP_EXPIRY_SECONDS;
+    $_SESSION['otp_attempts'] = 0;
+    return _send_otp_email($_SESSION['otp_email'], $code);
+}
+
+/**
+ * Remove all OTP-related keys from the session.
+ */
+function _clear_otp_session(): void {
+    foreach (['otp_code', 'otp_email', 'otp_user_id', 'otp_role', 'otp_type', 'otp_expires', 'otp_attempts'] as $k) {
+        unset($_SESSION[$k]);
+    }
+}
+
+/**
+ * Send the OTP code to the given email address via PHP mail().
+ */
+function _send_otp_email(string $to, string $code): bool {
+    $subject = 'Your AVILIGHT login code';
+    $body    = "Your AVILIGHT verification code is:\n\n    {$code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n";
+    $headers = "From: " . AVILIGHT_OTP_FROM . "\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+
+    $sent = mail($to, $subject, $body, $headers);
+    if (!$sent) {
+        error_log("[AVILIGHT] OTP email failed to send to {$to}");
+    }
+    return (bool)$sent;
+}
