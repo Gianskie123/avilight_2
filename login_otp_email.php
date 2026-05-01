@@ -7,40 +7,38 @@ if (is_logged_in()) {
     exit;
 }
 
-// If there is no pending OTP session, send back to login
-if (empty($_SESSION['otp_code']) || empty($_SESSION['otp_email']) || empty($_SESSION['otp_delivery_email'])) {
+// Must have a pending authenticated user in session; otherwise back to login
+if (empty($_SESSION['otp_pending_user'])) {
     header('Location: login.php');
     exit;
 }
 
-$error   = '';
-$success = '';
-$masked  = ''; // e.g. "a***@example.com" to hint the user
-
-// Mask the delivery email for display
-$raw_email = $_SESSION['otp_delivery_email'] ?? '';
-if ($raw_email) {
-    [$local, $domain] = array_pad(explode('@', $raw_email, 2), 2, '');
-    $masked = (strlen($local) > 2 ? substr($local, 0, 2) . str_repeat('*', max(1, strlen($local) - 2)) : $local)
-            . '@' . $domain;
-}
+$pending_user  = $_SESSION['otp_pending_user'];
+$account_email = $pending_user['email'] ?? '';
+$error         = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['resend'])) {
-        // Resend OTP
-        $sent = resend_otp();
-        $success = $sent
-            ? 'A new code has been sent to your email.'
-            : 'Email delivery failed. Please try again in a moment, or contact your system administrator if the problem persists.';
+    $delivery_email = trim($_POST['delivery_email'] ?? '');
+
+    if (!$delivery_email) {
+        $error = 'Please enter an email address.';
+    } elseif (!filter_var($delivery_email, FILTER_VALIDATE_EMAIL)) {
+        $error = 'Please enter a valid email address.';
     } else {
-        // Verify submitted code
-        $submitted = trim($_POST['otp_code'] ?? '');
-        $result    = verify_otp($submitted);
-        if ($result === true) {
-            header('Location: loading.php?next=home.php');
+        // Generate and dispatch the OTP to the chosen delivery address
+        $sent = generate_and_send_otp($pending_user, $delivery_email);
+        // Pending user data is now encoded in the OTP session; remove the staging key
+        unset($_SESSION['otp_pending_user']);
+
+        if ($sent) {
+            header('Location: login_otp.php');
             exit;
         }
-        $error = $result;
+
+        // Email send failed — keep the pending user so they can try again
+        $_SESSION['otp_pending_user'] = $pending_user;
+        _clear_otp_session(); // roll back partially-set OTP session
+        $error = 'Failed to send the code. Please check the address and try again.';
     }
 }
 ?>
@@ -57,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avilight | Verify Your Identity</title>
+    <title>Avilight | Send Verification Code</title>
     <link rel="stylesheet" href="assets/css/main.css">
     <style>
         body {
@@ -68,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: var(--bg-main, #f8fafc);
         }
         .otp-card {
-            width: 380px;
+            width: 400px;
             max-width: calc(100% - 32px);
             background: var(--bg-card, #fff);
             border: 1px solid var(--border-color, #e2e8f0);
@@ -90,26 +88,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin: 0 0 22px;
             line-height: 1.5;
         }
-        .otp-card p strong {
-            color: var(--text-primary, #1e293b);
+        .otp-card label {
+            display: block;
+            text-align: left;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary, #64748b);
+            margin-bottom: 4px;
         }
-        .otp-input {
+        .otp-card input[type="email"] {
             width: 100%;
             box-sizing: border-box;
-            padding: 13px 14px;
-            margin: 4px 0 10px;
+            padding: 11px 14px;
+            margin: 0 0 10px;
             border-radius: 8px;
             border: 1px solid var(--border-color, #cbd5e1);
             background: var(--bg-input, #f1f5f9);
             color: var(--text-primary, #1e293b);
-            font-size: 1.6rem;
-            font-weight: 700;
-            letter-spacing: 0.35em;
-            text-align: center;
+            font-size: 0.93rem;
             outline: none;
             transition: border-color 0.2s;
         }
-        .otp-input:focus { border-color: var(--accent-blue, #3b82f6); }
+        .otp-card input[type="email"]:focus { border-color: var(--accent-blue, #3b82f6); }
         .otp-btn {
             width: 100%;
             padding: 11px;
@@ -132,33 +132,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: #ef4444;
             font-size: 0.85rem;
         }
-        .otp-success {
-            margin: 10px 0 0;
-            padding: 9px 12px;
-            border-radius: 8px;
-            background: rgba(34,197,94,0.12);
-            color: #16a34a;
-            font-size: 0.85rem;
-        }
         .otp-footer {
             margin-top: 20px;
-            display: flex;
-            justify-content: space-between;
             font-size: 0.80rem;
         }
-        .otp-footer a,
-        .otp-footer button {
-            background: none;
-            border: none;
-            padding: 0;
-            cursor: pointer;
+        .otp-footer a {
             color: var(--accent-blue, #3b82f6);
-            font-size: 0.80rem;
             text-decoration: none;
         }
-        .otp-footer a:hover,
-        .otp-footer button:hover { text-decoration: underline; }
-        @media (max-width: 420px) {
+        .otp-footer a:hover { text-decoration: underline; }
+        @media (max-width: 440px) {
             .otp-card {
                 max-width: 100%;
                 border-radius: 0;
@@ -172,41 +155,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <div class="otp-card">
     <img src="AviLight_Logo.png" alt="Avilight Logo">
-    <h2>Check your email</h2>
+    <h2>Where should we send the code?</h2>
     <p>
-        We sent a 6-digit verification code to<br>
-        <strong><?= htmlspecialchars($masked) ?></strong>.<br>
-        Enter it below to complete sign-in.
+        Enter the email address where you want to receive<br>
+        the one-time verification code.
     </p>
 
     <form method="POST">
+        <label for="delivery_email">Email address</label>
         <input
-            type="text"
-            name="otp_code"
-            class="otp-input"
-            placeholder="000000"
-            maxlength="6"
-            pattern="\d{6}"
-            inputmode="numeric"
-            autocomplete="one-time-code"
+            type="email"
+            id="delivery_email"
+            name="delivery_email"
+            placeholder="you@example.com"
+            value="<?= htmlspecialchars($_POST['delivery_email'] ?? $account_email) ?>"
             required
             autofocus>
-        <button type="submit" class="otp-btn">Verify</button>
+        <button type="submit" class="otp-btn">Send code</button>
     </form>
 
     <?php if ($error): ?>
         <div class="otp-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <?php if ($success): ?>
-        <div class="otp-success"><?= htmlspecialchars($success) ?></div>
-    <?php endif; ?>
-
     <div class="otp-footer">
         <a href="login.php">&#8592; Back to login</a>
-        <form method="POST" style="display:inline">
-            <button type="submit" name="resend" value="1">Resend code</button>
-        </form>
     </div>
 </div>
 </body>

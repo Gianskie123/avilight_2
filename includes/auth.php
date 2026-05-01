@@ -430,25 +430,46 @@ define('AVILIGHT_OTP_EXPIRY_SECONDS', 600);
 define('AVILIGHT_OTP_FROM', getenv('AVILIGHT_OTP_FROM') ?: 'noreply@avilight.ph');
 
 /**
- * Generate a 6-digit OTP, store it in the session (with expiry), and email it.
- * Called after password is verified but BEFORE the session is fully established.
- *
- * @param array $user  The authenticated user row from the database.
- * @return bool  True if the email was handed to the MTA; false on failure.
+ * Mail driver: 'smtp' uses a direct SMTP connection (compatible with Mailpit).
+ *              'mail' falls back to PHP's built-in mail() function.
+ * Override via the MAIL_DRIVER environment variable.
  */
-function generate_and_send_otp(array $user): bool {
+define('AVILIGHT_MAIL_DRIVER', getenv('MAIL_DRIVER') ?: 'smtp');
+
+/** SMTP host (default: 127.0.0.1 for Mailpit / Laragon). */
+define('AVILIGHT_SMTP_HOST', getenv('MAIL_HOST') ?: '127.0.0.1');
+
+/** SMTP port (default: 1025, Mailpit's default SMTP port). */
+define('AVILIGHT_SMTP_PORT', (int)(getenv('MAIL_PORT') ?: 1025));
+
+/**
+ * Generate a 6-digit OTP, store it in the session (with expiry), and email it.
+ * The OTP is delivered to $delivery_email, which may differ from the account
+ * email stored in the session for identity purposes.
+ *
+ * @param array  $user           The authenticated user row from the database.
+ * @param string $delivery_email The address the OTP code is sent to.
+ * @return bool  True if the email was dispatched; false on failure.
+ */
+function generate_and_send_otp(array $user, string $delivery_email = ''): bool {
     $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-    // Store in session so login_otp.php can verify it
-    $_SESSION['otp_code']    = $code;
-    $_SESSION['otp_email']   = $user['email'];
-    $_SESSION['otp_user_id'] = $user['user_id'] ?? $user['id'] ?? null;
-    $_SESSION['otp_role']    = $user['role']     ?? 'user';
-    $_SESSION['otp_type']    = $user['user_type'] ?? 'EMS';
-    $_SESSION['otp_expires'] = time() + AVILIGHT_OTP_EXPIRY_SECONDS;
-    $_SESSION['otp_attempts'] = 0;
+    // Use account email as delivery address when none is specified
+    if ($delivery_email === '') {
+        $delivery_email = $user['email'];
+    }
 
-    return _send_otp_email($user['email'], $code);
+    // Store in session so login_otp.php can verify it
+    $_SESSION['otp_code']           = $code;
+    $_SESSION['otp_email']          = $user['email'];       // account identity
+    $_SESSION['otp_delivery_email'] = $delivery_email;      // where the code was sent
+    $_SESSION['otp_user_id']        = $user['user_id'] ?? $user['id'] ?? null;
+    $_SESSION['otp_role']           = $user['role']     ?? 'user';
+    $_SESSION['otp_type']           = $user['user_type'] ?? 'EMS';
+    $_SESSION['otp_expires']        = time() + AVILIGHT_OTP_EXPIRY_SECONDS;
+    $_SESSION['otp_attempts']       = 0;
+
+    return _send_otp_email($delivery_email, $code);
 }
 
 /**
@@ -518,40 +539,126 @@ function verify_otp(string $submitted) {
 }
 
 /**
- * Resend the OTP to the same email (regenerate code, reset expiry).
- * Returns true on success, or an error string.
+ * Resend the OTP to the same delivery email (regenerate code, reset expiry).
+ * Returns true on success, or false on failure.
  */
 function resend_otp(): bool {
-    if (empty($_SESSION['otp_email'])) {
+    if (empty($_SESSION['otp_delivery_email'])) {
         return false;
     }
     $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $_SESSION['otp_code']     = $code;
     $_SESSION['otp_expires']  = time() + AVILIGHT_OTP_EXPIRY_SECONDS;
     $_SESSION['otp_attempts'] = 0;
-    return _send_otp_email($_SESSION['otp_email'], $code);
+    return _send_otp_email($_SESSION['otp_delivery_email'], $code);
 }
 
 /**
  * Remove all OTP-related keys from the session.
  */
 function _clear_otp_session(): void {
-    foreach (['otp_code', 'otp_email', 'otp_user_id', 'otp_role', 'otp_type', 'otp_expires', 'otp_attempts'] as $k) {
+    foreach (['otp_code', 'otp_email', 'otp_delivery_email', 'otp_user_id', 'otp_role', 'otp_type', 'otp_expires', 'otp_attempts'] as $k) {
         unset($_SESSION[$k]);
     }
 }
 
 /**
- * Send the OTP code to the given email address via PHP mail().
+ * Send the OTP code to the given email address.
+ * Uses SMTP when MAIL_DRIVER=smtp (default, compatible with Mailpit / Laragon),
+ * or falls back to PHP's mail() when MAIL_DRIVER=mail.
  */
 function _send_otp_email(string $to, string $code): bool {
     $subject = 'Your AVILIGHT login code';
     $body    = "Your AVILIGHT verification code is:\n\n    {$code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n";
-    $headers = "From: " . AVILIGHT_OTP_FROM . "\r\nContent-Type: text/plain; charset=UTF-8\r\n";
 
+    if (AVILIGHT_MAIL_DRIVER === 'smtp') {
+        return _smtp_send(AVILIGHT_SMTP_HOST, AVILIGHT_SMTP_PORT, AVILIGHT_OTP_FROM, $to, $subject, $body);
+    }
+
+    $headers = "From: " . AVILIGHT_OTP_FROM . "\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $sent = mail($to, $subject, $body, $headers);
     if (!$sent) {
-        error_log("[AVILIGHT] OTP email failed to send to {$to}");
+        error_log("[AVILIGHT] OTP email (mail()) failed to send to {$to}");
     }
     return (bool)$sent;
+}
+
+/**
+ * Send a plain-text email via a direct SMTP connection.
+ * Compatible with Mailpit (localhost:1025) and any unauthenticated SMTP relay.
+ *
+ * @param string $host    SMTP server hostname or IP.
+ * @param int    $port    SMTP server port.
+ * @param string $from    Envelope sender address.
+ * @param string $to      Envelope recipient address.
+ * @param string $subject Message subject.
+ * @param string $body    Plain-text message body.
+ * @return bool  True if the server accepted the message; false on any error.
+ */
+function _smtp_send(string $host, int $port, string $from, string $to, string $subject, string $body): bool {
+    $fp = @fsockopen($host, $port, $errno, $errstr, 5);
+    if (!$fp) {
+        error_log("[AVILIGHT] SMTP connect to {$host}:{$port} failed: {$errstr} ({$errno})");
+        return false;
+    }
+
+    /**
+     * Read one complete SMTP response (handles multi-line replies).
+     * Returns the full response string.
+     */
+    $read_response = static function () use ($fp): string {
+        $response = '';
+        while (!feof($fp)) {
+            $line = fgets($fp, 512);
+            if ($line === false) {
+                break;
+            }
+            $response .= $line;
+            // A space at position 3 marks the last line of a response.
+            if (isset($line[3]) && $line[3] === ' ') {
+                break;
+            }
+        }
+        return $response;
+    };
+
+    /**
+     * Send one SMTP command and verify the expected response code.
+     */
+    $cmd = static function (string $command, int $expected) use ($fp, $read_response): bool {
+        fwrite($fp, $command . "\r\n");
+        $response = $read_response();
+        return (int)substr($response, 0, 3) === $expected;
+    };
+
+    $ok = true;
+    $read_response(); // consume the server greeting (220 …)
+
+    $ok = $ok && $cmd('EHLO localhost', 250);
+    $ok = $ok && $cmd("MAIL FROM:<{$from}>", 250);
+    $ok = $ok && $cmd("RCPT TO:<{$to}>", 250);
+    $ok = $ok && $cmd('DATA', 354);
+
+    if ($ok) {
+        $date    = date('r');
+        $message = "Date: {$date}\r\n"
+                 . "From: {$from}\r\n"
+                 . "To: {$to}\r\n"
+                 . "Subject: {$subject}\r\n"
+                 . "Content-Type: text/plain; charset=UTF-8\r\n"
+                 . "\r\n"
+                 . str_replace("\n.", "\n..", $body)  // dot-stuffing
+                 . "\r\n.\r\n";
+        fwrite($fp, $message);
+        $response = $read_response();
+        $ok       = (int)substr($response, 0, 3) === 250;
+    }
+
+    @fwrite($fp, "QUIT\r\n");
+    fclose($fp);
+
+    if (!$ok) {
+        error_log("[AVILIGHT] SMTP send to {$to} via {$host}:{$port} failed.");
+    }
+    return $ok;
 }

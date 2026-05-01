@@ -37,9 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $user = authenticate_user($email, $password);
             if ($user) {
-                // Credentials correct — start 2FA OTP flow
-                generate_and_send_otp($user);
-                header('Location: login_otp.php');
+                // Credentials correct — ask where to deliver the OTP
+                $_SESSION['otp_pending_user'] = $user;
+                header('Location: login_otp_email.php');
                 exit;
             } else {
                 $error = 'Invalid email or password.';
