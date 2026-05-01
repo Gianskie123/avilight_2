@@ -8,6 +8,7 @@ if (!is_logged_in()) {
     echo "Unauthorized\n";
     exit;
 }
+_assert_user_active();
 
 function sanitize_filters(array $input): array {
     $defaultYear = (int) gmdate('Y');

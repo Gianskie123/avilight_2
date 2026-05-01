@@ -1,4 +1,16 @@
 <?php
+require_once 'includes/auth.php';
+require_login();
+
+// Handle agreement acceptance before any HTML output
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accept_agreement'])) {
+    record_agreement_acceptance();
+    header('Location: home.php');
+    exit;
+}
+
+$show_agreement_modal = !has_accepted_agreement();
+
 $page_title = 'Home';
 require_once 'includes/header.php';
 
@@ -351,6 +363,105 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
 </div>
 
 </div>
+
+<?php if ($show_agreement_modal): ?>
+<!-- ── User Responsibility Agreement Modal ─────────────────────────────── -->
+<div id="agreementOverlay" role="dialog" aria-modal="true" aria-labelledby="agreementTitle"
+     style="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,0.6);
+            display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:var(--bg-card,#fff);border-radius:16px;
+                width:100%;max-width:560px;max-height:90vh;
+                display:flex;flex-direction:column;
+                box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden;">
+
+        <!-- Header -->
+        <div style="text-align:center;padding:28px 28px 0;flex-shrink:0;">
+            <div style="display:inline-flex;align-items:center;justify-content:center;
+                        width:56px;height:56px;background:#eff6ff;border-radius:14px;margin-bottom:14px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round"
+                     width="28" height="28" aria-hidden="true">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <h2 id="agreementTitle"
+                style="font-size:1.25rem;font-weight:700;color:var(--text-primary,#1e293b);margin:0 0 6px;">
+                User Responsibility Agreement
+            </h2>
+            <p style="font-size:0.87rem;color:var(--text-secondary,#64748b);margin:0 0 20px;">
+                Please review and accept these terms before continuing.
+            </p>
+
+            <!-- Welcome strip -->
+            <div style="display:flex;gap:14px;background:var(--bg-input,#eff6ff);border:1px solid var(--border-color,#bfdbfe);
+                        border-radius:10px;padding:14px 16px;text-align:left;margin-bottom:4px;">
+                <div style="font-size:0.88rem;font-weight:700;color:var(--text-primary,#1e293b);
+                             min-width:90px;word-break:break-word;line-height:1.4;">
+                    Welcome,<br><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?>!
+                </div>
+                <div style="font-size:0.83rem;color:var(--text-secondary,#475569);line-height:1.5;">
+                    Please read and accept the User Responsibility Agreement to continue using AVILIGHT.
+                </div>
+            </div>
+        </div>
+
+        <!-- Scrollable body -->
+        <div style="overflow-y:auto;padding:16px 28px;flex:1;min-height:0;">
+            <div style="background:var(--bg-card,#fff);border:1px solid var(--border-color,#e2e8f0);
+                        border-radius:10px;padding:20px;">
+                <h3 style="font-size:0.97rem;font-weight:700;color:var(--text-primary,#1e293b);margin:0 0 10px;">
+                    AVILIGHT Responsible Use and System Integrity Agreement
+                </h3>
+                <p style="font-size:0.85rem;color:var(--text-secondary,#64748b);margin:0 0 14px;line-height:1.6;">
+                    I acknowledge that I am accessing AVILIGHT, a secure application used to support
+                    authorized operational, administrative, research, or business activities.
+                </p>
+                <p style="font-size:0.85rem;font-weight:700;color:var(--text-primary,#1e293b);margin:0 0 12px;">
+                    By accepting this agreement, I understand and commit to the following:
+                </p>
+                <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:11px;">
+                    <?php
+                    $terms = [
+                        ['Authorized Use', 'I will use this application only for legitimate, authorized work related to my role or approved business activities.'],
+                        ['Accurate Records', 'I will enter, review, and manage information responsibly and will not intentionally submit false, misleading, or manipulated data.'],
+                        ['Confidentiality', 'I will protect confidential, personal, financial, operational, and other sensitive information and will only access data I am permitted to view.'],
+                        ['Account Security', 'I am responsible for safeguarding my credentials, using strong authentication practices, and reporting suspected unauthorized access immediately.'],
+                        ['System Integrity', 'I will not attempt to bypass security controls, access restricted areas, alter configurations without approval, or interfere with the availability or integrity of the system.'],
+                        ['Compliance', 'I will follow applicable laws, organizational policies, contractual obligations, and internal procedures that govern use of this application and its data.'],
+                        ['Monitoring and Audit', 'I understand that access and activity within this application may be monitored and logged for security, compliance, operational support, and audit purposes.'],
+                        ['Consequences', 'I understand that misuse may result in revoked access, disciplinary action, investigation, or referral to the appropriate authorities.'],
+                    ];
+                    foreach ($terms as [$label, $text]): ?>
+                    <li style="display:flex;gap:8px;font-size:0.84rem;color:var(--text-secondary,#475569);line-height:1.5;">
+                        <span style="flex-shrink:0;margin-top:1px;">•</span>
+                        <span><strong style="color:var(--text-primary,#1e293b);"><?= htmlspecialchars($label) ?>:</strong>
+                        <?= htmlspecialchars($text) ?></span>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Footer / action -->
+        <div style="padding:16px 28px 24px;flex-shrink:0;border-top:1px solid var(--border-color,#e2e8f0);">
+            <p style="font-size:0.81rem;color:var(--text-secondary,#64748b);margin:0 0 14px;line-height:1.5;">
+                By clicking <strong>I Agree</strong>, I confirm that I have read, understood,
+                and agree to comply with this User Responsibility Agreement.
+            </p>
+            <form method="POST">
+                <button type="submit" name="accept_agreement" value="1"
+                        style="padding:11px 32px;background:var(--accent-blue,#3b82f6);color:#fff;
+                               font-size:0.95rem;font-weight:600;border:none;border-radius:8px;
+                               cursor:pointer;transition:opacity 0.2s;"
+                        onmouseover="this.style.opacity='0.88'"
+                        onmouseout="this.style.opacity='1'">
+                    I Agree
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php
 $extra_scripts = <<<SCRIPTS

@@ -93,7 +93,7 @@ if (in_array($current_page, $avp_pages, true)) {
             <div class="nav-brand">
                 <span class="nav-title">AVILIGHT</span>
             </div>
-            <ul class="nav-menu">
+            <ul class="nav-menu" id="navMenuList">
                 <?php foreach ($nav_links as $item): ?>
                     <?php $is_active_nav = $current_page === $item['href']; ?>
                     <li><a href="<?php echo htmlspecialchars($item['href']); ?>" class="<?php echo $is_active_nav ? 'active' : ''; ?>"<?php echo $is_active_nav ? ' aria-current="page"' : ''; ?>><?php echo htmlspecialchars($item['label']); ?></a></li>
@@ -108,8 +108,6 @@ if (in_array($current_page, $avp_pages, true)) {
                     <svg id="iconMoon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
                     <span id="themeLabel">Dark</span>
                 </button>
-                <button class="nav-icon nav-search-btn" id="globalSearchToggle" type="button" aria-label="Global search (press slash)" title="Global search ( / )"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg></button>
-
                 <div class="nav-menu-item">
                     <button class="nav-icon" id="notificationsToggle" type="button" aria-label="Notifications" title="Notifications">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
@@ -135,21 +133,13 @@ if (in_array($current_page, $avp_pages, true)) {
                         <a href="?logout=1" class="nav-account-link nav-account-logout">Log out</a>
                     </div>
                 </div>
+                <!-- Hamburger button (visible on mobile only) -->
+                <button class="nav-hamburger" id="navHamburger" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="navMenuList">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+                </button>
             </div>
         </div>
     </nav>
-
-    <div class="global-search-overlay" id="globalSearchOverlay" hidden>
-        <div class="global-search-dialog" role="dialog" aria-modal="true" aria-label="Global search">
-            <input type="search" id="globalSearchInput" class="global-search-input" placeholder="Search pages..." autocomplete="off" aria-label="Search pages">
-            <div class="global-search-results" id="globalSearchResults">
-                <?php foreach ($nav_links as $item): ?>
-                    <a class="global-search-result" href="<?php echo htmlspecialchars($item['href']); ?>" data-search="<?php echo htmlspecialchars(strtolower($item['label'] . ' ' . str_replace('.php', '', $item['href']))); ?>"><?php echo htmlspecialchars($item['label']); ?></a>
-                <?php endforeach; ?>
-            </div>
-            <div class="sr-only" id="globalSearchLive" aria-live="polite"></div>
-        </div>
-    </div>
 
     <script>
     // Theme toggle logic
@@ -188,11 +178,6 @@ if (in_array($current_page, $avp_pages, true)) {
             applyTheme(next);
         });
 
-        var searchToggle = document.getElementById('globalSearchToggle');
-        var searchOverlay = document.getElementById('globalSearchOverlay');
-        var searchInput = document.getElementById('globalSearchInput');
-        var searchResults = document.getElementById('globalSearchResults');
-        var searchLive = document.getElementById('globalSearchLive');
         var popovers = [
             {toggle: document.getElementById('notificationsToggle'), menu: document.getElementById('notificationsMenu')},
             {toggle: document.getElementById('accountToggle'), menu: document.getElementById('accountMenu')}
@@ -206,57 +191,6 @@ if (in_array($current_page, $avp_pages, true)) {
             });
         }
 
-        function openSearch() {
-            searchOverlay.hidden = false;
-            closePopovers(null);
-            searchInput.value = '';
-            filterSearchResults('');
-            setTimeout(function() { searchInput.focus(); }, 0);
-        }
-
-        function closeSearch() {
-            searchOverlay.hidden = true;
-        }
-
-        function filterSearchResults(query) {
-            var normalized = query.toLowerCase().trim();
-            var visibleCount = 0;
-            searchResults.querySelectorAll('.global-search-result').forEach(function(link) {
-                var haystack = link.getAttribute('data-search') || '';
-                link.hidden = normalized !== '' && !haystack.includes(normalized);
-                if (!link.hidden) {
-                    visibleCount += 1;
-                }
-            });
-            if (searchLive) {
-                searchLive.textContent = visibleCount + ' result' + (visibleCount === 1 ? '' : 's') + ' found';
-            }
-        }
-
-        if (searchToggle) {
-            searchToggle.addEventListener('click', function(e) {
-                e.stopPropagation();
-                if (searchOverlay.hidden) openSearch();
-                else closeSearch();
-            });
-        }
-
-        searchOverlay.addEventListener('click', function(e) {
-            if (e.target === searchOverlay) {
-                closeSearch();
-            }
-        });
-
-        searchInput.addEventListener('input', function() {
-            filterSearchResults(searchInput.value || '');
-        });
-
-        function isTypingTarget(element) {
-            if (!element) return false;
-            var tagName = (element.tagName || '').toLowerCase();
-            return /input|textarea|select/.test(tagName) || !!element.isContentEditable;
-        }
-
         popovers.forEach(function(item) {
             if (!item.toggle || !item.menu) return;
             item.toggle.addEventListener('click', function(e) {
@@ -265,7 +199,6 @@ if (in_array($current_page, $avp_pages, true)) {
                 closePopovers(willOpen ? item.menu : null);
                 if (willOpen) item.menu.classList.add('is-open');
                 else item.menu.classList.remove('is-open');
-                closeSearch();
             });
             item.menu.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -278,29 +211,39 @@ if (in_array($current_page, $avp_pages, true)) {
 
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                closeSearch();
                 closePopovers(null);
-                return;
-            }
-
-            var activeElement = document.activeElement;
-            var isInputFocused = isTypingTarget(activeElement);
-            var isSearchOpen = !searchOverlay.hidden;
-
-            // When search is open, avoid global shortcuts stealing key events from typing.
-            if (isSearchOpen) {
-                var isPrintableKey = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
-                if (isPrintableKey && activeElement !== searchInput) {
-                    searchInput.focus();
-                }
-                return;
-            }
-
-            if (e.key === '/' && !isInputFocused) {
-                e.preventDefault();
-                openSearch();
             }
         });
+
+        // Hamburger menu toggle
+        var hamburger = document.getElementById('navHamburger');
+        var navbarEl = hamburger ? hamburger.closest('.navbar') : null;
+        if (hamburger && navbarEl) {
+            function setHamburgerState(open) {
+                navbarEl.classList.toggle('nav-open', open);
+                hamburger.setAttribute('aria-expanded', open ? 'true' : 'false');
+                hamburger.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+            }
+            hamburger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                setHamburgerState(!navbarEl.classList.contains('nav-open'));
+            });
+            document.addEventListener('click', function(e) {
+                if (navbarEl.classList.contains('nav-open') && !navbarEl.contains(e.target)) {
+                    setHamburgerState(false);
+                }
+            });
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && navbarEl.classList.contains('nav-open')) {
+                    setHamburgerState(false);
+                }
+            });
+            // Close menu when a nav link is clicked (navigating away)
+            var menuLinks = document.querySelectorAll('#navMenuList a');
+            menuLinks.forEach(function(link) {
+                link.addEventListener('click', function() { setHamburgerState(false); });
+            });
+        }
     })();
     </script>
     

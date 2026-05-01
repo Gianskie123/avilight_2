@@ -16,15 +16,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$email || !$password) {
         $error = 'Please enter your email and password.';
     } else {
-        $user = authenticate_user($email, $password);
-        if ($user) {
-            $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_role']  = $user['role'] ?? 'admin';
-            $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
-            header('Location: loading.php?next=home.php');
-            exit;
+        $lockout = check_login_lockout($email);
+        if ($lockout) {
+            $error = $lockout;
         } else {
-            $error = 'Invalid email or password.';
+            $user = authenticate_user($email, $password);
+            if ($user) {
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_role']  = $user['role'] ?? 'admin';
+                $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
+                header('Location: loading.php?next=home.php');
+                exit;
+            } else {
+                $error = 'Invalid email or password.';
+            }
         }
     }
 }
@@ -54,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-card {
             width: 360px;
+            max-width: calc(100% - 32px);
             background: var(--bg-card, #fff);
             border: 1px solid var(--border-color, #e2e8f0);
             border-radius: 14px;
@@ -113,6 +119,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 18px;
             font-size: 0.78rem;
             color: var(--text-muted, #94a3b8);
+        }
+        @media (max-width: 400px) {
+            .login-card {
+                max-width: 100%;
+                border-radius: 0;
+                border-left: none;
+                border-right: none;
+                padding: 36px 20px;
+            }
         }
     </style>
 </head>

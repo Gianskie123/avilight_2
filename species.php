@@ -719,9 +719,13 @@ $extra_scripts = <<<EOD
 <script>
 const pageSpecies = {$page_species_js};
 
+let _locSpeciesId = null;
+
 function showSpeciesDetails(speciesId) {
     const species = pageSpecies.find(s => parseInt(s.id) === speciesId);
     if (!species) return;
+
+    _locSpeciesId = speciesId;
 
     const tol      = (species.light_tolerance  || '').toLowerCase();
     const mig      = (species.migration_status || '').toLowerCase();
@@ -735,56 +739,124 @@ function showSpeciesDetails(speciesId) {
         : 'N/A';
 
     const imageHtml = species.image_path
-        ? `<img src="\${species.image_path}" alt="\${species.common_name}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">`
-        : `<div style="background:var(--bg-card-alt);border:1px solid var(--border-color);padding:30px 10px;border-radius:8px;font-size:4rem;">🦜</div><small style="color:var(--text-muted);">Photo not available</small>`;
+        ? '<img src="' + species.image_path + '" alt="' + species.common_name + '" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">'
+        : '<div style="background:var(--bg-card-alt);border:1px solid var(--border-color);padding:30px 10px;border-radius:8px;font-size:4rem;">🦜</div><small style="color:var(--text-muted);">Photo not available</small>';
+
+    const selStyle = 'padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:.82rem;cursor:pointer;';
+
+    const html = '<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">'
+        + '<div style="flex:0 0 100px;text-align:center;">' + imageHtml + '</div>'
+        + '<div style="flex:1;min-width:200px;">'
+        + '<div style="margin-bottom:12px;"><strong style="color:var(--text-primary);">Light Tolerance:</strong><br>'
+        + '<span class="badge ' + tolClass + '" style="font-size:.9rem;margin-top:4px;">' + tolLabel + '</span></div>'
+        + '<div style="margin-bottom:16px;"><strong style="color:var(--text-primary);">Migratory Status:</strong><br>'
+        + '<span class="badge ' + migClass + '" style="font-size:.9rem;margin-top:4px;">' + migLabel + '</span></div>'
+        + '<div style="margin-bottom:16px;"><strong style="color:var(--text-primary);">Description:</strong>'
+        + '<p style="margin:6px 0 0;color:var(--text-secondary);font-size:.9rem;">' + description + '</p></div>'
+        + '<div><strong style="color:var(--text-primary);">Sighted At:</strong>'
+        + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;">'
+        + '<select id="locYearFilter" style="' + selStyle + '"><option value="">All Years</option></select>'
+        + '<select id="locMonthFilter" style="' + selStyle + '">'
+        + '<option value="">All Months</option>'
+        + '<option value="1">January</option><option value="2">February</option><option value="3">March</option>'
+        + '<option value="4">April</option><option value="5">May</option><option value="6">June</option>'
+        + '<option value="7">July</option><option value="8">August</option><option value="9">September</option>'
+        + '<option value="10">October</option><option value="11">November</option><option value="12">December</option>'
+        + '</select>'
+        + '<button onclick="applyLocationFilter()" style="padding:5px 12px;border-radius:6px;border:none;background:var(--accent-blue,#2563eb);color:#fff;font-size:.82rem;cursor:pointer;font-weight:500;">Apply</button>'
+        + '<button id="locClearBtn" onclick="clearLocationFilter()" style="display:none;padding:5px 10px;border-radius:6px;border:1px solid var(--border-color);background:none;color:var(--text-secondary);font-size:.82rem;cursor:pointer;">Clear</button>'
+        + '</div>'
+        + '<div id="locActiveFilter" style="display:none;margin-top:5px;font-size:.78rem;color:var(--text-muted);font-style:italic;"></div>'
+        + '<div id="speciesLocations" style="margin-top:8px;color:var(--text-secondary);font-size:.85rem;">'
+        + '<span style="color:var(--text-muted);">Loading locations…</span></div>'
+        + '</div></div></div>';
 
     document.getElementById('modalTitle').textContent = species.common_name;
-    document.getElementById('modalContent').innerHTML = `
-        <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
-            <div style="flex:0 0 100px;text-align:center;">\${imageHtml}</div>
-            <div style="flex:1;min-width:200px;">
-                <div style="margin-bottom:12px;">
-                    <strong style="color:var(--text-primary);">Light Tolerance:</strong><br>
-                    <span class="badge \${tolClass}" style="font-size:.9rem;margin-top:4px;">\${tolLabel}</span>
-                </div>
-                <div style="margin-bottom:16px;">
-                    <strong style="color:var(--text-primary);">Migratory Status:</strong><br>
-                    <span class="badge \${migClass}" style="font-size:.9rem;margin-top:4px;">\${migLabel}</span>
-                </div>
-                <div style="margin-bottom:16px;">
-                    <strong style="color:var(--text-primary);">Description:</strong>
-                    <p style="margin:6px 0 0;color:var(--text-secondary);font-size:.9rem;">\${description}</p>
-                </div>
-                <div>
-                    <strong style="color:var(--text-primary);">Sighted At:</strong>
-                    <div id="speciesLocations" style="margin-top:6px;color:var(--text-secondary);font-size:.85rem;">
-                        <span style="color:var(--text-muted);">Loading locations…</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    document.getElementById('modalContent').innerHTML = html;
     document.getElementById('speciesModal').style.display = 'block';
+    loadSpeciesLocations(speciesId, '', '');
+}
 
-    fetch(`api/get_species_locations.php?species_id=\${speciesId}`)
+function loadSpeciesLocations(speciesId, year, month) {
+    const el = document.getElementById('speciesLocations');
+    if (!el) return;
+    el.innerHTML = '<span style="color:var(--text-muted);">Loading locations…</span>';
+
+    let url = 'api/get_species_locations.php?species_id=' + speciesId;
+    if (year)  url += '&year='  + encodeURIComponent(year);
+    if (month) url += '&month=' + encodeURIComponent(month);
+
+    fetch(url)
         .then(r => r.json())
         .then(data => {
-            const el = document.getElementById('speciesLocations');
-            if (!el) return;
-            if (!data.success || !data.locations.length) {
-                el.innerHTML = '<span style="color:var(--text-muted);">No sighting records found.</span>';
+            const yearSel = document.getElementById('locYearFilter');
+            if (yearSel && yearSel.options.length === 1 && data.available_years && data.available_years.length) {
+                data.available_years.forEach(yr => {
+                    const opt = document.createElement('option');
+                    opt.value       = yr;
+                    opt.textContent = yr;
+                    yearSel.appendChild(opt);
+                });
+            }
+            const el2 = document.getElementById('speciesLocations');
+            if (!el2) return;
+            if (!data.success || !data.locations || !data.locations.length) {
+                el2.innerHTML = '<span style="color:var(--text-muted);">No sighting records found for this period.</span>';
                 return;
             }
-            el.innerHTML = data.locations.map(loc => `
-                <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border-color);">
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="\${loc.site_name}">\${loc.site_name}</span>
-                    <span style="flex-shrink:0;margin-left:12px;color:var(--text-muted);font-size:0.78rem;">\${Number(loc.sighting_count).toLocaleString()} sighting\${loc.sighting_count == 1 ? '' : 's'}</span>
-                </div>`).join('');
+            el2.innerHTML = data.locations.map((loc, i) => {
+                const count = Number(loc.sighting_count).toLocaleString();
+                const label = loc.sighting_count == 1 ? 'sighting' : 'sightings';
+                const name  = loc.site_name.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+                return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border-color);">'
+                    + '<span style="flex-shrink:0;width:22px;color:var(--text-muted);font-size:.78rem;font-weight:700;">#' + (i + 1) + '</span>'
+                    + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;" title="' + name + '">' + loc.site_name + '</span>'
+                    + '<span style="flex-shrink:0;margin-left:12px;color:var(--text-muted);font-size:.78rem;">' + count + ' ' + label + '</span>'
+                    + '</div>';
+            }).join('');
         })
         .catch(() => {
-            const el = document.getElementById('speciesLocations');
-            if (el) el.innerHTML = '<span style="color:var(--text-muted);">Could not load locations.</span>';
+            const el2 = document.getElementById('speciesLocations');
+            if (el2) el2.innerHTML = '<span style="color:var(--text-muted);">Could not load locations.</span>';
         });
+}
+
+function applyLocationFilter() {
+    const yearSel  = document.getElementById('locYearFilter');
+    const monthSel = document.getElementById('locMonthFilter');
+    if (!yearSel || !monthSel || !_locSpeciesId) return;
+
+    const year  = yearSel.value;
+    const month = monthSel.value;
+    const monthNames = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    const labelEl  = document.getElementById('locActiveFilter');
+    const clearBtn = document.getElementById('locClearBtn');
+
+    if (year || month) {
+        const parts = [];
+        if (year)  parts.push(year);
+        if (month) parts.push(monthNames[parseInt(month)]);
+        if (labelEl)  { labelEl.style.display = ''; labelEl.textContent = 'Showing: ' + parts.join(', '); }
+        if (clearBtn) clearBtn.style.display = '';
+    } else {
+        if (labelEl)  labelEl.style.display  = 'none';
+        if (clearBtn) clearBtn.style.display = 'none';
+    }
+
+    loadSpeciesLocations(_locSpeciesId, year, month);
+}
+
+function clearLocationFilter() {
+    const yearSel  = document.getElementById('locYearFilter');
+    const monthSel = document.getElementById('locMonthFilter');
+    if (yearSel)  yearSel.value  = '';
+    if (monthSel) monthSel.value = '';
+    const labelEl  = document.getElementById('locActiveFilter');
+    const clearBtn = document.getElementById('locClearBtn');
+    if (labelEl)  labelEl.style.display  = 'none';
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (_locSpeciesId) loadSpeciesLocations(_locSpeciesId, '', '');
 }
 
 function closeModal() {

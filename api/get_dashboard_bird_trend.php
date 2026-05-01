@@ -8,6 +8,7 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
+api_assert_active();
 
 $startYear = 2014;
 $endYear = 2025;

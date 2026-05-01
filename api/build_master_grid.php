@@ -50,6 +50,7 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'error' => 'Session expired. Please log in again.']);
     exit;
 }
+api_assert_active();
 
 require_once __DIR__ . '/../includes/db.php';
 
@@ -68,6 +69,51 @@ try {
     ob_end_clean();
     echo json_encode(['success' => false, 'error' => 'DB connection failed: ' . $e->getMessage()]);
     exit;
+}
+
+// ── Shared: rebuild aggregated_bird_observation from raw ──────────────────────
+/**
+ * TRUNCATEs aggregated_bird_observation and repopulates it by aggregating
+ * raw_bird_observation joined with species_masterlist.
+ * Returns the number of rows inserted.
+ */
+function rebuild_aggregated_bird_observation(PDO $pdo): int {
+    $pdo->exec('SET SESSION group_concat_max_len = 1000000');
+    $pdo->exec('TRUNCATE TABLE aggregated_bird_observation');
+
+    $pdo->exec("
+        INSERT INTO aggregated_bird_observation
+            (site_name, latitude, longitude, month, year,
+             total_resident, total_migratory, total_tolerant, total_sensitive,
+             bird_count, unique_species_count, species_list,
+             grid_lat, grid_lon)
+        SELECT
+            COALESCE(NULLIF(rbo.site_name, ''), 'Observation Site'),
+            rbo.latitude,
+            rbo.longitude,
+            rbo.month,
+            rbo.year,
+            COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident'  THEN rbo.species_id END),
+            COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END),
+            COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance))  = 'tolerant'  THEN rbo.species_id END),
+            COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance))  = 'sensitive' THEN rbo.species_id END),
+            SUM(COALESCE(rbo.bird_count, 0)),
+            COUNT(DISTINCT rbo.species_id),
+            CAST(CONCAT('[', COALESCE(GROUP_CONCAT(DISTINCT JSON_QUOTE(sm.species_name)
+                ORDER BY sm.species_name SEPARATOR ','), ''), ']') AS JSON),
+            rbo.grid_lat,
+            rbo.grid_lon
+        FROM raw_bird_observation rbo
+        LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
+        WHERE rbo.latitude  BETWEEN 14.35 AND 14.82
+          AND rbo.longitude BETWEEN 120.90 AND 121.22
+          AND rbo.latitude  != 0
+          AND rbo.longitude != 0
+        GROUP BY rbo.site_name, rbo.latitude, rbo.longitude,
+                 rbo.month, rbo.year, rbo.grid_lat, rbo.grid_lon
+    ");
+
+    return (int)$pdo->query('SELECT COUNT(*) FROM aggregated_bird_observation')->fetchColumn();
 }
 
 // ── Shared: compute per-year readiness ────────────────────────────────────────
@@ -158,6 +204,7 @@ function compute_year_readiness(PDO $pdo): array {
 // ── Dry-run: return coverage summary for frontend confirmation dialog ──────────
 if (!$confirmed) {
     try {
+        $agg_rows     = rebuild_aggregated_bird_observation($pdo);
         $readiness    = compute_year_readiness($pdo);
         $current_rows = (int)$pdo->query('SELECT COUNT(*) FROM final_master_grid')->fetchColumn();
 
@@ -181,6 +228,7 @@ if (!$confirmed) {
             'year_detail'  => $readiness['year_detail'],
             'current_rows' => $current_rows,
             'message'      => $msg,
+            'raw_note'     => number_format($agg_rows) . ' site-month rows aggregated from raw_bird_observation.',
         ]);
     } catch (Throwable $e) {
         ob_end_clean();
@@ -190,9 +238,10 @@ if (!$confirmed) {
 }
 
 // ── Execute rebuild ────────────────────────────────────────────────────────────
-// Re-compute ready years (prevents races since the user may have fetched more
-// covariates between the dry-run and the confirmation click).
+// Re-aggregate raw observations then re-compute ready years (prevents races
+// since the user may have fetched more covariates between dry-run and confirm).
 try {
+    rebuild_aggregated_bird_observation($pdo);
     $readiness   = compute_year_readiness($pdo);
     $ready_years = $readiness['ready'];
 } catch (Throwable $e) {

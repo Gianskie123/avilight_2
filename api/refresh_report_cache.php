@@ -259,6 +259,17 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
             WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
             GROUP BY m.area, r.year');
 
+        // Step 2b – fallback: fill any (area, year) still missing from raw using
+        // aggregated_bird_observation (species stored as JSON list, deduped via JSON_TABLE).
+        $pdo->exec("INSERT INTO tmp_rrc_richness (area, year, bird_richness)
+            SELECT cgm.area, abo.year, COUNT(DISTINCT jt.species_name)
+            FROM aggregated_bird_observation abo
+            JOIN city_grid_map cgm ON cgm.lat = abo.grid_lat AND cgm.lon = abo.grid_lon
+            CROSS JOIN JSON_TABLE(abo.species_list, '\$[*]' COLUMNS(species_name VARCHAR(255) PATH '\$')) jt
+            WHERE abo.year IS NOT NULL
+            GROUP BY cgm.area, abo.year
+            ON DUPLICATE KEY UPDATE bird_richness = bird_richness");
+
         // Step 3 – per-cell per-month environmental averages with scaling corrections:
         //   NDVI:  divide by 10 000 when |ndvi| > 1 (raw MODIS integer encoding)
         //   LST:   MODIS scale 0.02 then subtract 273.15 K→°C when raw > 100
@@ -419,6 +430,66 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
             CROSS JOIN tmp_rrc_years y
             LEFT JOIN tmp_rrc_richness r       ON r.area = c.area AND r.year = y.year
             LEFT JOIN tmp_rrc_env_area_year e  ON e.area = c.area AND e.year = y.year");
+
+        // Step 7 – metro-wide union richness (one row per year, no double-counting across cities)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS metro_yearly_richness (
+            year                INT    NOT NULL,
+            bird_richness       INT    NULL,
+            viirs_avg           DOUBLE NULL,
+            ndvi_avg            DOUBLE NULL,
+            lst_avg             DOUBLE NULL,
+            precipitation_total DOUBLE NULL,
+            updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (year)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Primary source: raw_bird_observation (species_id-based dedup).
+        // Fallback: aggregated_bird_observation via JSON_TABLE for years absent from raw
+        // (e.g. 2023 was uploaded to the aggregated table only).
+        $pdo->exec("REPLACE INTO metro_yearly_richness
+                (year, bird_richness, viirs_avg, ndvi_avg, lst_avg, precipitation_total, updated_at)
+            WITH raw_richness AS (
+                SELECT r.year, COUNT(DISTINCT r.species_id) AS bird_richness
+                FROM raw_bird_observation r
+                JOIN observation_city_map m ON m.rbo_id = r.id
+                WHERE m.area IN (SELECT area FROM ({$citySql}) cities)
+                  AND r.year IS NOT NULL
+                  AND r.species_id IS NOT NULL
+                GROUP BY r.year
+            ),
+            agg_richness AS (
+                SELECT abo.year, COUNT(DISTINCT jt.species_name) AS bird_richness
+                FROM aggregated_bird_observation abo
+                JOIN city_grid_map cgm ON cgm.lat = abo.grid_lat AND cgm.lon = abo.grid_lon
+                CROSS JOIN JSON_TABLE(abo.species_list, '\$[*]' COLUMNS(species_name VARCHAR(255) PATH '\$')) jt
+                WHERE cgm.area IN (SELECT area FROM ({$citySql}) cities)
+                  AND abo.year IS NOT NULL
+                GROUP BY abo.year
+            ),
+            combined_richness AS (
+                SELECT year, bird_richness FROM raw_richness
+                UNION ALL
+                SELECT year, bird_richness FROM agg_richness
+                WHERE year NOT IN (SELECT year FROM raw_richness)
+            )
+            SELECT
+                cr.year,
+                cr.bird_richness,
+                env.viirs_avg,
+                env.ndvi_avg,
+                env.lst_avg,
+                env.precipitation_total,
+                CURRENT_TIMESTAMP
+            FROM combined_richness cr
+            LEFT JOIN (
+                SELECT year,
+                       AVG(viirs_avg)           AS viirs_avg,
+                       AVG(ndvi_avg)            AS ndvi_avg,
+                       AVG(lst_avg)             AS lst_avg,
+                       AVG(precipitation_total) AS precipitation_total
+                FROM tmp_rrc_env_area_year
+                GROUP BY year
+            ) env ON env.year = cr.year");
 
     } finally {
         rrc_dropTempTables($pdo);

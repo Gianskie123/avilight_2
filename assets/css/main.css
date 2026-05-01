@@ -70,6 +70,7 @@ body {
     background: var(--bg-dark);
     color: var(--text-primary);
     line-height: 1.6;
+    overflow-x: hidden;
 }
 
 /* Navigation Bar */
@@ -130,10 +131,30 @@ body {
     background: var(--bg-input);
 }
 
+.nav-menu li a.active:hover {
+    color: #ffffff;
+    background: var(--accent-blue);
+}
+
 .nav-menu li a.active {
-    color: var(--accent-blue);
-    background: transparent;
-    font-weight: 600;
+    color: #ffffff;
+    background: var(--accent-blue);
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    position: relative;
+}
+
+.nav-menu li a.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 3px;
+    background: #ffffff;
+    border-radius: 2px;
+    opacity: 0.7;
 }
 
 .nav-divider {
@@ -174,24 +195,33 @@ body {
     position: relative;
 }
 
-.nav-search-btn {
-    position: relative;
+/* Hamburger toggle button — hidden on desktop, shown on mobile */
+.nav-hamburger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    padding: 0;
+    transition: color 0.2s, background 0.2s;
 }
 
-.nav-search-btn::after {
-    content: '/';
-    position: absolute;
-    right: -2px;
-    bottom: -3px;
-    font-size: 0.62rem;
-    line-height: 1;
-    color: var(--text-muted);
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 1px 3px;
+.nav-hamburger:hover {
+    color: var(--text-primary);
+    background: var(--bg-input);
 }
 
+.nav-hamburger svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Main Content */
 .nav-popover {
     position: absolute;
     right: 0;
@@ -267,66 +297,6 @@ body {
 
 .nav-account-logout {
     color: var(--accent-red);
-}
-
-.global-search-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1200;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 70px 16px 16px;
-}
-
-.global-search-dialog {
-    width: min(560px, 100%);
-    margin: 0 auto;
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-}
-
-.global-search-input {
-    width: 100%;
-    border: 0;
-    border-bottom: 1px solid var(--border-color);
-    background: transparent;
-    color: var(--text-primary);
-    padding: 14px 16px;
-    font-size: 0.95rem;
-    outline: none;
-}
-
-.global-search-results {
-    max-height: 340px;
-    overflow-y: auto;
-    padding: 6px;
-}
-
-.global-search-result {
-    display: block;
-    text-decoration: none;
-    color: var(--text-primary);
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 0.92rem;
-}
-
-.global-search-result:hover {
-    background: var(--bg-input);
-}
-
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
 }
 
 /* Main Content */
@@ -1196,34 +1166,100 @@ tr:hover {
 }
 
 @media (max-width: 768px) {
+    /* Show hamburger; keep navbar as a single row */
+    .nav-hamburger {
+        display: flex;
+    }
+
     .nav-container {
-        flex-direction: column;
-        height: auto;
-        padding: 15px;
+        padding: 0 14px;
+        height: 60px;
+        position: relative;
     }
-    
+
+    /* Nav menu becomes a collapsible dropdown below the navbar */
     .nav-menu {
+        display: none;
+        position: absolute;
+        top: 60px;
+        left: 0;
+        right: 0;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border-color);
         flex-direction: column;
-        width: 100%;
-        gap: 5px;
-        margin: 15px 0;
+        padding: 8px 14px 14px;
+        gap: 4px;
+        z-index: 999;
+        box-shadow: var(--shadow-lg);
+        flex: unset;
+        justify-content: unset;
     }
-    
+
+    .navbar.nav-open .nav-menu {
+        display: flex;
+    }
+
     .nav-menu li a {
         display: block;
-        text-align: center;
+        text-align: left;
+        padding: 10px 12px;
     }
-    
+
+    /* Reduce main content padding */
+    .main-content {
+        padding: 14px 12px;
+    }
+
+    /* Grids: single column */
     .grid-2, .grid-3 {
         grid-template-columns: 1fr;
     }
-    
+
     .stats-grid {
         grid-template-columns: 1fr;
     }
 
     .dash-stats {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    /* Allow cards to scroll horizontally (handles wide tables) */
+    .card {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Map heights */
+    #map {
+        height: 350px;
+    }
+
+    .dashboard-map-col #map {
+        height: 350px;
+        min-height: 300px;
+    }
+
+    /* Chart height */
+    .chart-container {
+        height: 260px;
+    }
+
+    /* Page header font */
+    .page-title {
+        font-size: 1.35rem;
+    }
+
+    /* Side panel: bottom sheet on mobile */
+    .side-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        max-width: 100%;
+        border-radius: 16px 16px 0 0;
+        max-height: 65vh;
     }
 }
 
@@ -1809,4 +1845,32 @@ tr:hover {
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+}
+
+/* ── Extra small screens (≤480px) ───────────────────────── */
+@media (max-width: 480px) {
+    /* Stack stat cards to single column */
+    .dash-stats {
+        grid-template-columns: 1fr;
+    }
+
+    /* Tighten main content padding */
+    .main-content {
+        padding: 10px 8px;
+    }
+
+    /* Smaller page title */
+    .page-title {
+        font-size: 1.15rem;
+    }
+
+    /* Hide theme label text to save space */
+    #themeLabel {
+        display: none;
+    }
+
+    /* Tighter nav icon gap on very small screens */
+    .nav-user {
+        gap: 6px;
+    }
 }
