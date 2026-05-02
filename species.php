@@ -328,9 +328,9 @@ $edit_total = count($no_category);
     $mig_label = ucfirst($mig_val);
     ?>
     <div class="species-card">
-        <div class="species-image">
+        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>">
             <?php if (!empty($species['image_path'])): ?>
-                <img src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" style="width:100%;height:100%;object-fit:cover;display:block;">
+                <img class="species-photo" src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>">
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
@@ -746,9 +746,16 @@ function showSpeciesDetails(speciesId) {
         ? species.description.trim()
         : 'N/A';
 
+    const escapedImagePath = (species.image_path || '').replace(/'/g, "\\'");
+    const escapedCommonName = (species.common_name || '').replace(/'/g, "\\'");
+    const imageBgPath = species.image_path ? encodeURI(species.image_path) : '';
+
     const imageHtml = species.image_path
-        ? '<img src="' + species.image_path + '" alt="' + species.common_name + '" title="Click to zoom" style="width:320px;max-width:100%;height:320px;max-height:60vh;object-fit:cover;border-radius:10px;cursor:zoom-in;transition:transform 0.2s;box-shadow:var(--shadow);" onclick="openLightbox(\'' + species.image_path.replace(/'/g, "\\'") + '\',\'' + species.common_name.replace(/'/g, "\\'") + '\')" onmouseover="this.style.transform=\'scale(1.03)\'" onmouseout="this.style.transform=\'scale(1)\'">'
-        : '<div style="width:320px;max-width:100%;height:320px;max-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg-card-alt);border:1px solid var(--border-color);border-radius:10px;font-size:4rem;box-shadow:var(--shadow);"><div>🦜</div><small style="margin-top:10px;color:var(--text-muted);">Photo not available</small></div>';
+                ? '<div class="species-detail-image-shell has-photo">'
+            + '<div class="species-detail-image-bg" style="background-image:url(' + imageBgPath + ');"></div>'
+            + '<img class="species-detail-photo" src="' + species.image_path + '" alt="' + species.common_name + '" title="Click to zoom" onclick="openLightbox(\'' + escapedImagePath + '\',\'' + escapedCommonName + '\')">'
+          + '</div>'
+        : '<div class="species-detail-image-shell species-detail-image-empty" style="font-size:4rem;flex-direction:column;"><div>🦜</div><small style="margin-top:10px;color:var(--text-muted);">Photo not available</small></div>';
 
     const selStyle = 'padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:.82rem;cursor:pointer;';
 
