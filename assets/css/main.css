@@ -757,7 +757,8 @@ tr:hover {
 
 .species-image {
     width: 100%;
-    height: 180px;
+    min-height: 240px;
+    height: 240px;
     background: var(--bg-input);
     display: flex;
     align-items: center;

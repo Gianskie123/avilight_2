@@ -42,9 +42,9 @@ if (!in_array($migratory_status, $allowed_migrations, true)) {
 }
 
 // ── Image upload ──────────────────────────────────────────────────────────────
-// Standard size: 400 × 300 px (landscape), saved as JPEG.
-define('IMG_W', 400);
-define('IMG_H', 300);
+// Standard size: 320 × 320 px (square), saved as JPEG.
+define('IMG_W', 320);
+define('IMG_H', 320);
 define('IMG_DIR', __DIR__ . '/../assets/species_images/');
 define('IMG_WEB', 'assets/species_images/');
 
@@ -94,7 +94,7 @@ if ($remove_image) {
     $src_w = imagesx($src);
     $src_h = imagesy($src);
 
-    // Cover-crop: scale to fill 400×300, then crop centre
+    // Cover-crop: scale to fill 320×320, then crop centre
     $scale = max(IMG_W / $src_w, IMG_H / $src_h);
     $scaled_w = (int)round($src_w * $scale);
     $scaled_h = (int)round($src_h * $scale);

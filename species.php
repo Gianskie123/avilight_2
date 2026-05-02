@@ -330,7 +330,7 @@ $edit_total = count($no_category);
     <div class="species-card">
         <div class="species-image">
             <?php if (!empty($species['image_path'])): ?>
-                <img src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" style="width:100%;height:180px;object-fit:cover;display:block;">
+                <img src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" style="width:100%;height:100%;object-fit:cover;display:block;">
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
@@ -630,7 +630,7 @@ $page_url = function(int $p) use ($base_query): string {
             <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:8px;font-size:.85rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;">Species Photo</label>
                 <div id="imageDropZone"
-                     style="border:2px dashed var(--border-color);border-radius:10px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;overflow:hidden;min-height:160px;display:flex;align-items:center;justify-content:center;"
+                     style="border:2px dashed var(--border-color);border-radius:10px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;overflow:hidden;min-height:320px;display:flex;align-items:center;justify-content:center;"
                      onclick="document.getElementById('editImageFile').click()"
                      ondragover="event.preventDefault();this.style.borderColor='var(--accent-color)';this.style.background='var(--bg-card-alt)';"
                      ondragleave="this.style.borderColor='var(--border-color)';this.style.background='';"
@@ -640,7 +640,7 @@ $page_url = function(int $p) use ($base_query): string {
                     <div id="imageDropPlaceholder" style="padding:20px;">
                         <div style="font-size:2rem;margin-bottom:6px;">📷</div>
                         <div style="font-size:.9rem;color:var(--text-secondary);">Click or drag & drop to upload</div>
-                        <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px;">JPG, PNG, WEBP — resized to 400×300 px</div>
+                        <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px;">JPG, PNG, WEBP — resized to 320×320 px</div>
                     </div>
                     <input type="file" id="editImageFile" name="image_file" accept="image/jpeg,image/png,image/webp"
                            style="display:none;" onchange="previewImage(this)">
@@ -704,12 +704,20 @@ $page_url = function(int $p) use ($base_query): string {
 <!-- Species Details Modal -->
 <div id="speciesModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
      background: var(--bg-overlay); z-index: 2000; overflow-y: auto;">
-    <div style="max-width: 700px; margin: 50px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 30px; color: var(--text-primary); box-shadow: var(--shadow-lg);">
+    <div style="max-width: 860px; margin: 50px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 30px; color: var(--text-primary); box-shadow: var(--shadow-lg);">
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
             <h2 id="modalTitle" style="margin: 0;"></h2>
             <span onclick="closeModal()" style="cursor: pointer; font-size: 2rem; color: var(--text-muted);">&times;</span>
         </div>
         <div id="modalContent"></div>
+    </div>
+</div>
+
+<!-- Image Lightbox Modal -->
+<div id="imageLightbox" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; overflow: auto; padding: 20px;">
+    <div style="display: flex; justify-content: center; align-items: center; min-height: 100%; position: relative;">
+        <span onclick="closeLightbox()" style="position: absolute; top: 20px; right: 30px; cursor: pointer; font-size: 3rem; color: #fff; z-index: 3001;">&times;</span>
+        <img id="lightboxImage" src="" alt="" style="max-width: 90vw; max-height: 90vh; object-fit: contain;">
     </div>
 </div>
 
@@ -739,13 +747,13 @@ function showSpeciesDetails(speciesId) {
         : 'N/A';
 
     const imageHtml = species.image_path
-        ? '<img src="' + species.image_path + '" alt="' + species.common_name + '" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">'
-        : '<div style="background:var(--bg-card-alt);border:1px solid var(--border-color);padding:30px 10px;border-radius:8px;font-size:4rem;">🦜</div><small style="color:var(--text-muted);">Photo not available</small>';
+        ? '<img src="' + species.image_path + '" alt="' + species.common_name + '" title="Click to zoom" style="width:320px;max-width:100%;height:320px;max-height:60vh;object-fit:cover;border-radius:10px;cursor:zoom-in;transition:transform 0.2s;box-shadow:var(--shadow);" onclick="openLightbox(\'' + species.image_path.replace(/'/g, "\\'") + '\',\'' + species.common_name.replace(/'/g, "\\'") + '\')" onmouseover="this.style.transform=\'scale(1.03)\'" onmouseout="this.style.transform=\'scale(1)\'">'
+        : '<div style="width:320px;max-width:100%;height:320px;max-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg-card-alt);border:1px solid var(--border-color);border-radius:10px;font-size:4rem;box-shadow:var(--shadow);"><div>🦜</div><small style="margin-top:10px;color:var(--text-muted);">Photo not available</small></div>';
 
     const selStyle = 'padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:.82rem;cursor:pointer;';
 
     const html = '<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">'
-        + '<div style="flex:0 0 100px;text-align:center;">' + imageHtml + '</div>'
+        + '<div style="flex:0 0 320px;text-align:center;">' + imageHtml + '</div>'
         + '<div style="flex:1;min-width:200px;">'
         + '<div style="margin-bottom:12px;"><strong style="color:var(--text-primary);">Light Tolerance:</strong><br>'
         + '<span class="badge ' + tolClass + '" style="font-size:.9rem;margin-top:4px;">' + tolLabel + '</span></div>'
