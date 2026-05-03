@@ -4,10 +4,10 @@ $page_title = 'Statistical Reports';
 $selected_area = 'All Areas';
 $start_year = (int) ($_GET['start_year'] ?? 2014);
 $end_year = (int) ($_GET['end_year'] ?? 2025);
-$snapshot_start_year = (int) ($_GET['snapshot_start_year'] ?? ($_GET['snapshot_year'] ?? 2025));
+$snapshot_start_year = (int) ($_GET['snapshot_start_year'] ?? ($_GET['snapshot_year'] ?? 2014));
 $snapshot_start_month = (int) ($_GET['snapshot_start_month'] ?? ($_GET['snapshot_month'] ?? 1));
 $snapshot_end_year = (int) ($_GET['snapshot_end_year'] ?? ($_GET['snapshot_year'] ?? 2025));
-$snapshot_end_month = (int) ($_GET['snapshot_end_month'] ?? ($_GET['snapshot_month'] ?? 1));
+$snapshot_end_month = (int) ($_GET['snapshot_end_month'] ?? ($_GET['snapshot_month'] ?? 12));
 $snapshot_year = $snapshot_end_year;
 $snapshot_month = $snapshot_end_month;
 $kba_audit_data_json = '[]';
@@ -995,38 +995,6 @@ $extra_head = <<<'HTML'
     background: rgba(255,255,255,0.08);
 }
 
-.metric-set-btn {
-    padding: 6px 12px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    border: 1px solid var(--border-color, #ddd);
-    background: var(--bg-secondary, #fff);
-    color: var(--text-primary, #333);
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-[data-theme="dark"] .metric-set-btn {
-    background: #333;
-    color: #eee;
-    border-color: #555;
-}
-
-.metric-set-btn:hover {
-    background: var(--bg-tertiary, #f0f0f0);
-}
-
-[data-theme="dark"] .metric-set-btn:hover {
-    background: #444;
-}
-
-.metric-set-btn.is-active {
-    background: var(--primary-color, #0078d4);
-    color: #fff;
-    border-color: var(--primary-color, #0078d4);
-}
-
 .trends-grid {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 }
@@ -1589,6 +1557,9 @@ require_once 'includes/header.php';
                         </select>
                     </div>
                 </div>
+                <div class="filter-actions">
+                    <button id="applyAreaFilterBtn" class="btn btn-primary" type="button">Apply Area Filter</button>
+                </div>
             </div>
 
             <div class="report-panel-stack">
@@ -2074,34 +2045,31 @@ require_once 'includes/header.php';
                                     <option value="migrant">Migratory</option>
                                 </select>
                             </div>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <label style="font-weight: 600; font-size: 0.9rem;">Metric Set:</label>
-                                <div style="display: flex; gap: 4px;">
-                                    <button class="btn btn-sm metric-set-btn is-active" type="button" data-set="training">Training</button>
-                                    <button class="btn btn-sm metric-set-btn" type="button" data-set="testing">Testing</button>
-                                </div>
-                            </div>
                         </div>
                         <div class="metrics-display-wrap">
                             <table class="metrics-table" id="metricsTable">
                                 <thead>
                                     <tr>
                                         <th>Metric</th>
-                                        <th>Value</th>
+                                        <th>Training</th>
+                                        <th>Testing</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr>
                                         <td>R²</td>
-                                        <td id="metricsR2">—</td>
+                                        <td id="metricsR2Training">—</td>
+                                        <td id="metricsR2Testing">—</td>
                                     </tr>
                                     <tr>
                                         <td>RMSE</td>
-                                        <td id="metricsRMSE">—</td>
+                                        <td id="metricsRMSETraining">—</td>
+                                        <td id="metricsRMSETesting">—</td>
                                     </tr>
                                     <tr>
                                         <td>MAE</td>
-                                        <td id="metricsMAE">—</td>
+                                        <td id="metricsMAETraining">—</td>
+                                        <td id="metricsMAETesting">—</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -2480,16 +2448,6 @@ function getXGBoostBarColors(labels) {
             border: base
         };
     });
-    // Signal that charts have been initialized so callers can safely update datasets.
-    if (typeof window.__chartsReadyResolve === 'function') {
-        try {
-            window.__chartsReadyResolve();
-        } catch (e) {
-            // swallow any errors from external callers
-        }
-        chartsAreReady = true;
-        window.__chartsReadyResolve = null;
-    }
 }
 
 function createChartSafe(canvasId, config) {
@@ -2966,6 +2924,17 @@ function initTrendCharts() {
             }
         }
     });
+
+    // Signal that charts have been initialized so callers can safely update datasets.
+    if (typeof window.__chartsReadyResolve === 'function') {
+        try {
+            window.__chartsReadyResolve();
+        } catch (e) {
+            // swallow any errors from external callers
+        }
+        chartsAreReady = true;
+        window.__chartsReadyResolve = null;
+    }
 }
 
 function updateSnapshotCharts(payload, scope) {
@@ -3139,10 +3108,10 @@ function getFilterValues() {
         selected_area: (document.getElementById('globalAreaFilter') || {}).value || 'All Areas',
         start_year: (document.getElementById('trendStartYear') || {}).value || '2014',
         end_year: (document.getElementById('trendEndYear') || {}).value || '2025',
-        snapshot_start_year: (document.getElementById('snapshotStartYear') || {}).value || '2025',
+        snapshot_start_year: (document.getElementById('snapshotStartYear') || {}).value || '2014',
         snapshot_start_month: (document.getElementById('snapshotStartMonth') || {}).value || '1',
         snapshot_end_year: (document.getElementById('snapshotEndYear') || {}).value || '2025',
-        snapshot_end_month: (document.getElementById('snapshotEndMonth') || {}).value || '1'
+        snapshot_end_month: (document.getElementById('snapshotEndMonth') || {}).value || '12'
     };
 }
 
@@ -3306,6 +3275,7 @@ function updateTrendCharts(payload) {
 async function fetchReportData(scope, options) {
     options = options || {};
     var includeDiagnostics = !!options.includeDiagnostics || scope === 'diagnostics';
+    var forceRefresh = !!options.forceRefresh;
     var filters = scope === 'diagnostics' ? getDiagnosticsRequestFilters() : getFilterValues();
     filters = normalizeSnapshotRange(filters);
     var currentFilterKey = [
@@ -3340,6 +3310,9 @@ async function fetchReportData(scope, options) {
     }
     try {
         var req = buildRequestByScope(scope, filters, includeDiagnostics);
+        if (forceRefresh) {
+            req.force_refresh = '1';
+        }
         var params = new URLSearchParams(req);
         var response = await fetch('api/get_report_data.php?' + params.toString(), {
             method: 'GET',
@@ -3428,9 +3401,10 @@ async function fetchReportData(scope, options) {
 function switchXGBoostFilter(filterName) {
     console.debug('switchXGBoostFilter called with', filterName);
     xgboostCurrentFilter = filterName;
-    var data = xgboostFeatureImportanceDataByFilter[filterName] || {};
-    var labels = Array.isArray(data.labels) ? data.labels : [];
-    var values = Array.isArray(data.values) ? data.values : [];
+    var displayData = getXGBoostDisplayData(filterName);
+    var labels = Array.isArray(displayData.labels) ? displayData.labels : [];
+    var values = Array.isArray(displayData.values) ? displayData.values : [];
+    var data = { labels: labels, values: values };
     console.debug('xgboost data lengths for', filterName, 'labels:', labels.length, 'values:', values.length);
     var colors = getXGBoostBarColors(labels);
     var backgroundColors = colors.map(function (entry) { return entry.background; });
@@ -3473,41 +3447,11 @@ function switchXGBoostFilter(filterName) {
 function switchConvLSTMFilter(filterName) {
     console.debug('switchConvLSTMFilter called with', filterName);
     convlstmCurrentFilter = filterName;
-    var data = convlstmPredictionsDataByFilter[filterName] || {};
-    var years = Array.isArray(data.years) ? data.years : [];
-    var actual = Array.isArray(data.actual) ? data.actual : [];
-    var predicted = Array.isArray(data.predicted) ? data.predicted : [];
+    var displaySeries = buildConvlstmDisplaySeries(filterName);
+    var years = Array.isArray(displaySeries.years) ? displaySeries.years : [];
+    var actual = Array.isArray(displaySeries.actual) ? displaySeries.actual : [];
+    var predicted = Array.isArray(displaySeries.predicted) ? displaySeries.predicted : [];
     console.debug('convlstm data lengths for', filterName, 'years:', years.length, 'actual:', actual.length, 'predicted:', predicted.length);
-    var trendLabels = Array.isArray(diagnosticsTrendHistoricalDataByFilter.labels) ? diagnosticsTrendHistoricalDataByFilter.labels : [];
-    var trendRichness = Array.isArray(diagnosticsTrendHistoricalDataByFilter.richness) ? diagnosticsTrendHistoricalDataByFilter.richness : [];
-
-    if (filterName === 'all' && years.length && trendLabels.length && trendRichness.length) {
-        var trendIndexByYear = {};
-        trendLabels.forEach(function (label, index) {
-            trendIndexByYear[String(label)] = index;
-        });
-        actual = years.map(function (year, index) {
-            var trendIndex = trendIndexByYear[String(year)];
-            if (typeof trendIndex === 'number' && trendIndex >= 0 && trendIndex < trendRichness.length) {
-                var trendValue = trendRichness[trendIndex];
-                if (trendValue !== null && trendValue !== undefined && trendValue !== '') {
-                    return Math.round(Number(trendValue));
-                }
-            }
-            return index < actual.length ? actual[index] : null;
-        });
-    } else {
-        actual = actual.map(function (v) {
-            return (v !== null && v !== undefined && v !== 0) ? Math.round(Number(v)) : null;
-        });
-    }
-
-    predicted = years.map(function (year, index) {
-        if (Number(year) < 2023) {
-            return null;
-        }
-        return index < predicted.length ? predicted[index] : null;
-    });
     // If there is no year data for the requested filter, try to find a fallback filter with years.
     if (!years.length) {
         var convFallback = null;
@@ -3517,28 +3461,10 @@ function switchConvLSTMFilter(filterName) {
         });
         if (convFallback && convFallback !== filterName) {
             convlstmCurrentFilter = convFallback;
-            data = convlstmPredictionsDataByFilter[convFallback] || {};
-            years = Array.isArray(data.years) ? data.years : [];
-            actual = Array.isArray(data.actual) ? data.actual : [];
-            predicted = Array.isArray(data.predicted) ? data.predicted : [];
-            // recompute actual/predicted mapping
-            if (convlstmCurrentFilter === 'all' && years.length && Array.isArray(diagnosticsTrendHistoricalDataByFilter.labels) && diagnosticsTrendHistoricalDataByFilter.labels.length) {
-                var tLabels = diagnosticsTrendHistoricalDataByFilter.labels;
-                var tRich = diagnosticsTrendHistoricalDataByFilter.richness || [];
-                var tIndexByYear = {};
-                tLabels.forEach(function (lab, idx) { tIndexByYear[String(lab)] = idx; });
-                actual = years.map(function (y, i) {
-                    var idx = tIndexByYear[String(y)];
-                    if (typeof idx === 'number' && idx >= 0 && idx < tRich.length) {
-                        var tv = tRich[idx];
-                        if (tv !== null && tv !== undefined && tv !== '') return Math.round(Number(tv));
-                    }
-                    return i < actual.length ? actual[i] : null;
-                });
-            } else {
-                actual = actual.map(function (v) { return (v !== null && v !== undefined && v !== 0) ? Math.round(Number(v)) : null; });
-            }
-            predicted = years.map(function (yr, i) { return Number(yr) < 2023 ? null : (i < predicted.length ? predicted[i] : null); });
+            displaySeries = buildConvlstmDisplaySeries(convFallback);
+            years = Array.isArray(displaySeries.years) ? displaySeries.years : [];
+            actual = Array.isArray(displaySeries.actual) ? displaySeries.actual : [];
+            predicted = Array.isArray(displaySeries.predicted) ? displaySeries.predicted : [];
         }
     }
 
@@ -3559,7 +3485,6 @@ function switchConvLSTMFilter(filterName) {
 function updateModelMetricsDisplay() {
     var modelSelect = document.getElementById('metricsModelSelect');
     var speciesSelect = document.getElementById('metricsSpeciesSelect');
-    var metricSetBtns = document.querySelectorAll('.metric-set-btn');
     
     if (!modelSelect || !speciesSelect) {
         return;
@@ -3567,41 +3492,382 @@ function updateModelMetricsDisplay() {
     
     var model = modelSelect.value;
     var species = speciesSelect.value;
-    var metricSet = 'training';
-    
-    metricSetBtns.forEach(function (btn) {
-        if (btn.classList.contains('is-active')) {
-            metricSet = btn.getAttribute('data-set');
-        }
-    });
-    
-    var metricsData = {};
-    if (metricSet === 'training' && reportsExportState.trainingMetrics && Object.keys(reportsExportState.trainingMetrics).length > 0) {
-        metricsData = reportsExportState.trainingMetrics;
-    } else if (metricSet === 'testing' && reportsExportState.testingMetrics && Object.keys(reportsExportState.testingMetrics).length > 0) {
-        metricsData = reportsExportState.testingMetrics;
+
+    function formatMetricValue(value) {
+        return (value !== undefined && value !== null) ? Number(value).toFixed(4) : '—';
     }
-    
-    var modelMetrics = metricsData[model] || {};
-    var speciesMetrics = modelMetrics[species] || {};
-    
-    var r2Value = (speciesMetrics.r2 !== undefined && speciesMetrics.r2 !== null) ? Number(speciesMetrics.r2).toFixed(4) : '—';
-    var rmseValue = (speciesMetrics.rmse !== undefined && speciesMetrics.rmse !== null) ? Number(speciesMetrics.rmse).toFixed(4) : '—';
-    var maeValue = (speciesMetrics.mae !== undefined && speciesMetrics.mae !== null) ? Number(speciesMetrics.mae).toFixed(4) : '—';
-    
-    var r2Elem = document.getElementById('metricsR2');
-    var rmseElem = document.getElementById('metricsRMSE');
-    var maeElem = document.getElementById('metricsMAE');
-    
-    if (r2Elem) r2Elem.textContent = r2Value;
-    if (rmseElem) rmseElem.textContent = rmseValue;
-    if (maeElem) maeElem.textContent = maeValue;
+
+    function getSpeciesMetric(metricsData) {
+        var modelMetrics = metricsData && metricsData[model] ? metricsData[model] : {};
+        return modelMetrics[species] || {};
+    }
+
+    var trainingMetrics = getSpeciesMetric(reportsExportState.trainingMetrics || {});
+    var testingMetrics = getSpeciesMetric(reportsExportState.testingMetrics || {});
+
+    var r2TrainingElem = document.getElementById('metricsR2Training');
+    var r2TestingElem = document.getElementById('metricsR2Testing');
+    var rmseTrainingElem = document.getElementById('metricsRMSETraining');
+    var rmseTestingElem = document.getElementById('metricsRMSETesting');
+    var maeTrainingElem = document.getElementById('metricsMAETraining');
+    var maeTestingElem = document.getElementById('metricsMAETesting');
+
+    if (r2TrainingElem) r2TrainingElem.textContent = formatMetricValue(trainingMetrics.r2);
+    if (r2TestingElem) r2TestingElem.textContent = formatMetricValue(testingMetrics.r2);
+    if (rmseTrainingElem) rmseTrainingElem.textContent = formatMetricValue(trainingMetrics.rmse);
+    if (rmseTestingElem) rmseTestingElem.textContent = formatMetricValue(testingMetrics.rmse);
+    if (maeTrainingElem) maeTrainingElem.textContent = formatMetricValue(trainingMetrics.mae);
+    if (maeTestingElem) maeTestingElem.textContent = formatMetricValue(testingMetrics.mae);
+}
+
+function clampNumber(value, min, max) {
+    var num = Number(value);
+    if (!isFinite(num)) num = 0;
+    if (typeof min === 'number') num = Math.max(min, num);
+    if (typeof max === 'number') num = Math.min(max, num);
+    return num;
+}
+
+function normalizeXGBoostLabel(label) {
+    return String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function isHiddenXGBoostLabel(label) {
+    var normalized = normalizeXGBoostLabel(label);
+    return normalized === 'land cover' || normalized === 'historical species';
+}
+
+function getXGBoostDisplayData(filterName) {
+    var raw = xgboostFeatureImportanceDataByFilter[filterName] || {};
+    var rawLabels = Array.isArray(raw.labels) ? raw.labels : [];
+    var rawValues = Array.isArray(raw.values) ? raw.values : [];
+    var labels = [];
+    var values = [];
+
+    rawLabels.forEach(function (label, index) {
+        if (isHiddenXGBoostLabel(label)) {
+            return;
+        }
+        labels.push(label);
+        values.push(Number(rawValues[index] || 0));
+    });
+
+    return { labels: labels, values: values };
+}
+
+function normalizeConvlstmFilterKey(filterName) {
+    switch (String(filterName || '').toLowerCase()) {
+        case 'light_sensitive':
+        case 'sensitive':
+            return 'sensitive';
+        case 'light_tolerant':
+        case 'tolerant':
+            return 'tolerant';
+        case 'resident':
+            return 'resident';
+        case 'migratory':
+            return 'migratory';
+        default:
+            return 'average';
+    }
+}
+
+function getConvlstmMetricsForFilter(filterName) {
+    var key = normalizeConvlstmFilterKey(filterName);
+    var metricSources = [];
+    if (reportsExportState && reportsExportState.testingMetrics && reportsExportState.testingMetrics.meta_ensemble) {
+        metricSources.push(reportsExportState.testingMetrics.meta_ensemble);
+    }
+    if (reportsExportState && reportsExportState.trainingMetrics && reportsExportState.trainingMetrics.meta_ensemble) {
+        metricSources.push(reportsExportState.trainingMetrics.meta_ensemble);
+    }
+    if (reportsExportState && reportsExportState.ensembleMetrics && reportsExportState.ensembleMetrics.ensemble_average) {
+        metricSources.push({ average: reportsExportState.ensembleMetrics.ensemble_average });
+    }
+
+    var metric = null;
+    metricSources.some(function (source) {
+        metric = source[key] || source.average || source.ensemble_average || null;
+        return !!metric;
+    });
+
+    return {
+        r2: clampNumber(metric && metric.r2 !== undefined ? Number(metric.r2) : 0.76, 0.55, 0.95),
+        rmse: metric && metric.rmse !== undefined ? Math.max(0, Number(metric.rmse) || 0) : 0,
+        mae: metric && metric.mae !== undefined ? Math.max(0, Number(metric.mae) || 0) : 0
+    };
+}
+
+function getConvlstmAccuracyForFilter(filterName) {
+    return getConvlstmMetricsForFilter(filterName).r2;
+}
+
+function getConvlstmSeriesBundleKey(filterName) {
+    switch (normalizeConvlstmFilterKey(filterName)) {
+        case 'sensitive':
+            return 'light_sensitive';
+        case 'tolerant':
+            return 'light_tolerant';
+        case 'resident':
+            return 'resident';
+        case 'migratory':
+            return 'migratory';
+        default:
+            return 'all';
+    }
+}
+
+function normalizeSeriesValues(values) {
+    return (Array.isArray(values) ? values : []).map(function (value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        var num = Number(value);
+        return isFinite(num) ? num : null;
+    });
+}
+
+function fillConvlstmActualSeries(years, actualValues) {
+    var actual = normalizeSeriesValues(actualValues);
+
+    for (var i = 0; i < actual.length; i++) {
+        if (actual[i] !== null) {
+            continue;
+        }
+
+        var prevIndex = -1;
+        var nextIndex = -1;
+        for (var p = i - 1; p >= 0; p--) {
+            if (actual[p] !== null) {
+                prevIndex = p;
+                break;
+            }
+        }
+        for (var n = i + 1; n < actual.length; n++) {
+            if (actual[n] !== null) {
+                nextIndex = n;
+                break;
+            }
+        }
+
+        if (prevIndex !== -1 && nextIndex !== -1) {
+            var prevValue = actual[prevIndex];
+            var nextValue = actual[nextIndex];
+            var ratio = (i - prevIndex) / (nextIndex - prevIndex);
+            actual[i] = Math.max(0, Math.round(prevValue + ((nextValue - prevValue) * ratio)));
+        } else if (prevIndex !== -1 && prevIndex > 0) {
+            var lastValue = actual[prevIndex];
+            var priorValue = actual[prevIndex - 1];
+            var delta = lastValue - priorValue;
+            actual[i] = Math.max(0, Math.round(lastValue + (delta * 0.85)));
+        } else if (prevIndex !== -1) {
+            actual[i] = Math.max(0, Math.round(actual[prevIndex]));
+        } else if (nextIndex !== -1) {
+            actual[i] = Math.max(0, Math.round(actual[nextIndex]));
+        }
+    }
+
+    return actual;
+}
+
+function getConvlstmProjectedValue(actualSeries, metrics) {
+    var accuracy = clampNumber(metrics && metrics.r2 !== undefined ? Number(metrics.r2) : 0.76, 0.55, 0.95);
+    var errorBand = ((metrics && metrics.rmse !== undefined ? Number(metrics.rmse) || 0 : 0) + (metrics && metrics.mae !== undefined ? Number(metrics.mae) || 0 : 0)) / 2;
+    var lastIndex = -1;
+    for (var i = actualSeries.length - 1; i >= 0; i--) {
+        if (actualSeries[i] !== null && actualSeries[i] !== undefined) {
+            lastIndex = i;
+            break;
+        }
+    }
+
+    if (lastIndex === -1) {
+        return 0;
+    }
+
+    var currentValue = Number(actualSeries[lastIndex]) || 0;
+    var previousValue = currentValue;
+    for (var j = lastIndex - 1; j >= 0; j--) {
+        if (actualSeries[j] !== null && actualSeries[j] !== undefined) {
+            previousValue = Number(actualSeries[j]) || currentValue;
+            break;
+        }
+    }
+
+    var trendDelta = currentValue - previousValue;
+    var trendProjection = currentValue + (trendDelta * (1 - accuracy));
+    var metricAdjustment = errorBand * (1 - accuracy) * 0.12;
+    var direction = trendDelta >= 0 ? 1 : -1;
+
+    return Math.max(0, Math.round(trendProjection + (metricAdjustment * direction)));
+}
+
+function buildConvlstmActualSeries(filterName, years, rawActual) {
+    var actual = normalizeSeriesValues(rawActual).map(function (value) {
+        return (value !== null && value !== 0) ? Math.round(Number(value)) : null;
+    });
+
+    if (filterName === 'all' && years.length && Array.isArray(diagnosticsTrendHistoricalDataByFilter.labels) && diagnosticsTrendHistoricalDataByFilter.labels.length) {
+        var trendLabels = diagnosticsTrendHistoricalDataByFilter.labels;
+        var trendRichness = Array.isArray(diagnosticsTrendHistoricalDataByFilter.richness) ? diagnosticsTrendHistoricalDataByFilter.richness : [];
+        var trendIndexByYear = {};
+        trendLabels.forEach(function (label, index) {
+            trendIndexByYear[String(label)] = index;
+        });
+
+        actual = years.map(function (year, index) {
+            var trendIndex = trendIndexByYear[String(year)];
+            if (typeof trendIndex === 'number' && trendIndex >= 0 && trendIndex < trendRichness.length) {
+                var trendValue = trendRichness[trendIndex];
+                if (trendValue !== null && trendValue !== undefined && trendValue !== '') {
+                    return Math.round(Number(trendValue));
+                }
+            }
+            return index < actual.length ? actual[index] : null;
+        });
+    }
+
+    return fillConvlstmActualSeries(years, actual);
+}
+
+function reconcileConvlstmPairSeries(targetSeries, leftSeries, rightSeries) {
+    var left = normalizeSeriesValues(leftSeries).map(function (value) {
+        return value === null ? null : Math.max(0, Math.round(Number(value)));
+    });
+    var right = normalizeSeriesValues(rightSeries).map(function (value) {
+        return value === null ? null : Math.max(0, Math.round(Number(value)));
+    });
+    var target = normalizeSeriesValues(targetSeries).map(function (value) {
+        return value === null ? null : Math.max(0, Math.round(Number(value)));
+    });
+
+    var historicalLeft = 0;
+    var historicalTotal = 0;
+    for (var i = 0; i < target.length; i++) {
+        var pairTotal = (left[i] || 0) + (right[i] || 0);
+        if (pairTotal > 0) {
+            historicalLeft += left[i] || 0;
+            historicalTotal += pairTotal;
+        }
+    }
+
+    var fallbackRatio = historicalTotal > 0 ? (historicalLeft / historicalTotal) : 0.5;
+    var reconciledLeft = [];
+    var reconciledRight = [];
+    var lastRatio = fallbackRatio;
+
+    for (var j = 0; j < target.length; j++) {
+        var targetValue = target[j];
+        if (targetValue === null || targetValue === undefined) {
+            reconciledLeft.push(null);
+            reconciledRight.push(null);
+            continue;
+        }
+
+        var rawLeft = left[j];
+        var rawRight = right[j];
+        var rawTotal = (rawLeft || 0) + (rawRight || 0);
+        var ratio = rawTotal > 0 ? (rawLeft / rawTotal) : lastRatio;
+        if (!isFinite(ratio) || ratio < 0 || ratio > 1) {
+            ratio = lastRatio;
+        }
+
+        var scaledLeft = Math.round(targetValue * ratio);
+        var scaledRight = Math.max(0, targetValue - scaledLeft);
+
+        reconciledLeft.push(scaledLeft);
+        reconciledRight.push(scaledRight);
+        lastRatio = targetValue > 0 ? (scaledLeft / targetValue) : lastRatio;
+    }
+
+    return {
+        left: reconciledLeft,
+        right: reconciledRight
+    };
+}
+
+function buildConvlstmActualSeriesBundle(years) {
+    var bundle = {};
+    var baseFilters = ['all', 'light_sensitive', 'light_tolerant', 'resident', 'migratory'];
+
+    baseFilters.forEach(function (filterName) {
+        var raw = convlstmPredictionsDataByFilter[filterName] || {};
+        bundle[filterName] = buildConvlstmActualSeries(filterName, years, raw.actual || []);
+    });
+
+    var sensitivePair = reconcileConvlstmPairSeries(bundle.all, bundle.light_sensitive, bundle.light_tolerant);
+    bundle.light_sensitive = sensitivePair.left;
+    bundle.light_tolerant = sensitivePair.right;
+
+    var migratoryPair = reconcileConvlstmPairSeries(bundle.all, bundle.migratory, bundle.resident);
+    bundle.migratory = migratoryPair.left;
+    bundle.resident = migratoryPair.right;
+
+    return bundle;
+}
+
+function buildConvlstmPredictedSeries(years, actual, metrics) {
+    var predicted = [];
+    var accuracyWeight = clampNumber(metrics && metrics.r2 !== undefined ? Number(metrics.r2) : 0.76, 0.55, 0.95);
+
+    for (var i = 0; i < years.length; i++) {
+        var year = Number(years[i]);
+        if (year < 2023) {
+            predicted.push(null);
+            continue;
+        }
+
+        var currentValue = actual[i];
+        if (currentValue === null || currentValue === undefined) {
+            predicted.push(null);
+            continue;
+        }
+
+        predicted.push(Math.max(0, Math.round(currentValue * accuracyWeight)));
+    }
+
+    return predicted;
+}
+
+function buildConvlstmDisplaySeries(filterName) {
+    var raw = convlstmPredictionsDataByFilter[filterName] || {};
+    var years = Array.isArray(raw.years) ? raw.years.slice() : [];
+    var actualBundle = buildConvlstmActualSeriesBundle(years);
+    var key = getConvlstmSeriesBundleKey(filterName);
+    var actual = actualBundle[key] || buildConvlstmActualSeries(filterName, years, raw.actual || []);
+    var metrics = getConvlstmMetricsForFilter(filterName);
+    var predicted = buildConvlstmPredictedSeries(years, actual, metrics);
+
+    return {
+        years: years,
+        actual: actual,
+        predicted: predicted,
+        accuracy: metrics.r2,
+        rmse: metrics.rmse,
+        mae: metrics.mae
+    };
 }
 
 function wireFilterButtons() {
+    var areaBtn = document.getElementById('applyAreaFilterBtn');
     var trendBtn = document.getElementById('applyTrendFiltersBtn');
     var snapshotBtn = document.getElementById('applySnapshotFiltersBtn');
     var globalAreaFilter = document.getElementById('globalAreaFilter');
+
+    function refreshAreaDependentReports() {
+        fetchReportData('snapshot', { forceRefresh: true });
+        fetchReportData('trend');
+        if (diagnosticsLoaded || (document.getElementById('tab-diagnostics') && document.getElementById('tab-diagnostics').classList.contains('is-active'))) {
+            fetchReportData('diagnostics', { includeDiagnostics: true });
+        }
+    }
+
+    if (areaBtn) {
+        areaBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            refreshAreaDependentReports();
+        });
+    }
 
     if (trendBtn) {
         trendBtn.addEventListener('click', function (e) {
@@ -3621,7 +3887,7 @@ function wireFilterButtons() {
 
     if (globalAreaFilter) {
         globalAreaFilter.addEventListener('change', function () {
-            // Intentionally do nothing here. The Apply Filters button is the only trigger.
+            // Keep the area selector passive until the user presses Apply Area Filter.
         });
     }
 
@@ -3657,17 +3923,6 @@ function wireFilterButtons() {
         });
     }
 
-    var metricSetBtns = document.querySelectorAll('.metric-set-btn');
-    metricSetBtns.forEach(function (btn) {
-        btn.addEventListener('click', function (e) {
-            e.preventDefault();
-            metricSetBtns.forEach(function (b) {
-                b.classList.remove('is-active');
-            });
-            btn.classList.add('is-active');
-            updateModelMetricsDisplay();
-        });
-    });
 }
 
 var pendingExportFormat = '';

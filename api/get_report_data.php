@@ -1481,6 +1481,14 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+        // Ensure returned rows actually belong to the requested area when scoped.
+        if ($selectedArea !== 'All Areas' && !empty($rows)) {
+            $rows = array_values(array_filter($rows, static function ($r) use ($selectedArea) {
+                $area = trim((string) ($r['area'] ?? ''));
+                return $area === $selectedArea;
+            }));
+        }
+
         $labels = [];
         $values = [];
         $details = [];
@@ -1557,6 +1565,14 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
     $stmt->bindValue(':lim', max(1, (int) $limit), PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Ensure returned rows actually belong to the requested area when scoped.
+    if ($selectedArea !== 'All Areas' && !empty($rows)) {
+        $rows = array_values(array_filter($rows, static function ($r) use ($selectedArea) {
+            $area = trim((string) ($r['area'] ?? ''));
+            return $area === $selectedArea;
+        }));
+    }
 
     $labels = [];
     $values = [];
@@ -2448,13 +2464,46 @@ try {
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0775, true);
     }
-    $cacheKey = 'reports:' . $reportCacheSchemaVersion . ':' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_start_year . ':' . $snapshot_start_month . ':' . $snapshot_end_year . ':' . $snapshot_end_month . ':diag=' . ($include_diagnostics ? '1' : '0');
+
+    // Include spatial mapping counts in cache key so cached report payloads
+    // are invalidated when the observation_city_map / city_grid_map changes.
+    try {
+        $mappedObsCount = (int) $mysql->query('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = "observation_city_map"')->fetchColumn();
+        if ($mappedObsCount) {
+            $mappedObsCount = (int) $mysql->query('SELECT COUNT(*) FROM observation_city_map')->fetchColumn();
+        } else {
+            $mappedObsCount = 0;
+        }
+        $mappedGridCount = (int) $mysql->query('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = "city_grid_map"')->fetchColumn();
+        if ($mappedGridCount) {
+            $mappedGridCount = (int) $mysql->query('SELECT COUNT(*) FROM city_grid_map')->fetchColumn();
+        } else {
+            $mappedGridCount = 0;
+        }
+    } catch (Throwable $e) {
+        $mappedObsCount = 0;
+        $mappedGridCount = 0;
+    }
+
+    $cacheKey = 'reports:' . $reportCacheSchemaVersion . ':' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_start_year . ':' . $snapshot_start_month . ':' . $snapshot_end_year . ':' . $snapshot_end_month . ':mappedObs=' . $mappedObsCount . ':mappedGrid=' . $mappedGridCount . ':diag=' . ($include_diagnostics ? '1' : '0');
     $cacheFile = $cacheDir . '/' . sha1($cacheKey) . '.json';
 
     $cached = $force_refresh ? null : cacheGet($cacheFile, $cacheTtlSeconds);
     if (is_array($cached)) {
         echo json_encode($cached, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
         exit;
+    }
+
+    // If caller requested a forced refresh, rebuild spatial mapping tables
+    // so top-sites and snapshot queries use the freshest city mapping.
+    $spatialMapStats = ['skipped' => true];
+    if ($force_refresh) {
+        try {
+            $spatialMapStats = refreshSpatialMaps($mysql, $metro_manila_cities, 0);
+        } catch (Throwable $smEx) {
+            // keep 'skipped' flag but record error in meta later
+            $spatialMapStats = ['skipped' => true, 'error' => $smEx->getMessage()];
+        }
     }
 
     if ($scope === 'snapshot') {
@@ -2522,7 +2571,7 @@ try {
                 'year_min' => $yearMin,
                 'year_max' => $yearMax,
                 'cache_key' => $cacheKey,
-                'spatial_mapping' => ['skipped' => true],
+                'spatial_mapping' => $spatialMapStats,
                 'diagnostics_included' => $include_diagnostics,
                 'scope' => $scope,
                 'diagnostics_source' => 'not_requested',

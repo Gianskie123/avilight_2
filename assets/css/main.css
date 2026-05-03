@@ -742,7 +742,7 @@ tr:hover {
 }
 
 .species-card {
-    background: white;
+    background: var(--bg-card);
     border-radius: 10px;
     box-shadow: var(--shadow);
     overflow: hidden;
@@ -796,6 +796,48 @@ tr:hover {
 }
 
 .species-detail-image-shell {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(15, 23, 42, 0.05);
+}
+
+.species-detail-image-empty {
+    background: var(--bg-card-alt);
+}
+
+[data-theme="dark"] .species-card .badge-success {
+    background: rgba(34, 197, 94, 0.18);
+    color: #9be7b6;
+}
+
+[data-theme="dark"] .species-card .badge-danger {
+    background: rgba(239, 68, 68, 0.18);
+    color: #f3b0b0;
+}
+
+[data-theme="dark"] .species-image {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 10px 20px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] .species-image.has-photo::after,
+[data-theme="dark"] .species-detail-image-shell.has-photo::after {
+    background: linear-gradient(180deg, rgba(15, 17, 23, 0.08), rgba(15, 17, 23, 0.3));
+}
+
+[data-theme="dark"] .species-detail-image-bg {
+    filter: blur(18px) saturate(0) brightness(0.55);
+    opacity: 0.38;
+}
+
+[data-theme="dark"] .species-detail-photo {
+    filter: saturate(0.92) contrast(0.96) brightness(0.96);
+}
+
+[data-theme="dark"] .species-detail-image-empty {
+    border-color: var(--border-color);
+}
+
+.species-detail-image-shell {
     position: relative;
     width: 320px;
     max-width: 100%;
@@ -806,9 +848,9 @@ tr:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f5f7fa;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -1px 0 rgba(15, 23, 42, 0.05);
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(15, 23, 42, 0.05);
 }
 
 .species-detail-image-shell.has-photo::after {
@@ -852,6 +894,11 @@ tr:hover {
 
 .species-info {
     padding: 15px;
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .species-info {
+    background: var(--bg-card);
 }
 
 .species-name {
