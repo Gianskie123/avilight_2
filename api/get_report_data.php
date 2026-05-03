@@ -61,7 +61,7 @@ $units = [
 
 $cacheTtlSeconds = 30 * 24 * 60 * 60;
 $cacheDir = __DIR__ . '/../data/cache/reports';
-$reportCacheSchemaVersion = 'v8';
+$reportCacheSchemaVersion = 'v9';
 
 function safeReportYearBounds(PDO $mysql): array {
     $yearRow = $mysql->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary')->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -599,8 +599,8 @@ function ensureSnapshotSpeciesPresenceTable(PDO $pdo): void {
             r.year,
             r.month,
             r.species_id,
-            LOWER(TRIM(COALESCE(sm.migratory_status, ''))),
-            LOWER(TRIM(COALESCE(sm.light_tolerance, '')))
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))),
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
         JOIN observation_city_map m  ON m.rbo_id     = r.id
         JOIN species_masterlist   sm ON sm.species_id = r.species_id
@@ -623,8 +623,8 @@ function rebuildSnapshotSpeciesPresenceTable(PDO $pdo): void {
             r.year,
             r.month,
             r.species_id,
-            LOWER(TRIM(COALESCE(sm.migratory_status, ''))),
-            LOWER(TRIM(COALESCE(sm.light_tolerance, '')))
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))),
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
         JOIN observation_city_map m  ON m.rbo_id     = r.id
         JOIN species_masterlist   sm ON sm.species_id = r.species_id
@@ -710,6 +710,54 @@ function getOrComputeSnapshotMetrics(
         'migration' => ['migratory' => 0, 'resident' => 0, 'unclassified' => 0],
         'light' => ['sensitive' => 0, 'tolerant' => 0, 'unclassified' => 0],
         'richness' => 0,
+        'from_cache' => false,
+        'cache_miss' => true,
+    ];
+
+    $distributions = fetchSnapshotSpeciesDistributions(
+        $pdo,
+        $selectedArea,
+        $snapshotStartYear,
+        $snapshotStartMonth,
+        $snapshotEndYear,
+        $snapshotEndMonth
+    );
+
+    $migrationData = $distributions['migration_status']['data'] ?? [];
+    $lightData = $distributions['light_tolerance']['data'] ?? [];
+
+    cacheSnapshotMetrics(
+        $pdo,
+        $selectedArea,
+        $snapshotStartYear,
+        $snapshotStartMonth,
+        $snapshotEndYear,
+        $snapshotEndMonth,
+        [
+            'migratory' => (int) ($migrationData[0] ?? 0),
+            'resident' => (int) ($migrationData[1] ?? 0),
+            'unclassified' => (int) ($migrationData[2] ?? 0),
+        ],
+        [
+            'sensitive' => (int) ($lightData[0] ?? 0),
+            'tolerant' => (int) ($lightData[1] ?? 0),
+            'unclassified' => (int) ($lightData[2] ?? 0),
+        ],
+        (int) ($distributions['migration_status']['total_species'] ?? 0)
+    );
+
+    return [
+        'migration' => [
+            'migratory' => (int) ($migrationData[0] ?? 0),
+            'resident' => (int) ($migrationData[1] ?? 0),
+            'unclassified' => (int) ($migrationData[2] ?? 0),
+        ],
+        'light' => [
+            'sensitive' => (int) ($lightData[0] ?? 0),
+            'tolerant' => (int) ($lightData[1] ?? 0),
+            'unclassified' => (int) ($lightData[2] ?? 0),
+        ],
+        'richness' => (int) ($distributions['migration_status']['total_species'] ?? 0),
         'from_cache' => false,
         'cache_miss' => true,
     ];
@@ -1800,6 +1848,12 @@ function normalizeDiagnosticsPayloadShape(array $raw, array $fallback): array {
         'ensembleMetrics' => (isset($raw['ensembleMetrics']) && is_array($raw['ensembleMetrics']))
             ? $raw['ensembleMetrics']
             : $fallback['ensembleMetrics'],
+        'trainingMetrics' => (isset($raw['trainingMetrics']) && is_array($raw['trainingMetrics']))
+            ? $raw['trainingMetrics']
+            : [],
+        'testingMetrics' => (isset($raw['testingMetrics']) && is_array($raw['testingMetrics']))
+            ? $raw['testingMetrics']
+            : [],
         'metricsSource' => (string) ($raw['metricsSource'] ?? ''),
     ];
 }

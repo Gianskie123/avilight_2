@@ -61,7 +61,9 @@ function require_admin() {
         exit;
     }
     _assert_user_active();
-    if (($_SESSION['user_role'] ?? 'user') !== 'admin') {
+    $userRole = $_SESSION['user_role'] ?? 'user';
+    $userType = $_SESSION['user_type'] ?? '';
+    if ($userRole !== 'admin' && $userType !== 'IT_admin') {
         header('Location: home.php');
         exit;
     }
