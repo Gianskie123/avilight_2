@@ -110,7 +110,6 @@ Should return valid JSON (not error).
 |------|---------|
 | `start_all.ps1` | Main startup script (installs deps + starts backend) |
 | `start_backend.bat` | Start backend only (called by `start_all.ps1`) |
-| `register_startup_task.ps1` | Setup automatic logon trigger (admin only) |
 | `requirements.txt` | Python dependencies |
 | `api/refresh_spatial_map.php` | Rebuild spatial mappings |
 | `python/rebuild_kba_pa_audit.py` | Rebuild KBA/PA audit tables |
@@ -122,4 +121,3 @@ Should return valid JSON (not error).
 - **Backend logs:** Watch the uvicorn window output
 - **PHP errors:** Check browser console or server logs
 - **Database issues:** Use `tmp_inspect_ocm.php` or direct DB queries
-- **Task Scheduler issues:** Run `Get-ScheduledTask -TaskName "AVILIGHT Start All"`
