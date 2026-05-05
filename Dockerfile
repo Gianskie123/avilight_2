@@ -1,49 +1,49 @@
-FROM ubuntu:22.04
-ENV DEBIAN_FRONTEND=noninteractive
+FROM php:8.2-apache
 
 # ─────────────────────────────────────────────
 # 1. System packages
 # ─────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    # Apache + PHP
-    apache2 \
-    php8.1 \
-    php8.1-mysql \
-    php8.1-mbstring \
-    php8.1-xml \
-    php8.1-curl \
-    php8.1-zip \
-    php8.1-gd \
-    libapache2-mod-php8.1 \
     # Python
-    python3.10 \
+    python3 \
     python3-pip \
-    python3.10-dev \
+    python3-dev \
     # Utilities
     unzip \
     curl \
     git \
+    libpng-dev \
+    libxml2-dev \
+    libzip-dev \
+    && docker-php-ext-install \
+        pdo \
+        pdo_mysql \
+        mysqli \
+        mbstring \
+        xml \
+        zip \
+        gd \
     && rm -rf /var/lib/apt/lists/*
 
 # ─────────────────────────────────────────────
 # 2. Apache modules
 # ─────────────────────────────────────────────
-RUN a2enmod rewrite php8.1 proxy proxy_http
+RUN a2enmod rewrite proxy proxy_http
 
 # ─────────────────────────────────────────────
-# 3. PHP configuration
+# 3. PHP configuration (increase limits for model uploads)
 # ─────────────────────────────────────────────
-RUN echo "upload_max_filesize = 500M"   >> /etc/php/8.1/apache2/php.ini && \
-    echo "post_max_size = 512M"          >> /etc/php/8.1/apache2/php.ini && \
-    echo "memory_limit = 512M"           >> /etc/php/8.1/apache2/php.ini && \
-    echo "max_execution_time = 300"      >> /etc/php/8.1/apache2/php.ini && \
-    echo "max_input_time = 300"          >> /etc/php/8.1/apache2/php.ini
+RUN echo "upload_max_filesize = 500M" >> /usr/local/etc/php/conf.d/avilight.ini && \
+    echo "post_max_size = 512M"        >> /usr/local/etc/php/conf.d/avilight.ini && \
+    echo "memory_limit = 512M"         >> /usr/local/etc/php/conf.d/avilight.ini && \
+    echo "max_execution_time = 300"    >> /usr/local/etc/php/conf.d/avilight.ini && \
+    echo "max_input_time = 300"        >> /usr/local/etc/php/conf.d/avilight.ini
 
 # ─────────────────────────────────────────────
 # 4. Python dependencies
 # ─────────────────────────────────────────────
 COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt --break-system-packages
 
 # ─────────────────────────────────────────────
 # 5. Copy application files
@@ -66,7 +66,7 @@ RUN mkdir -p /var/www/html/api_models && \
 # 7. Apache virtual host config
 # ─────────────────────────────────────────────
 COPY apache.conf /etc/apache2/sites-available/000-default.conf
-RUN a2ensite 000-default && a2dissite default || true
+RUN a2ensite 000-default
 
 # ─────────────────────────────────────────────
 # 8. Startup script
