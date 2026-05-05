@@ -299,11 +299,27 @@ function get_mysql_db(): PDO {
         return $mysql_pdo;
     }
 
-    $host   = '127.0.0.1';
-    $port   = '3306';
-    $dbname = 'avilight';
-    $user   = 'root';
-    $pass   = '';
+    // Read DB credentials from environment (allow Railway / Docker / Laragon overrides)
+    $host   = getenv('DB_HOST') ?: getenv('MYSQL_HOST') ?: '127.0.0.1';
+    $port   = getenv('DB_PORT') ?: '3306';
+    $dbname = getenv('DB_NAME') ?: getenv('MYSQL_DATABASE') ?: 'avilight';
+    $user   = getenv('DB_USER') ?: getenv('MYSQL_USER') ?: 'root';
+    $pass   = getenv('DB_PASS') ?: getenv('MYSQL_PASSWORD') ?: '';
+
+    // Support DATABASE_URL style if provided (e.g. from some platforms)
+    $databaseUrl = getenv('DATABASE_URL');
+    if ($databaseUrl) {
+        $parts = parse_url($databaseUrl);
+        if ($parts !== false) {
+            $host = $parts['host'] ?? $host;
+            $port = $parts['port'] ?? $port;
+            $user = $parts['user'] ?? $user;
+            $pass = $parts['pass'] ?? $pass;
+            if (isset($parts['path'])) {
+                $dbname = ltrim($parts['path'], '/') ?: $dbname;
+            }
+        }
+    }
 
     $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
     $mysql_pdo = new PDO($dsn, $user, $pass, [

@@ -37,7 +37,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $user = authenticate_user($email, $password);
             if ($user) {
-                // Credentials correct — ask where to deliver the OTP
+                // ── LOCALHOST DEV BYPASS: Skip OTP on localhost ──────────────
+                $is_localhost = in_array($_SERVER['REMOTE_ADDR'], ['127.0.0.1', '::1'], true);
+                if ($is_localhost) {
+                    // Complete the login immediately on localhost (dev/testing only)
+                    $_SESSION['user_email'] = $user['email'] ?? $email;
+                    $_SESSION['user_id']    = $user['user_id'] ?? $user['id'] ?? null;
+                    $_SESSION['user_role']  = $user['role'] ?? 'user';
+                    $_SESSION['user_type']  = $user['user_type'] ?? 'EMS';
+                    header('Location: loading.php?next=home.php');
+                    exit;
+                }
+                // Normal flow: ask for OTP via email
                 $_SESSION['otp_pending_user'] = $user;
                 header('Location: login_otp_email.php');
                 exit;
