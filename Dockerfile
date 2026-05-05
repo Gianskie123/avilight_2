@@ -12,15 +12,16 @@ RUN apt-get update && apt-get install -y \
     unzip \
     curl \
     git \
+    # PHP extension dependencies
     libpng-dev \
     libxml2-dev \
     libzip-dev \
+    libonig-dev \
     && docker-php-ext-install \
         pdo \
         pdo_mysql \
         mysqli \
         mbstring \
-        xml \
         zip \
         gd \
     && rm -rf /var/lib/apt/lists/*
