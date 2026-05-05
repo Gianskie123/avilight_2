@@ -4,15 +4,12 @@ FROM php:8.2-apache
 # 1. System packages
 # ─────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    # Python
     python3 \
     python3-pip \
     python3-dev \
-    # Utilities
     unzip \
     curl \
     git \
-    # PHP extension dependencies
     libpng-dev \
     libxml2-dev \
     libzip-dev \
@@ -27,9 +24,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ─────────────────────────────────────────────
-# 2. Apache modules
+# 2. Apache modules — fix MPM conflict
 # ─────────────────────────────────────────────
-RUN a2enmod rewrite proxy proxy_http
+RUN a2dismod mpm_event mpm_worker 2>/dev/null || true && \
+    a2enmod mpm_prefork rewrite proxy proxy_http
 
 # ─────────────────────────────────────────────
 # 3. PHP configuration (increase limits for model uploads)
