@@ -1,0 +1,12 @@
+[build]
+# Use Dockerfile for building — handles both PHP and Python
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Railway will auto-detect the exposed port (80)
+startCommand = "/start.sh"
+healthcheckPath = "/login.php"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

@@ -1,0 +1,41 @@
+name: Deploy AviLight to Railway
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # allows manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # ───────────────────────────────────────
+      # 1. Checkout code
+      # ───────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ───────────────────────────────────────
+      # 2. Install Railway CLI
+      # ───────────────────────────────────────
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # ───────────────────────────────────────
+      # 3. Deploy to Railway
+      #    RAILWAY_TOKEN must be set in GitHub
+      #    repo → Settings → Secrets → Actions
+      # ───────────────────────────────────────
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --detach
+
+      # ───────────────────────────────────────
+      # 4. Notify on success
+      # ───────────────────────────────────────
+      - name: Deployment complete
+        run: echo "✅ AviLight deployed successfully to Railway!"
