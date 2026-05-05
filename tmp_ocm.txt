@@ -1,0 +1,203 @@
+﻿
+Warning: PHP Startup: Unable to load dynamic library 'zip' (tried: C:\xampp\php\ext\zip (The specified module could not be found), C:\xampp\php\ext\php_zip.dll (The specified module could not be found)) in Unknown on line 0
+24\tAyala Triangle Gardens, Makati\t14.55712560\t121.02294450\tQuezon City
+25\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+26\tAyala Triangle Gardens, Makati\t14.55712560\t121.02294450\tQuezon City
+27\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+28\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+29\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+30\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+31\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+32\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+33\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+34\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+35\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+36\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+37\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+38\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+39\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+40\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+41\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+42\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+43\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+44\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+45\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+46\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+47\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+48\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+49\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+112\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+113\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+114\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+115\tAyala Triangle Gardens, Makati\t14.55712560\t121.02294450\tQuezon City
+116\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+117\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+118\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+119\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+129\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+130\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+131\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+132\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+133\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+134\tBinondo Intromuros Bridge\t14.59535770\t120.97468610\tQuezon City
+135\tQuintin Paredes Road, Binondo, Manila\t14.59957380\t120.97486810\tQuezon City
+136\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+137\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+138\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+139\tNinoy Aquino International Airport\t14.50304590\t121.00732000\tQuezon City
+140\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+141\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+156\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+157\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+158\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+159\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+160\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+161\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+162\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+163\tAyala Triangle Gardens, Makati\t14.55712560\t121.02294450\tQuezon City
+164\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+165\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+166\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+167\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+168\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+169\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+170\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+171\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+172\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+173\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+174\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+175\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+176\tNinoy Aquino International Airport\t14.50304590\t121.00732000\tQuezon City
+177\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+178\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+179\tBinondo Intromuros Bridge\t14.59535770\t120.97468610\tQuezon City
+180\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+181\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+216\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+217\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+218\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+219\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+220\tAyala Triangle Gardens, Makati\t14.55712560\t121.02294450\tQuezon City
+221\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+222\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+223\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+224\tBayleaf, Muralla Street\t14.58993530\t120.97894440\tQuezon City
+225\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+226\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+227\tBayleaf, Muralla Street\t14.58995640\t120.97884600\tQuezon City
+228\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+229\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+230\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+231\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+232\tHoover Street\t14.58672950\t121.12972860\tQuezon City
+233\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+234\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+235\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+236\tUniversity of the Philippines Diliman, Quezon City\t14.65326420\t121.06470110\tQuezon City
+237\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+238\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+244\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+245\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+246\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+247\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+248\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+249\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+250\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+251\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+252\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+253\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+254\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+255\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+256\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+257\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+258\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+259\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+260\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+261\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+262\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+263\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+264\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+296\tErmita Baywalk, Manila\t14.57523520\t120.97930490\tQuezon City
+332\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+333\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+335\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+336\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+337\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+338\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+437\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+438\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+439\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+488\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+489\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+490\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+491\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+492\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+493\tManila American Cemetery\t14.54094090\t121.05027620\tQuezon City
+494\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+506\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+507\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+508\tManila American Cemetery\t14.54094090\t121.05027620\tQuezon City
+509\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+510\tUniversity of the Philippines Diliman, Quezon City\t14.65136870\t121.07217350\tQuezon City
+511\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+512\tRizal Park\t14.58382000\t120.97923400\tQuezon City
+513\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+514\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+585\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+586\tManila American Cemetery\t14.54094090\t121.05027620\tQuezon City
+587\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+588\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+589\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+590\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+591\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+592\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+593\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+594\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+663\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+664\tMarikina\t14.64224600\t121.09065600\tQuezon City
+665\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+666\tMarikina\t14.64224600\t121.09065600\tQuezon City
+667\tRizal Park\t14.58382000\t120.97923400\tQuezon City
+736\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+896\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+897\tManila American Cemetery\t14.54094090\t121.05027620\tQuezon City
+898\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+899\tManila\t14.60016000\t121.04745200\tQuezon City
+900\tBicutan\t14.47438310\t121.05896120\tQuezon City
+901\tBrgy. Lower Bicutan, Taguig\t14.48920110\t121.06015210\tQuezon City
+902\tBrgy. Lower Bicutan, Taguig\t14.48920110\t121.06015210\tQuezon City
+903\tUniversity of the Philippines Diliman, Quezon City\t14.65488350\t121.06513020\tQuezon City
+956\tBrgy. Lower Bicutan, Taguig\t14.48920110\t121.06015210\tQuezon City
+957\tBicutan\t14.47438310\t121.05896120\tQuezon City
+958\tBicutan\t14.47438310\t121.05896120\tQuezon City
+1062\tFort Santiago\t14.59324080\t120.97099590\tQuezon City
+1107\tNinoy Aquino Parks and Wildlife Center, Quezon City\t14.65054470\t121.04416610\tQuezon City
+1108\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+1109\tTanza, Navotas\t14.68106900\t120.93225400\tQuezon City
+1110\tTanza, Navotas\t14.68106900\t120.93225400\tQuezon City
+1111\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+1112\tTanza, Navotas\t14.68106900\t120.93225400\tQuezon City
+1113\tCamp Aguinaldo Golf Club\t14.60818800\t121.05955500\tQuezon City
+1114\tNinoy Aquino Parks and Wildlife Center, Quezon City\t14.65054470\t121.04416610\tQuezon City
+1115\tNinoy Aquino Parks and Wildlife Center, Quezon City\t14.65054470\t121.04416610\tQuezon City
+1116\tNinoy Aquino Parks and Wildlife Center, Quezon City\t14.65054470\t121.04416610\tQuezon City
+1117\tManila Marriott\t14.52044480\t121.01870920\tQuezon City
+1118\tTanza, Navotas\t14.68106900\t120.93225400\tQuezon City
+1119\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+1120\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+1121\tTanza, Navotas\t14.68106900\t120.93225400\tQuezon City
+1122\tNinoy Aquino Parks and Wildlife Center, Quezon City\t14.65054470\t121.04416610\tQuezon City
+1162\tCamp Aguinaldo Golf Club\t14.60818800\t121.05955500\tQuezon City
+1163\tTanza, Navotas\t14.68106900\t120.93225400\tQuezon City
+1164\tManila Marriott\t14.52044480\t121.01870920\tQuezon City
+1165\tNinoy Aquino Parks and Wildlife Center, Quezon City\t14.65054470\t121.04416610\tQuezon City
+1166\tN Luzon Expressway Servo\t14.76093930\t120.96462250\tQuezon City
+1167\tN Luzon Expressway Servo\t14.76093930\t120.96462250\tQuezon City
+1215\tNinoy Aquino International Airport\t14.50965810\t121.01850270\tQuezon City
+1216\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+1217\tSucat, Concepcion Street\t14.44657000\t121.04742000\tQuezon City
+1218\tLa Mesa Ecopark\t14.71233850\t121.07314470\tQuezon City
+1219\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+1220\tSucat, Concepcion Street\t14.44657000\t121.04742000\tQuezon City
+1221\tLas Pi├▒as-Para├▒aque Wetland Park\t14.49273340\t120.98056550\tQuezon City
+-- total: 200

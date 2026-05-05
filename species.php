@@ -327,16 +327,16 @@ $edit_total = count($no_category);
     $tol_label = ucfirst($tol_val);
     $mig_label = ucfirst($mig_val);
     ?>
-    <div class="species-card">
-        <div class="species-image">
+    <div class="species-card" style="background:var(--bg-card);">
+        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>">
             <?php if (!empty($species['image_path'])): ?>
-                <img src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" style="width:100%;height:180px;object-fit:cover;display:block;">
+                <img class="species-photo" src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>">
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
             <?php endif; ?>
         </div>
-        <div class="species-info">
+        <div class="species-info" style="background:var(--bg-card);">
             <div class="species-name"><?php echo htmlspecialchars($species['common_name']); ?></div>
 
             <div class="species-tags">
@@ -464,10 +464,10 @@ $page_url = function(int $p) use ($base_query): string {
                     <?php if ($has_detail_flags): ?>
                     <td style="padding:10px 14px;">
                         <?php if ($r['no_image']): ?>
-                            <span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;margin-right:4px;">No Photo</span>
+                            <span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:var(--warning-color, #ca8a04);color:#fff;border:1px solid var(--warning-color, #ca8a04);margin-right:4px;">No Photo</span>
                         <?php endif; ?>
                         <?php if ($r['no_desc']): ?>
-                            <span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;">No Description</span>
+                            <span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:var(--secondary-color, #6366f1);color:#fff;border:1px solid var(--secondary-color, #6366f1);">No Description</span>
                         <?php endif; ?>
                     </td>
                     <?php else: ?>
@@ -582,7 +582,7 @@ $page_url = function(int $p) use ($base_query): string {
         <div style="padding:6px 20px 0;background:rgba(220,38,38,0.06);border-bottom:1px solid rgba(220,38,38,0.15);">
             <div style="display:flex;align-items:center;gap:10px;padding:16px 4px;">
                 <div style="width:36px;height:36px;border-radius:50%;background:rgba(220,38,38,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger-color,#dc2626)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                 </div>
                 <div>
                     <div style="font-weight:700;font-size:.95rem;color:var(--text-primary);">Delete Species</div>
@@ -594,7 +594,7 @@ $page_url = function(int $p) use ($base_query): string {
             <p id="deleteModalMsg" style="color:var(--text-secondary);font-size:.9rem;margin-bottom:20px;line-height:1.5;"></p>
             <div style="display:flex;gap:10px;">
                 <button id="deleteConfirmBtn"
-                        style="flex:1;padding:9px;border-radius:7px;border:none;cursor:pointer;font-size:.9rem;font-weight:600;background:#dc2626;color:#fff;transition:opacity .15s;"
+                    style="flex:1;padding:9px;border-radius:7px;border:none;cursor:pointer;font-size:.9rem;font-weight:600;background:var(--danger-color,#dc2626);color:#fff;transition:opacity .15s;"
                         onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
                     Delete
                 </button>
@@ -630,7 +630,7 @@ $page_url = function(int $p) use ($base_query): string {
             <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:8px;font-size:.85rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;">Species Photo</label>
                 <div id="imageDropZone"
-                     style="border:2px dashed var(--border-color);border-radius:10px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;overflow:hidden;min-height:160px;display:flex;align-items:center;justify-content:center;"
+                     style="border:2px dashed var(--border-color);border-radius:10px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;overflow:hidden;min-height:320px;display:flex;align-items:center;justify-content:center;"
                      onclick="document.getElementById('editImageFile').click()"
                      ondragover="event.preventDefault();this.style.borderColor='var(--accent-color)';this.style.background='var(--bg-card-alt)';"
                      ondragleave="this.style.borderColor='var(--border-color)';this.style.background='';"
@@ -640,7 +640,7 @@ $page_url = function(int $p) use ($base_query): string {
                     <div id="imageDropPlaceholder" style="padding:20px;">
                         <div style="font-size:2rem;margin-bottom:6px;">📷</div>
                         <div style="font-size:.9rem;color:var(--text-secondary);">Click or drag & drop to upload</div>
-                        <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px;">JPG, PNG, WEBP — resized to 400×300 px</div>
+                        <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px;">JPG, PNG, WEBP — resized to 320×320 px</div>
                     </div>
                     <input type="file" id="editImageFile" name="image_file" accept="image/jpeg,image/png,image/webp"
                            style="display:none;" onchange="previewImage(this)">
@@ -650,7 +650,7 @@ $page_url = function(int $p) use ($base_query): string {
                     <span style="font-size:.8rem;color:var(--text-muted);">Current image on file — upload a new one to replace it.</span>
                     <button type="button" id="removePhotoBtn"
                             onclick="removeCurrentPhoto()"
-                            style="font-size:.78rem;padding:3px 10px;border-radius:5px;border:1px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.07);color:#dc2626;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+                            style="font-size:.78rem;padding:3px 10px;border-radius:5px;border:1px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.07);color:var(--danger-color,#dc2626);cursor:pointer;white-space:nowrap;flex-shrink:0;">
                         Remove Photo
                     </button>
                 </div>
@@ -704,12 +704,20 @@ $page_url = function(int $p) use ($base_query): string {
 <!-- Species Details Modal -->
 <div id="speciesModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
      background: var(--bg-overlay); z-index: 2000; overflow-y: auto;">
-    <div style="max-width: 700px; margin: 50px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 30px; color: var(--text-primary); box-shadow: var(--shadow-lg);">
+    <div style="max-width: 860px; margin: 50px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 30px; color: var(--text-primary); box-shadow: var(--shadow-lg);">
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
             <h2 id="modalTitle" style="margin: 0;"></h2>
             <span onclick="closeModal()" style="cursor: pointer; font-size: 2rem; color: var(--text-muted);">&times;</span>
         </div>
         <div id="modalContent"></div>
+    </div>
+</div>
+
+<!-- Image Lightbox Modal -->
+<div id="imageLightbox" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; overflow: auto; padding: 20px;">
+    <div style="display: flex; justify-content: center; align-items: center; min-height: 100%; position: relative;">
+        <span onclick="closeLightbox()" style="position: absolute; top: 20px; right: 30px; cursor: pointer; font-size: 3rem; color: #fff; z-index: 3001;">&times;</span>
+        <img id="lightboxImage" src="" alt="" style="max-width: 90vw; max-height: 90vh; object-fit: contain;">
     </div>
 </div>
 
@@ -738,14 +746,21 @@ function showSpeciesDetails(speciesId) {
         ? species.description.trim()
         : 'N/A';
 
+    const escapedImagePath = (species.image_path || '').replace(/'/g, "\\'");
+    const escapedCommonName = (species.common_name || '').replace(/'/g, "\\'");
+    const imageBgPath = species.image_path ? encodeURI(species.image_path) : '';
+
     const imageHtml = species.image_path
-        ? '<img src="' + species.image_path + '" alt="' + species.common_name + '" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">'
-        : '<div style="background:var(--bg-card-alt);border:1px solid var(--border-color);padding:30px 10px;border-radius:8px;font-size:4rem;">🦜</div><small style="color:var(--text-muted);">Photo not available</small>';
+                ? '<div class="species-detail-image-shell has-photo">'
+            + '<div class="species-detail-image-bg" style="background-image:url(' + imageBgPath + ');"></div>'
+            + '<img class="species-detail-photo" src="' + species.image_path + '" alt="' + species.common_name + '" title="Click to zoom" onclick="openLightbox(\'' + escapedImagePath + '\',\'' + escapedCommonName + '\')">'
+          + '</div>'
+        : '<div class="species-detail-image-shell species-detail-image-empty" style="font-size:4rem;flex-direction:column;"><div>🦜</div><small style="margin-top:10px;color:var(--text-muted);">Photo not available</small></div>';
 
     const selStyle = 'padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:.82rem;cursor:pointer;';
 
     const html = '<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">'
-        + '<div style="flex:0 0 100px;text-align:center;">' + imageHtml + '</div>'
+        + '<div style="flex:0 0 320px;text-align:center;">' + imageHtml + '</div>'
         + '<div style="flex:1;min-width:200px;">'
         + '<div style="margin-bottom:12px;"><strong style="color:var(--text-primary);">Light Tolerance:</strong><br>'
         + '<span class="badge ' + tolClass + '" style="font-size:.9rem;margin-top:4px;">' + tolLabel + '</span></div>'
@@ -995,13 +1010,13 @@ async function executeMerge() {
             });
             closeMergeModal();
         } else {
-            msg.style.cssText = 'display:block;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px 14px;border-radius:7px;';
+            msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
             msg.textContent = data.error || 'Merge failed.';
             btn.disabled    = false;
             btn.textContent = 'Confirm Merge';
         }
     } catch {
-        msg.style.cssText = 'display:block;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px 14px;border-radius:7px;';
+        msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
         msg.textContent = 'Network error.';
         btn.disabled    = false;
         btn.textContent = 'Confirm Merge';
@@ -1129,13 +1144,13 @@ async function executeDelete(id, name, rowBtn) {
             if (row) row.remove();
             closeDeleteModal();
         } else {
-            statusMsg.style.cssText = 'display:block;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px;border-radius:7px;';
+            statusMsg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px;border-radius:7px;';
             statusMsg.textContent = data.error || 'Delete failed.';
             confirmBtn.disabled = false;
             confirmBtn.textContent = 'Yes, Delete';
         }
     } catch {
-        statusMsg.style.cssText = 'display:block;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px;border-radius:7px;';
+        statusMsg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px;border-radius:7px;';
         statusMsg.textContent = 'Network error.';
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Yes, Delete';
@@ -1156,17 +1171,17 @@ async function saveSpecies(e) {
         const res  = await fetch('api/update_species.php', { method: 'POST', body });
         const data = await res.json();
         if (data.success) {
-            msg.style.cssText = 'display:block;background:#d1fae5;border:1px solid #6ee7b7;color:#065f46;padding:10px 14px;border-radius:7px;';
+            msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--accent-green,#16a34a);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
             msg.textContent = 'Saved! Refreshing list…';
             setTimeout(() => location.reload(), 1000);
         } else {
-            msg.style.cssText = 'display:block;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px 14px;border-radius:7px;';
+            msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
             msg.textContent = data.error || 'Save failed.';
             btn.disabled = false;
             btn.textContent = 'Save Changes';
         }
     } catch {
-        msg.style.cssText = 'display:block;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px 14px;border-radius:7px;';
+        msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
         msg.textContent = 'Network error — check your connection.';
         btn.disabled = false;
         btn.textContent = 'Save Changes';

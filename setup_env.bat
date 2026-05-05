@@ -12,7 +12,7 @@ REM    3. PHP (backend_config.php) auto-detects .venv\Scripts\python.exe
 REM       so no other changes are needed.
 REM ============================================================
 
-setlocal
+setlocal EnableDelayedExpansion
 
 set PROJECT_DIR=%~dp0
 set VENV_DIR=%PROJECT_DIR%.venv
@@ -21,6 +21,8 @@ set VENV_PYTHON=%VENV_DIR%\Scripts\python.exe
 set VENV_PIP=%VENV_DIR%\Scripts\pip.exe
 set ALT_VENV_PYTHON=%ALT_VENV_DIR%\Scripts\python.exe
 set REQUIREMENTS=%PROJECT_DIR%requirements.txt
+set ENV_FILE=%PROJECT_DIR%.env
+set COMPOSER_JSON=%PROJECT_DIR%composer.json
 
 echo.
 echo ============================================================
@@ -67,6 +69,46 @@ REM ── Upgrade pip ───────────────────
 echo [..] Upgrading pip...
 "%VENV_PYTHON%" -m pip install --upgrade pip --quiet
 echo [OK] pip upgraded.
+
+REM ── Create .env on first run (used automatically by includes/auth.php) ──
+if exist "%ENV_FILE%" (
+    echo [OK] .env already exists — keeping current mail/system settings.
+) else (
+    if exist "%PROJECT_DIR%.env.example" (
+        echo [..] Copying .env.example to .env...
+        copy /Y "%PROJECT_DIR%.env.example" "%ENV_FILE%" >nul
+        echo [OK] Created .env from .env.example
+    ) else (
+        echo [..] Creating .env template for manual mail setup...
+        > "%ENV_FILE%" echo # AviLight runtime settings
+        >> "%ENV_FILE%" echo # Mail settings are auto-loaded by includes/auth.php
+        >> "%ENV_FILE%" echo # Copy this file to .env.example for the team if needed
+        >> "%ENV_FILE%" echo MAIL_DRIVER=phpmailer
+        >> "%ENV_FILE%" echo MAIL_HOST=smtp.gmail.com
+        >> "%ENV_FILE%" echo MAIL_PORT=587
+        >> "%ENV_FILE%" echo MAIL_ENCRYPTION=tls
+        >> "%ENV_FILE%" echo MAIL_USER=your@gmail.com
+        >> "%ENV_FILE%" echo MAIL_PASS=your-gmail-app-password
+        >> "%ENV_FILE%" echo AVILIGHT_OTP_FROM=your@gmail.com
+        echo [OK] Created .env
+    )
+)
+
+REM ── Install Composer dependencies (PHPMailer) ───────────────────────────
+if exist "%COMPOSER_JSON%" (
+    echo.
+    echo [..] Installing PHP dependencies via Composer...
+    composer install --no-interaction --prefer-dist
+    if errorlevel 1 (
+        echo [ERROR] Composer install failed. PHPMailer will not be available.
+        pause
+        exit /b 1
+    )
+) else (
+    echo [ERROR] composer.json missing. PHPMailer setup cannot continue.
+    pause
+    exit /b 1
+)
 
 REM ── Install requirements ─────────────────────────────────────
 echo.

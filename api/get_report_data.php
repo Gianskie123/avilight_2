@@ -61,7 +61,7 @@ $units = [
 
 $cacheTtlSeconds = 30 * 24 * 60 * 60;
 $cacheDir = __DIR__ . '/../data/cache/reports';
-$reportCacheSchemaVersion = 'v8';
+$reportCacheSchemaVersion = 'v9';
 
 function safeReportYearBounds(PDO $mysql): array {
     $yearRow = $mysql->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary')->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -599,8 +599,8 @@ function ensureSnapshotSpeciesPresenceTable(PDO $pdo): void {
             r.year,
             r.month,
             r.species_id,
-            LOWER(TRIM(COALESCE(sm.migratory_status, ''))),
-            LOWER(TRIM(COALESCE(sm.light_tolerance, '')))
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))),
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
         JOIN observation_city_map m  ON m.rbo_id     = r.id
         JOIN species_masterlist   sm ON sm.species_id = r.species_id
@@ -623,8 +623,8 @@ function rebuildSnapshotSpeciesPresenceTable(PDO $pdo): void {
             r.year,
             r.month,
             r.species_id,
-            LOWER(TRIM(COALESCE(sm.migratory_status, ''))),
-            LOWER(TRIM(COALESCE(sm.light_tolerance, '')))
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))),
+            LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
         JOIN observation_city_map m  ON m.rbo_id     = r.id
         JOIN species_masterlist   sm ON sm.species_id = r.species_id
@@ -710,6 +710,54 @@ function getOrComputeSnapshotMetrics(
         'migration' => ['migratory' => 0, 'resident' => 0, 'unclassified' => 0],
         'light' => ['sensitive' => 0, 'tolerant' => 0, 'unclassified' => 0],
         'richness' => 0,
+        'from_cache' => false,
+        'cache_miss' => true,
+    ];
+
+    $distributions = fetchSnapshotSpeciesDistributions(
+        $pdo,
+        $selectedArea,
+        $snapshotStartYear,
+        $snapshotStartMonth,
+        $snapshotEndYear,
+        $snapshotEndMonth
+    );
+
+    $migrationData = $distributions['migration_status']['data'] ?? [];
+    $lightData = $distributions['light_tolerance']['data'] ?? [];
+
+    cacheSnapshotMetrics(
+        $pdo,
+        $selectedArea,
+        $snapshotStartYear,
+        $snapshotStartMonth,
+        $snapshotEndYear,
+        $snapshotEndMonth,
+        [
+            'migratory' => (int) ($migrationData[0] ?? 0),
+            'resident' => (int) ($migrationData[1] ?? 0),
+            'unclassified' => (int) ($migrationData[2] ?? 0),
+        ],
+        [
+            'sensitive' => (int) ($lightData[0] ?? 0),
+            'tolerant' => (int) ($lightData[1] ?? 0),
+            'unclassified' => (int) ($lightData[2] ?? 0),
+        ],
+        (int) ($distributions['migration_status']['total_species'] ?? 0)
+    );
+
+    return [
+        'migration' => [
+            'migratory' => (int) ($migrationData[0] ?? 0),
+            'resident' => (int) ($migrationData[1] ?? 0),
+            'unclassified' => (int) ($migrationData[2] ?? 0),
+        ],
+        'light' => [
+            'sensitive' => (int) ($lightData[0] ?? 0),
+            'tolerant' => (int) ($lightData[1] ?? 0),
+            'unclassified' => (int) ($lightData[2] ?? 0),
+        ],
+        'richness' => (int) ($distributions['migration_status']['total_species'] ?? 0),
         'from_cache' => false,
         'cache_miss' => true,
     ];
@@ -1433,6 +1481,14 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+        // Ensure returned rows actually belong to the requested area when scoped.
+        if ($selectedArea !== 'All Areas' && !empty($rows)) {
+            $rows = array_values(array_filter($rows, static function ($r) use ($selectedArea) {
+                $area = trim((string) ($r['area'] ?? ''));
+                return $area === $selectedArea;
+            }));
+        }
+
         $labels = [];
         $values = [];
         $details = [];
@@ -1509,6 +1565,14 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
     $stmt->bindValue(':lim', max(1, (int) $limit), PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Ensure returned rows actually belong to the requested area when scoped.
+    if ($selectedArea !== 'All Areas' && !empty($rows)) {
+        $rows = array_values(array_filter($rows, static function ($r) use ($selectedArea) {
+            $area = trim((string) ($r['area'] ?? ''));
+            return $area === $selectedArea;
+        }));
+    }
 
     $labels = [];
     $values = [];
@@ -1800,6 +1864,12 @@ function normalizeDiagnosticsPayloadShape(array $raw, array $fallback): array {
         'ensembleMetrics' => (isset($raw['ensembleMetrics']) && is_array($raw['ensembleMetrics']))
             ? $raw['ensembleMetrics']
             : $fallback['ensembleMetrics'],
+        'trainingMetrics' => (isset($raw['trainingMetrics']) && is_array($raw['trainingMetrics']))
+            ? $raw['trainingMetrics']
+            : [],
+        'testingMetrics' => (isset($raw['testingMetrics']) && is_array($raw['testingMetrics']))
+            ? $raw['testingMetrics']
+            : [],
         'metricsSource' => (string) ($raw['metricsSource'] ?? ''),
     ];
 }
@@ -2394,13 +2464,46 @@ try {
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0775, true);
     }
-    $cacheKey = 'reports:' . $reportCacheSchemaVersion . ':' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_start_year . ':' . $snapshot_start_month . ':' . $snapshot_end_year . ':' . $snapshot_end_month . ':diag=' . ($include_diagnostics ? '1' : '0');
+
+    // Include spatial mapping counts in cache key so cached report payloads
+    // are invalidated when the observation_city_map / city_grid_map changes.
+    try {
+        $mappedObsCount = (int) $mysql->query('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = "observation_city_map"')->fetchColumn();
+        if ($mappedObsCount) {
+            $mappedObsCount = (int) $mysql->query('SELECT COUNT(*) FROM observation_city_map')->fetchColumn();
+        } else {
+            $mappedObsCount = 0;
+        }
+        $mappedGridCount = (int) $mysql->query('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = "city_grid_map"')->fetchColumn();
+        if ($mappedGridCount) {
+            $mappedGridCount = (int) $mysql->query('SELECT COUNT(*) FROM city_grid_map')->fetchColumn();
+        } else {
+            $mappedGridCount = 0;
+        }
+    } catch (Throwable $e) {
+        $mappedObsCount = 0;
+        $mappedGridCount = 0;
+    }
+
+    $cacheKey = 'reports:' . $reportCacheSchemaVersion . ':' . $selected_area . ':' . $start_year . ':' . $end_year . ':' . $snapshot_start_year . ':' . $snapshot_start_month . ':' . $snapshot_end_year . ':' . $snapshot_end_month . ':mappedObs=' . $mappedObsCount . ':mappedGrid=' . $mappedGridCount . ':diag=' . ($include_diagnostics ? '1' : '0');
     $cacheFile = $cacheDir . '/' . sha1($cacheKey) . '.json';
 
     $cached = $force_refresh ? null : cacheGet($cacheFile, $cacheTtlSeconds);
     if (is_array($cached)) {
         echo json_encode($cached, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
         exit;
+    }
+
+    // If caller requested a forced refresh, rebuild spatial mapping tables
+    // so top-sites and snapshot queries use the freshest city mapping.
+    $spatialMapStats = ['skipped' => true];
+    if ($force_refresh) {
+        try {
+            $spatialMapStats = refreshSpatialMaps($mysql, $metro_manila_cities, 0);
+        } catch (Throwable $smEx) {
+            // keep 'skipped' flag but record error in meta later
+            $spatialMapStats = ['skipped' => true, 'error' => $smEx->getMessage()];
+        }
     }
 
     if ($scope === 'snapshot') {
@@ -2468,7 +2571,7 @@ try {
                 'year_min' => $yearMin,
                 'year_max' => $yearMax,
                 'cache_key' => $cacheKey,
-                'spatial_mapping' => ['skipped' => true],
+                'spatial_mapping' => $spatialMapStats,
                 'diagnostics_included' => $include_diagnostics,
                 'scope' => $scope,
                 'diagnostics_source' => 'not_requested',

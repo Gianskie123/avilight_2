@@ -125,6 +125,30 @@ The AVILIGHT Dashboard System is a comprehensive web-based platform for monitori
    - Enter any email address to login (authentication is simplified for demo)
    - You'll be redirected to the dashboard
 
+## Team Setup And Secrets
+
+To keep the repository safe for GitHub and avoid having every team member manually configure Gmail:
+
+- Commit `.env.example` only.
+- Keep the real `.env` file local on each machine or on the deployment server.
+- Do not commit Gmail passwords or SMTP secrets.
+- Use a shared SMTP account only in your deployed environment, stored as environment variables or in the server's secret store.
+
+For local development, you can also use a test SMTP tool such as Mailpit instead of Gmail.
+
+Example local setup:
+```env
+MAIL_DRIVER=phpmailer
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_ENCRYPTION=tls
+MAIL_USER=your@gmail.com
+MAIL_PASS=your-gmail-app-password
+AVILIGHT_OTP_FROM=your@gmail.com
+```
+
+The verification email code flow is handled by `login_otp_email.php` and `includes/auth.php`.
+
 ## File Structure
 
 ```
