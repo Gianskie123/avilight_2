@@ -14,7 +14,24 @@ a2enmod mpm_prefork 2>/dev/null || true
 echo "[APACHE] MPM set to prefork ✅"
 
 # ─────────────────────────────────────────────
-# 2. Write GEE service account JSON from env var
+# 2. Set Railway PORT (default to 80 if not set)
+# ─────────────────────────────────────────────
+RAILWAY_PORT=${PORT:-80}
+echo "[APACHE] Configuring Apache to listen on port $RAILWAY_PORT..."
+
+# Update Apache ports.conf to use Railway's $PORT
+cat > /etc/apache2/ports.conf << PORTS
+Listen $RAILWAY_PORT
+PORTS
+
+# Update VirtualHost to use Railway's $PORT
+sed -i "s/<VirtualHost \*:80>/<VirtualHost *:$RAILWAY_PORT>/" \
+    /etc/apache2/sites-available/000-default.conf
+
+echo "[APACHE] Port set to $RAILWAY_PORT ✅"
+
+# ─────────────────────────────────────────────
+# 3. Write GEE service account JSON from env var
 # ─────────────────────────────────────────────
 if [ -n "$GEE_SA_KEY_JSON" ]; then
     echo "[GEE] Writing service account key..."
@@ -27,7 +44,7 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 3. Set correct permissions on model storage
+# 4. Set correct permissions on model storage
 # ─────────────────────────────────────────────
 mkdir -p /var/www/html/api_models
 chown -R www-data:www-data /var/www/html/api_models || true
@@ -35,7 +52,7 @@ chmod -R 775 /var/www/html/api_models || true
 echo "[MODELS] Model storage ready ✅"
 
 # ─────────────────────────────────────────────
-# 4. Start Python FastAPI backend (background)
+# 5. Start Python FastAPI backend (background)
 # ─────────────────────────────────────────────
 echo "[PYTHON] Starting FastAPI on port 8000..."
 cd /var/www/html
@@ -60,8 +77,8 @@ echo "[PYTHON] Waiting 5s for FastAPI to initialize..."
 sleep 5
 
 # ─────────────────────────────────────────────
-# 5. Start Apache (foreground)
+# 6. Start Apache on Railway's $PORT (foreground)
 # ─────────────────────────────────────────────
-echo "[APACHE] Starting Apache..."
+echo "[APACHE] Starting Apache on port $RAILWAY_PORT..."
 source /etc/apache2/envvars
 exec apache2 -D FOREGROUND
