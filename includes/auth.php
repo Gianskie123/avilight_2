@@ -23,7 +23,7 @@ function require_admin() {
         exit;
     }
     _assert_user_active();
-    if (($_SESSION['user_role'] ?? 'user') !== 'IT_admin') {
+    if (($_SESSION['user_type'] ?? 'EMS') !== 'IT_admin') {
         header('Location: home.php');
         exit;
     }
