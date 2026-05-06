@@ -306,6 +306,15 @@ function get_mysql_db(): PDO {
     $user   = getenv('DB_USER') ?: getenv('MYSQL_USER') ?: 'root';
     $pass   = getenv('DB_PASS') ?: getenv('MYSQL_PASSWORD') ?: '';
 
+    $sslCa   = getenv('DB_SSL_CA') ?: getenv('MYSQL_SSL_CA') ?: '';
+    $sslCert = getenv('DB_SSL_CERT') ?: getenv('MYSQL_SSL_CERT') ?: '';
+    $sslKey  = getenv('DB_SSL_KEY') ?: getenv('MYSQL_SSL_KEY') ?: '';
+    $sslVerifyRaw = getenv('DB_SSL_VERIFY') ?: getenv('MYSQL_SSL_VERIFY');
+    $sslVerify = null;
+    if ($sslVerifyRaw !== false && $sslVerifyRaw !== null && $sslVerifyRaw !== '') {
+        $sslVerify = filter_var($sslVerifyRaw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    }
+
     // Support DATABASE_URL style if provided (e.g. from some platforms)
     $databaseUrl = getenv('DATABASE_URL');
     if ($databaseUrl) {
@@ -322,11 +331,25 @@ function get_mysql_db(): PDO {
     }
 
     $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
-    $mysql_pdo = new PDO($dsn, $user, $pass, [
+    $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
-    ]);
+    ];
+    if ($sslCa !== '') {
+        $options[PDO::MYSQL_ATTR_SSL_CA] = $sslCa;
+    }
+    if ($sslCert !== '') {
+        $options[PDO::MYSQL_ATTR_SSL_CERT] = $sslCert;
+    }
+    if ($sslKey !== '') {
+        $options[PDO::MYSQL_ATTR_SSL_KEY] = $sslKey;
+    }
+    if ($sslVerify !== null) {
+        $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = $sslVerify;
+    }
+
+    $mysql_pdo = new PDO($dsn, $user, $pass, $options);
 
     return $mysql_pdo;
 }
