@@ -437,8 +437,27 @@ define('AVILIGHT_OTP_EXPIRY_SECONDS', 600);
 /** Sender address used in OTP emails; override via AVILIGHT_OTP_FROM env var. */
 define('AVILIGHT_OTP_FROM', getenv('AVILIGHT_OTP_FROM') ?: 'noreply@avilight.ph');
 
-/** Resend API key — set via RESEND_API_KEY environment variable. */
-define('AVILIGHT_RESEND_API_KEY', getenv('RESEND_API_KEY') ?: '');
+/**
+ * Mail driver: 'smtp' uses a direct SMTP connection (compatible with Mailpit).
+ *              'mail' falls back to PHP's built-in mail() function.
+ * Override via the MAIL_DRIVER environment variable.
+ */
+define('AVILIGHT_MAIL_DRIVER', getenv('MAIL_DRIVER') ?: 'smtp');
+
+/** SMTP host (default: 127.0.0.1 for Mailpit / Laragon). */
+define('AVILIGHT_SMTP_HOST', getenv('MAIL_HOST') ?: '127.0.0.1');
+
+/** SMTP port (default: 1025, Mailpit's default SMTP port). */
+define('AVILIGHT_SMTP_PORT', (int)(getenv('MAIL_PORT') ?: 1025));
+
+/** SMTP username (optional, required for Gmail). */
+define('AVILIGHT_SMTP_USER', getenv('MAIL_USER') ?: '');
+
+/** SMTP password/app password (optional, required for Gmail). */
+define('AVILIGHT_SMTP_PASS', getenv('MAIL_PASS') ?: '');
+
+/** SMTP encryption: 'tls' (STARTTLS), 'ssl', or empty. */
+define('AVILIGHT_SMTP_ENCRYPTION', strtolower(getenv('MAIL_ENCRYPTION') ?: ''));
 
 /**
  * Generate a 6-digit OTP, store it in the session (with expiry), and email it.
@@ -561,83 +580,165 @@ function _clear_otp_session(): void {
 }
 
 /**
- * Send the OTP code to the given email address via Resend HTTP API.
- * Uses HTTPS (port 443) which works on all Railway plans.
+ * Send the OTP code to the given email address.
+ * Uses SMTP when MAIL_DRIVER=smtp (default, compatible with Mailpit / Laragon),
+ * or falls back to PHP's mail() when MAIL_DRIVER=mail.
  */
 function _send_otp_email(string $to, string $code): bool {
     $subject = 'Your AVILIGHT login code';
     $body    = "Your AVILIGHT verification code is:\n\n    {$code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n";
 
-    return _resend_send(AVILIGHT_OTP_FROM, $to, $subject, $body);
+    if (AVILIGHT_MAIL_DRIVER === 'smtp' || AVILIGHT_MAIL_DRIVER === 'phpmailer') {
+        return _smtp_send(
+            AVILIGHT_SMTP_HOST,
+            AVILIGHT_SMTP_PORT,
+            AVILIGHT_OTP_FROM,
+            $to,
+            $subject,
+            $body,
+            AVILIGHT_SMTP_USER,
+            AVILIGHT_SMTP_PASS,
+            AVILIGHT_SMTP_ENCRYPTION
+        );
+    }
+
+    $headers = "From: " . AVILIGHT_OTP_FROM . "\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+    $sent = mail($to, $subject, $body, $headers);
+    if (!$sent) {
+        error_log("[AVILIGHT] OTP email (mail()) failed to send to {$to}");
+    }
+    return (bool)$sent;
 }
 
 /**
- * Return the last mail error string (if any).
+ * Return the last SMTP error string (if any).
  */
 function smtp_last_error(): string {
     return $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] ?? '';
 }
 
 /**
- * Send a plain-text email via the Resend HTTP API.
- * Uses HTTPS (port 443) — works on all Railway plans, no SMTP ports needed.
+ * Send a plain-text email via a direct SMTP connection.
+ * Compatible with Mailpit (localhost:1025) and any unauthenticated SMTP relay.
  *
- * @param string $from    Sender address (must be verified in Resend).
- * @param string $to      Recipient address.
+ * @param string $host    SMTP server hostname or IP.
+ * @param int    $port    SMTP server port.
+ * @param string $from    Envelope sender address.
+ * @param string $to      Envelope recipient address.
  * @param string $subject Message subject.
  * @param string $body    Plain-text message body.
- * @return bool  True if Resend accepted the message; false on any error.
+ * @return bool  True if the server accepted the message; false on any error.
  */
-function _resend_send(
+function _smtp_send(
+    string $host,
+    int $port,
     string $from,
     string $to,
     string $subject,
-    string $body
+    string $body,
+    string $user = '',
+    string $pass = '',
+    string $encryption = ''
 ): bool {
     $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = '';
+    $socket_host = $host;
+    if ($encryption === 'ssl') {
+        $socket_host = 'ssl://' . $host;
+    }
 
-    $api_key = AVILIGHT_RESEND_API_KEY;
-    if ($api_key === '') {
-        error_log('[AVILIGHT] Resend API key is not set (RESEND_API_KEY).');
-        $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = 'RESEND_API_KEY env var is missing.';
+    $fp = @fsockopen($socket_host, $port, $errno, $errstr, 8);
+    if (!$fp) {
+        error_log("[AVILIGHT] SMTP connect to {$host}:{$port} failed: {$errstr} ({$errno})");
+        $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = "CONNECT failed: {$errstr} ({$errno})";
         return false;
     }
 
-    $payload = json_encode([
-        'from'    => $from,
-        'to'      => [$to],
-        'subject' => $subject,
-        'text'    => $body,
-    ]);
+    /**
+     * Read one complete SMTP response (handles multi-line replies).
+     * Returns the full response string.
+     */
+    $read_response = static function () use ($fp): string {
+        $response = '';
+        while (!feof($fp)) {
+            $line = fgets($fp, 512);
+            if ($line === false) {
+                break;
+            }
+            $response .= $line;
+            // A space at position 3 marks the last line of a response.
+            if (isset($line[3]) && $line[3] === ' ') {
+                break;
+            }
+        }
+        return $response;
+    };
 
-    $ch = curl_init('https://api.resend.com/emails');
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $payload,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
-        CURLOPT_HTTPHEADER     => [
-            'Authorization: Bearer ' . $api_key,
-            'Content-Type: application/json',
-        ],
-    ]);
+    /**
+     * Send one SMTP command and verify the expected response code.
+     */
+    $last_response = '';
+    $cmd = static function (string $command, int $expected) use ($fp, $read_response, &$last_response): bool {
+        fwrite($fp, $command . "\r\n");
+        $last_response = $read_response();
+        return (int)substr($last_response, 0, 3) === $expected;
+    };
 
-    $response = curl_exec($ch);
-    $status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_err = curl_error($ch);
-    curl_close($ch);
+    $ok = true;
+    $last_response = $read_response(); // consume the server greeting (220 …)
 
-    if ($curl_err !== '') {
-        error_log("[AVILIGHT] Resend curl error: {$curl_err}");
-        $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = "curl error: {$curl_err}";
-        return false;
+    $ok = $ok && $cmd('EHLO localhost', 250);
+    if ($ok && $encryption === 'tls') {
+        $ok = $ok && $cmd('STARTTLS', 220);
+        if ($ok) {
+            $crypto_ok = stream_socket_enable_crypto(
+                $fp,
+                true,
+                STREAM_CRYPTO_METHOD_TLS_CLIENT
+            );
+            if ($crypto_ok !== true) {
+                $ok = false;
+                $last_response = 'STARTTLS failed to enable crypto';
+                $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = $last_response;
+            }
+        }
+        if ($ok) {
+            $ok = $ok && $cmd('EHLO localhost', 250);
+        }
     }
 
-    if ($status === 200 || $status === 201) {
-        return true;
+    if ($ok && $user !== '' && $pass !== '') {
+        $ok = $ok && $cmd('AUTH LOGIN', 334);
+        $ok = $ok && $cmd(base64_encode($user), 334);
+        $ok = $ok && $cmd(base64_encode($pass), 235);
     }
 
-    error_log("[AVILIGHT] Resend API error (HTTP {$status}): {$response}");
-    $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = "Resend API HTTP {$status}: {$response}";
-    return false;
+    $ok = $ok && $cmd("MAIL FROM:<{$from}>", 250);
+    $ok = $ok && $cmd("RCPT TO:<{$to}>", 250);
+    $ok = $ok && $cmd('DATA', 354);
+
+    if ($ok) {
+        $date    = date('r');
+        $message = "Date: {$date}\r\n"
+                 . "From: {$from}\r\n"
+                 . "To: {$to}\r\n"
+                 . "Subject: {$subject}\r\n"
+                 . "Content-Type: text/plain; charset=UTF-8\r\n"
+                 . "\r\n"
+                 . str_replace("\n.", "\n..", $body)  // dot-stuffing
+                 . "\r\n.\r\n";
+        fwrite($fp, $message);
+        $response = $read_response();
+        $ok       = (int)substr($response, 0, 3) === 250;
+    }
+
+    @fwrite($fp, "QUIT\r\n");
+    fclose($fp);
+
+    if (!$ok) {
+        error_log("[AVILIGHT] SMTP send to {$to} via {$host}:{$port} failed. Last response: {$last_response}");
+        if ($GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] === '') {
+            $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = $last_response;
+        }
+    }
+    return $ok;
 }
