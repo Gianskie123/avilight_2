@@ -31,7 +31,7 @@ sed -i "s/<VirtualHost \*:80>/<VirtualHost *:$RAILWAY_PORT>/" \
 echo "[APACHE] Port set to $RAILWAY_PORT ✅"
 
 # ─────────────────────────────────────────────
-# 3. Write GEE service account JSON from env var
+# 3. Write secrets from env vars
 # ─────────────────────────────────────────────
 if [ -n "$GEE_SA_KEY_JSON" ]; then
     echo "[GEE] Writing service account key..."
@@ -41,6 +41,19 @@ if [ -n "$GEE_SA_KEY_JSON" ]; then
     echo "[GEE] Service account key written ✅"
 else
     echo "[GEE] WARNING: GEE_SA_KEY_JSON not set."
+fi
+
+if [ -n "$DB_SSL_CA_PEM" ]; then
+    echo "[DB] Writing MySQL CA certificate..."
+    mkdir -p /var/www/html/secrets
+    echo "$DB_SSL_CA_PEM" > /var/www/html/secrets/ca.pem
+    chmod 600 /var/www/html/secrets/ca.pem
+    if [ -z "$DB_SSL_CA" ]; then
+        export DB_SSL_CA=/var/www/html/secrets/ca.pem
+    fi
+    echo "[DB] MySQL CA certificate written ✅"
+else
+    echo "[DB] WARNING: DB_SSL_CA_PEM not set."
 fi
 
 # ─────────────────────────────────────────────
