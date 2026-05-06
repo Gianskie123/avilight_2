@@ -450,6 +450,15 @@ define('AVILIGHT_SMTP_HOST', getenv('MAIL_HOST') ?: '127.0.0.1');
 /** SMTP port (default: 1025, Mailpit's default SMTP port). */
 define('AVILIGHT_SMTP_PORT', (int)(getenv('MAIL_PORT') ?: 1025));
 
+/** SMTP username (optional, required for Gmail). */
+define('AVILIGHT_SMTP_USER', getenv('MAIL_USER') ?: '');
+
+/** SMTP password/app password (optional, required for Gmail). */
+define('AVILIGHT_SMTP_PASS', getenv('MAIL_PASS') ?: '');
+
+/** SMTP encryption: 'tls' (STARTTLS), 'ssl', or empty. */
+define('AVILIGHT_SMTP_ENCRYPTION', strtolower(getenv('MAIL_ENCRYPTION') ?: ''));
+
 /**
  * Generate a 6-digit OTP, store it in the session (with expiry), and email it.
  * The OTP is delivered to $delivery_email, which may differ from the account
@@ -579,8 +588,18 @@ function _send_otp_email(string $to, string $code): bool {
     $subject = 'Your AVILIGHT login code';
     $body    = "Your AVILIGHT verification code is:\n\n    {$code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n";
 
-    if (AVILIGHT_MAIL_DRIVER === 'smtp') {
-        return _smtp_send(AVILIGHT_SMTP_HOST, AVILIGHT_SMTP_PORT, AVILIGHT_OTP_FROM, $to, $subject, $body);
+    if (AVILIGHT_MAIL_DRIVER === 'smtp' || AVILIGHT_MAIL_DRIVER === 'phpmailer') {
+        return _smtp_send(
+            AVILIGHT_SMTP_HOST,
+            AVILIGHT_SMTP_PORT,
+            AVILIGHT_OTP_FROM,
+            $to,
+            $subject,
+            $body,
+            AVILIGHT_SMTP_USER,
+            AVILIGHT_SMTP_PASS,
+            AVILIGHT_SMTP_ENCRYPTION
+        );
     }
 
     $headers = "From: " . AVILIGHT_OTP_FROM . "\r\nContent-Type: text/plain; charset=UTF-8\r\n";
@@ -603,8 +622,23 @@ function _send_otp_email(string $to, string $code): bool {
  * @param string $body    Plain-text message body.
  * @return bool  True if the server accepted the message; false on any error.
  */
-function _smtp_send(string $host, int $port, string $from, string $to, string $subject, string $body): bool {
-    $fp = @fsockopen($host, $port, $errno, $errstr, 5);
+function _smtp_send(
+    string $host,
+    int $port,
+    string $from,
+    string $to,
+    string $subject,
+    string $body,
+    string $user = '',
+    string $pass = '',
+    string $encryption = ''
+): bool {
+    $socket_host = $host;
+    if ($encryption === 'ssl') {
+        $socket_host = 'ssl://' . $host;
+    }
+
+    $fp = @fsockopen($socket_host, $port, $errno, $errstr, 8);
     if (!$fp) {
         error_log("[AVILIGHT] SMTP connect to {$host}:{$port} failed: {$errstr} ({$errno})");
         return false;
@@ -633,16 +667,41 @@ function _smtp_send(string $host, int $port, string $from, string $to, string $s
     /**
      * Send one SMTP command and verify the expected response code.
      */
-    $cmd = static function (string $command, int $expected) use ($fp, $read_response): bool {
+    $last_response = '';
+    $cmd = static function (string $command, int $expected) use ($fp, $read_response, &$last_response): bool {
         fwrite($fp, $command . "\r\n");
-        $response = $read_response();
-        return (int)substr($response, 0, 3) === $expected;
+        $last_response = $read_response();
+        return (int)substr($last_response, 0, 3) === $expected;
     };
 
     $ok = true;
-    $read_response(); // consume the server greeting (220 …)
+    $last_response = $read_response(); // consume the server greeting (220 …)
 
     $ok = $ok && $cmd('EHLO localhost', 250);
+    if ($ok && $encryption === 'tls') {
+        $ok = $ok && $cmd('STARTTLS', 220);
+        if ($ok) {
+            $crypto_ok = stream_socket_enable_crypto(
+                $fp,
+                true,
+                STREAM_CRYPTO_METHOD_TLS_CLIENT
+            );
+            if ($crypto_ok !== true) {
+                $ok = false;
+                $last_response = 'STARTTLS failed to enable crypto';
+            }
+        }
+        if ($ok) {
+            $ok = $ok && $cmd('EHLO localhost', 250);
+        }
+    }
+
+    if ($ok && $user !== '' && $pass !== '') {
+        $ok = $ok && $cmd('AUTH LOGIN', 334);
+        $ok = $ok && $cmd(base64_encode($user), 334);
+        $ok = $ok && $cmd(base64_encode($pass), 235);
+    }
+
     $ok = $ok && $cmd("MAIL FROM:<{$from}>", 250);
     $ok = $ok && $cmd("RCPT TO:<{$to}>", 250);
     $ok = $ok && $cmd('DATA', 354);
@@ -666,7 +725,7 @@ function _smtp_send(string $host, int $port, string $from, string $to, string $s
     fclose($fp);
 
     if (!$ok) {
-        error_log("[AVILIGHT] SMTP send to {$to} via {$host}:{$port} failed.");
+        error_log("[AVILIGHT] SMTP send to {$to} via {$host}:{$port} failed. Last response: {$last_response}");
     }
     return $ok;
 }

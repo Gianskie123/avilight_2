@@ -9,10 +9,10 @@ if (!$to) {
     exit;
 }
 
-$driver = AVILIGHT_MAIL_DRIVER;
-$host = AVILIGHT_SMTP_HOST;
-$port = AVILIGHT_SMTP_PORT;
-$enc = AVILIGHT_SMTP_ENCRYPTION ?: 'none';
+$driver = defined('AVILIGHT_MAIL_DRIVER') ? AVILIGHT_MAIL_DRIVER : (getenv('MAIL_DRIVER') ?: 'smtp');
+$host = defined('AVILIGHT_SMTP_HOST') ? AVILIGHT_SMTP_HOST : (getenv('MAIL_HOST') ?: '');
+$port = defined('AVILIGHT_SMTP_PORT') ? AVILIGHT_SMTP_PORT : (int)(getenv('MAIL_PORT') ?: 0);
+$enc = defined('AVILIGHT_SMTP_ENCRYPTION') ? (AVILIGHT_SMTP_ENCRYPTION ?: 'none') : (getenv('MAIL_ENCRYPTION') ?: 'none');
 
 $sent = _send_otp_email($to, '123456');
 
