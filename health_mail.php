@@ -27,3 +27,4 @@ if ($sent) {
         echo "LastError={$last}\n";
     }
 }
+
