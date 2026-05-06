@@ -22,4 +22,8 @@ if ($sent) {
 } else {
     echo "ERROR: Mail send failed. Check logs for details.\n";
     echo "Driver={$driver}; Host={$host}; Port={$port}; Encryption={$enc}\n";
+    $last = function_exists('smtp_last_error') ? smtp_last_error() : '';
+    if ($last !== '') {
+        echo "LastError={$last}\n";
+    }
 }

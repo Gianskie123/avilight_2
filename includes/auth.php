@@ -611,6 +611,13 @@ function _send_otp_email(string $to, string $code): bool {
 }
 
 /**
+ * Return the last SMTP error string (if any).
+ */
+function smtp_last_error(): string {
+    return $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] ?? '';
+}
+
+/**
  * Send a plain-text email via a direct SMTP connection.
  * Compatible with Mailpit (localhost:1025) and any unauthenticated SMTP relay.
  *
@@ -633,6 +640,7 @@ function _smtp_send(
     string $pass = '',
     string $encryption = ''
 ): bool {
+    $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = '';
     $socket_host = $host;
     if ($encryption === 'ssl') {
         $socket_host = 'ssl://' . $host;
@@ -641,6 +649,7 @@ function _smtp_send(
     $fp = @fsockopen($socket_host, $port, $errno, $errstr, 8);
     if (!$fp) {
         error_log("[AVILIGHT] SMTP connect to {$host}:{$port} failed: {$errstr} ({$errno})");
+        $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = "CONNECT failed: {$errstr} ({$errno})";
         return false;
     }
 
@@ -689,6 +698,7 @@ function _smtp_send(
             if ($crypto_ok !== true) {
                 $ok = false;
                 $last_response = 'STARTTLS failed to enable crypto';
+                $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = $last_response;
             }
         }
         if ($ok) {
@@ -726,6 +736,9 @@ function _smtp_send(
 
     if (!$ok) {
         error_log("[AVILIGHT] SMTP send to {$to} via {$host}:{$port} failed. Last response: {$last_response}");
+        if ($GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] === '') {
+            $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = $last_response;
+        }
     }
     return $ok;
 }
