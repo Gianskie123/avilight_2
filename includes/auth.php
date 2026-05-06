@@ -23,7 +23,7 @@ function require_admin() {
         exit;
     }
     _assert_user_active();
-    if (($_SESSION['user_role'] ?? 'user') !== 'admin') {
+    if (($_SESSION['user_role'] ?? 'user') !== 'IT_admin') {
         header('Location: home.php');
         exit;
     }
@@ -383,7 +383,7 @@ function _ensure_users_table(PDO $pdo): void {
         id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
         email         VARCHAR(255) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        role          ENUM('admin','user') NOT NULL DEFAULT 'user',
+        role          ENUM('IT_admin','EMS') NOT NULL DEFAULT 'EMS',
         is_active     TINYINT(1) NOT NULL DEFAULT 1,
         created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_login    DATETIME NULL,
@@ -407,7 +407,7 @@ function _ensure_users_table(PDO $pdo): void {
         )->execute([
             ':email' => 'admin@avilight.ph',
             ':hash'  => password_hash($default_pass, PASSWORD_BCRYPT),
-            ':role'  => 'admin',
+            ':role'  => 'IT_admin',
         ]);
     }
 }
