@@ -1003,6 +1003,17 @@ function safeJson(r) {
     });
 }
 
+function describeApiError(data, fallback) {
+    if (!data) return fallback;
+    if (typeof data.error === 'string' && data.error.trim()) return data.error.trim();
+    if (typeof data.message === 'string' && data.message.trim()) return data.message.trim();
+    try {
+        return JSON.stringify(data).substring(0, 300);
+    } catch (_) {
+        return fallback;
+    }
+}
+
 function fetchCovariate(btn, source, label) {
     btn.disabled = true;
     btn.textContent = 'Checking missing periods…';
@@ -1019,7 +1030,7 @@ function fetchCovariate(btn, source, label) {
         btn.textContent = `Fetch ${label} Data`;
 
         if (!data.success) {
-            showToast(`${label} Error`, [data.error || 'Unexpected error occurred.'], 'danger');
+            showToast(`${label} Error`, [describeApiError(data, 'Unexpected error occurred.')], 'danger');
             return;
         }
 
@@ -1080,7 +1091,7 @@ function fetchCovariate(btn, source, label) {
                 if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
                 showToast(`${label} Complete`, lines, result.errors?.length ? 'warning' : 'success');
             } else {
-                showToast(`${label} Fetch Failed`, [result.error || 'Unexpected error.'], 'danger');
+                showToast(`${label} Fetch Failed`, [describeApiError(result, 'Unexpected error.')], 'danger');
             }
         })
         .catch(err => {
