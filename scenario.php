@@ -99,6 +99,20 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
     </div>
 </div>
 
+<!-- Diagnostics -->
+<div class="card">
+    <h2 class="card-header">Diagnostics</h2>
+    <div class="card-body">
+        <p style="color:#666; font-size:0.9rem;">Quick checks for the Scenario API and database connection.</p>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('db')">Test DB</button>
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('scenario')">Test Scenario API</button>
+            <span id="scenarioDiagStatus" style="font-size:0.85rem; color:var(--text-secondary);"></span>
+        </div>
+        <pre id="scenarioDiagOutput" style="margin-top:12px; white-space:pre-wrap; background:var(--bg-card-alt); border:1px solid var(--border-color); border-radius:8px; padding:10px; font-size:0.82rem; color:var(--text-secondary); max-height:220px; overflow:auto;"></pre>
+    </div>
+</div>
+
 <!-- Results Section -->
 <div id="resultsSection" style="display: none;">
     <div class="stats-grid">
@@ -226,6 +240,48 @@ let latestScenarioData = null;
 function currentShapOutput() {
     const el = document.getElementById('shapOutputSelect');
     return el ? el.value : 'all';
+}
+
+function setScenarioDiag(status, details) {
+    const statusEl = document.getElementById('scenarioDiagStatus');
+    const outputEl = document.getElementById('scenarioDiagOutput');
+    if (statusEl) statusEl.textContent = status || '';
+    if (outputEl) outputEl.textContent = details || '';
+}
+
+async function runScenarioDiagnostics(kind) {
+    setScenarioDiag('Running diagnostics...', '');
+    try {
+        if (kind === 'db') {
+            const res = await fetch('health_db.php');
+            const text = await res.text();
+            setScenarioDiag('DB check complete (HTTP ' + res.status + ').', text.trim());
+            return;
+        }
+
+        const city = document.getElementById('citySelect').value;
+        const payload = {
+            light_reduction: 0,
+            ndvi_increase: 0,
+            temp_change: 0,
+            precip_change: 0,
+            month: 1,
+            city: city,
+            shap_output: 'all',
+            attribution_mode: 'sensitivity',
+            meta_only: true
+        };
+
+        const res = await fetch('api/run_scenario.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const text = await res.text();
+        setScenarioDiag('Scenario API check complete (HTTP ' + res.status + ').', text.trim());
+    } catch (err) {
+        setScenarioDiag('Diagnostics failed.', String(err || 'Unknown error'));
+    }
 }
 
 // Run scenario analysis

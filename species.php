@@ -330,7 +330,7 @@ $edit_total = count($no_category);
     <div class="species-card" style="background:var(--bg-card);">
         <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>">
             <?php if (!empty($species['image_path'])): ?>
-                <img class="species-photo" src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>">
+                <img class="species-photo" src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" loading="lazy" decoding="async">
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
