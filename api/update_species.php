@@ -121,13 +121,19 @@ if ($remove_image) {
         mkdir(IMG_DIR, 0755, true);
     }
 
-    $filename = species_slug($species_name ?: (string)$species_id) . '.jpg';
+    $base_filename = species_slug($species_name ?: (string)$species_id);
+    $filename = $base_filename . '.jpg';
     $filepath = IMG_DIR . $filename;
 
     if (!imagejpeg($dst, $filepath, 90)) {
         imagedestroy($dst);
         echo json_encode(['success' => false, 'error' => 'Failed to save image.']);
         exit;
+    }
+
+    if (function_exists('imagewebp')) {
+        $webp_path = IMG_DIR . $base_filename . '.webp';
+        imagewebp($dst, $webp_path, 80);
     }
     imagedestroy($dst);
 

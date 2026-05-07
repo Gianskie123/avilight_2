@@ -106,6 +106,8 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
         <p style="color:#666; font-size:0.9rem;">Quick checks for the Scenario API and database connection.</p>
         <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('db')">Test DB</button>
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('baseline')">Test Baseline (Prewarm)</button>
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('monthly')">Test Monthly Averages</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('scenario')">Test Scenario API</button>
             <span id="scenarioDiagStatus" style="font-size:0.85rem; color:var(--text-secondary);"></span>
         </div>
@@ -256,6 +258,45 @@ async function runScenarioDiagnostics(kind) {
             const res = await fetch('health_db.php');
             const text = await res.text();
             setScenarioDiag('DB check complete (HTTP ' + res.status + ').', text.trim());
+            return;
+        }
+
+        if (kind === 'monthly') {
+            const qs = new URLSearchParams({
+                scope: 'trend',
+                selected_area: 'All Areas',
+                start_year: '2024',
+                end_year: '2025',
+                snapshot_year: '2025',
+                snapshot_month: '12',
+                include_diagnostics: '1'
+            });
+            const t0 = performance.now();
+            const res = await fetch('api/get_report_data.php?' + qs.toString());
+            const text = await res.text();
+            const ms = Math.round(performance.now() - t0);
+            setScenarioDiag('Monthly averages check complete (HTTP ' + res.status + ', ' + ms + ' ms).', text.trim());
+            return;
+        }
+
+        if (kind === 'baseline') {
+            const city = document.getElementById('citySelect').value;
+            const payload = {
+                light_reduction: 0,
+                ndvi_increase: 0,
+                temp_change: 0,
+                precip_change: 0,
+                month: 1,
+                city: city,
+                prewarm_only: true
+            };
+            const res = await fetch('api/run_scenario.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const text = await res.text();
+            setScenarioDiag('Baseline check complete (HTTP ' + res.status + ').', text.trim());
             return;
         }
 
