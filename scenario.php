@@ -103,9 +103,11 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
 <div class="card">
     <h2 class="card-header">Diagnostics</h2>
     <div class="card-body">
-        <p style="color:#666; font-size:0.9rem;">Quick checks for the Scenario API and database connection.</p>
+        <p style="color:#666; font-size:0.9rem;">Quick checks for the Scenario API, database, and schema.</p>
         <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('db')">Test DB</button>
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('tables')">Check Tables</button>
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('sqlmode')">Check SQL Mode</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('baseline')">Test Baseline (Prewarm)</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('monthly')">Test Monthly Averages</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('scenario')">Test Scenario API</button>
@@ -258,6 +260,20 @@ async function runScenarioDiagnostics(kind) {
             const res = await fetch('health_db.php');
             const text = await res.text();
             setScenarioDiag('DB check complete (HTTP ' + res.status + ').', text.trim());
+            return;
+        }
+
+        if (kind === 'sqlmode') {
+            const res = await fetch('api/get_diagnostics.php?check=sqlmode');
+            const text = await res.text();
+            setScenarioDiag('SQL mode check complete (HTTP ' + res.status + ').', text.trim());
+            return;
+        }
+
+        if (kind === 'tables') {
+            const res = await fetch('api/get_diagnostics.php?check=tables');
+            const text = await res.text();
+            setScenarioDiag('Table existence check complete (HTTP ' + res.status + ').', text.trim());
             return;
         }
 

@@ -108,7 +108,7 @@ try {
         if ($hasModernRaw) {
             // Modern normalized schema.
             $sql = 'SELECT
-                    GROUP_CONCAT(DISTINCT sm.common_name ORDER BY sm.common_name SEPARATOR ", ") AS species_list,
+                    GROUP_CONCAT(DISTINCT sm.common_name ORDER BY sm.common_name SEPARATOR \', \') AS species_list,
                     COALESCE(NULLIF(rbo.site_name, ''), 'Observation Site') AS site_name,
                     rbo.latitude AS latitude,
                     rbo.longitude AS longitude,

@@ -328,7 +328,7 @@ $edit_total = count($no_category);
     $mig_label = ucfirst($mig_val);
     ?>
     <div class="species-card" style="background:var(--bg-card);">
-        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>">
+        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>" style="overflow:hidden; display:flex; align-items:center; justify-content:center; background:var(--bg-card-alt);">
             <?php if (!empty($species['image_path'])): ?>
                 <?php
                 $image_path = (string) $species['image_path'];
@@ -349,7 +349,7 @@ $edit_total = count($no_category);
                     <?php if ($webp_path !== ''): ?>
                     <source type="image/webp" srcset="<?php echo htmlspecialchars($webp_path); ?>">
                     <?php endif; ?>
-                    <img class="species-photo" src="<?php echo htmlspecialchars($image_path); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" loading="lazy" decoding="async" width="220" height="220">
+                    <img class="species-photo" src="<?php echo htmlspecialchars($image_path); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" loading="lazy" decoding="async" width="220" height="220" style="width:100%; height:100%; object-fit:cover;">
                 </picture>
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
