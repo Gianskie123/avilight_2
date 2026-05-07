@@ -109,6 +109,7 @@ $kba_data = json_decode(file_get_contents('data/sample_kba.json'), true);
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('tables')">Check Tables</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('sqlmode')">Check SQL Mode</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('baseline')">Test Baseline (Prewarm)</button>
+            <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('python')">Test Python Backend</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('monthly')">Test Monthly Averages</button>
             <button class="btn btn-secondary" type="button" onclick="runScenarioDiagnostics('scenario')">Test Scenario API</button>
             <span id="scenarioDiagStatus" style="font-size:0.85rem; color:var(--text-secondary);"></span>
@@ -274,6 +275,13 @@ async function runScenarioDiagnostics(kind) {
             const res = await fetch('api/get_diagnostics.php?check=tables');
             const text = await res.text();
             setScenarioDiag('Table existence check complete (HTTP ' + res.status + ').', text.trim());
+            return;
+        }
+
+        if (kind === 'python') {
+            const res = await fetch('api/get_backend_health.php');
+            const text = await res.text();
+            setScenarioDiag('Python backend check complete (HTTP ' + res.status + ').', text.trim());
             return;
         }
 

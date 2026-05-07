@@ -107,8 +107,8 @@ try {
 
         if ($hasModernRaw) {
             // Modern normalized schema.
-            $sql = 'SELECT
-                    GROUP_CONCAT(DISTINCT sm.common_name ORDER BY sm.common_name SEPARATOR \', \') AS species_list,
+            $sql = "SELECT
+                    GROUP_CONCAT(DISTINCT sm.common_name ORDER BY sm.common_name SEPARATOR ', ') AS species_list,
                     COALESCE(NULLIF(rbo.site_name, ''), 'Observation Site') AS site_name,
                     rbo.latitude AS latitude,
                     rbo.longitude AS longitude,
@@ -122,7 +122,7 @@ try {
                     SUM(COALESCE(rbo.count, 0)) AS total_count
                 FROM raw_bird_observation rbo
                 LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
-                WHERE rbo.year = :yr '
+                WHERE rbo.year = :yr "
                 . ($month >= 1 && $month <= 12 ? 'AND rbo.month = :mo ' : '')
                 . 'AND rbo.latitude  BETWEEN :lat_min AND :lat_max
                 AND rbo.longitude BETWEEN :lng_min AND :lng_max
@@ -145,8 +145,8 @@ try {
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } elseif ($hasLegacyRaw) {
             // Legacy raw schema found in some deployments.
-            $sql = 'SELECT
-                    GROUP_CONCAT(DISTINCT rbo.species_name ORDER BY rbo.species_name SEPARATOR ", ") AS species_list,
+            $sql = "SELECT
+                    GROUP_CONCAT(DISTINCT rbo.species_name ORDER BY rbo.species_name SEPARATOR ', ') AS species_list,
                     COALESCE(NULLIF(rbo.habitat_type, ''), 'Observation Site') AS site_name,
                     ROUND(rbo.location_lat, 4) AS latitude,
                     ROUND(rbo.location_long, 4) AS longitude,
@@ -159,7 +159,7 @@ try {
                     0 AS total_migrant,
                     SUM(COALESCE(rbo.count, 0)) AS total_count
                 FROM raw_bird_observation rbo
-                WHERE YEAR(rbo.submission_date) = :yr '
+                WHERE YEAR(rbo.submission_date) = :yr "
                 . ($month >= 1 && $month <= 12 ? 'AND MONTH(rbo.submission_date) = :mo ' : '')
                 . 'AND rbo.location_lat  BETWEEN :lat_min AND :lat_max
                 AND rbo.location_long BETWEEN :lng_min AND :lng_max

@@ -8,7 +8,8 @@
  */
 
 // Base URL of the Python backend (FastAPI / Flask)
-define('PYTHON_BACKEND_URL', getenv('PYTHON_BACKEND_URL') ?: 'http://127.0.0.1:5000');
+// Railway start.sh launches FastAPI on port 8000 by default.
+define('PYTHON_BACKEND_URL', getenv('PYTHON_BACKEND_URL') ?: 'http://127.0.0.1:8000');
 
 // ── Python worker configuration ───────────────────────────────────────────────
 

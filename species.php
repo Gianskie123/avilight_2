@@ -328,29 +328,9 @@ $edit_total = count($no_category);
     $mig_label = ucfirst($mig_val);
     ?>
     <div class="species-card" style="background:var(--bg-card);">
-        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>" style="overflow:hidden; display:flex; align-items:center; justify-content:center; background:var(--bg-card-alt);">
+        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>">
             <?php if (!empty($species['image_path'])): ?>
-                <?php
-                $image_path = (string) $species['image_path'];
-                $img_fs = __DIR__ . '/' . ltrim($image_path, '/');
-                $webp_path = '';
-                if (is_string($image_path) && $image_path !== '') {
-                    $ext = strtolower(pathinfo($image_path, PATHINFO_EXTENSION));
-                    if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
-                        $webp_path = preg_replace('/\.(jpe?g|png)$/i', '.webp', $image_path) ?? '';
-                        $webp_fs = __DIR__ . '/' . ltrim($webp_path, '/');
-                        if (!is_file($webp_fs)) {
-                            $webp_path = '';
-                        }
-                    }
-                }
-                ?>
-                <picture>
-                    <?php if ($webp_path !== ''): ?>
-                    <source type="image/webp" srcset="<?php echo htmlspecialchars($webp_path); ?>">
-                    <?php endif; ?>
-                    <img class="species-photo" src="<?php echo htmlspecialchars($image_path); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" loading="lazy" decoding="async" width="220" height="220" style="width:100%; height:100%; object-fit:cover;">
-                </picture>
+                <img class="species-photo" src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" loading="lazy" decoding="async">
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
