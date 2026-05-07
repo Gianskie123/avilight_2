@@ -25,11 +25,18 @@ Dependencies:
     pip install pymysql pandas numpy scipy
 """
 
+import os
 import sys
 import json as _json
 import argparse
 import warnings
 import traceback
+
+# Limit BLAS threading to avoid pthread_create failures on constrained hosts.
+os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+os.environ.setdefault('OMP_NUM_THREADS', '1')
+os.environ.setdefault('MKL_NUM_THREADS', '1')
+os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
 
 import numpy as np
 import pandas as pd

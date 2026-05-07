@@ -186,6 +186,13 @@ require_once 'includes/header.php';
             <strong>Status:</strong> <span data-cov-status="land_cover" class="badge">Loading...</span>
         </p>
 
+        <div style="margin-top: 12px;">
+            <button class="btn btn-secondary" type="button" onclick="runCovariateDiagnostics()">
+                Run Covariate Diagnostics
+            </button>
+            <pre id="covariateDiagOutput" style="margin-top:10px; white-space:pre-wrap; background:var(--bg-card-alt); border:1px solid var(--border-color); border-radius:8px; padding:10px; font-size:0.82rem; color:var(--text-secondary); max-height:220px; overflow:auto;"></pre>
+        </div>
+
         <hr style="margin: 24px 0;">
 
         <!-- Merge to Master Grid -->
@@ -1094,6 +1101,19 @@ function fetchMODIS()      { fetchCovariate(this, 'ndvi',       'Vegetation Inde
 function fetchNOAATemp()   { fetchCovariate(this, 'land_temp',  'Land Surface Temperature (MODIS)'); }
 function fetchNOAAPrecip() { fetchCovariate(this, 'precip',     'Precipitation (CHIRPS)'); }
 function fetchLandCover()  { fetchCovariate(this, 'land_cover', 'Land Cover Type (MODIS)'); }
+
+function runCovariateDiagnostics() {
+    const out = document.getElementById('covariateDiagOutput');
+    if (out) out.textContent = 'Running diagnostics...';
+    fetch('api/get_covariate_diagnostics.php')
+        .then(r => r.text())
+        .then(text => {
+            if (out) out.textContent = text.trim();
+        })
+        .catch(err => {
+            if (out) out.textContent = 'Diagnostics failed: ' + (err && err.message ? err.message : 'unknown error');
+        });
+}
 
 function buildMasterGrid(btn) {
     const statusEl = document.getElementById('masterGridStatus');

@@ -250,18 +250,31 @@ $is_windows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
 // Use putenv() so child processes inherit the variables without any shell
 // syntax differences between Windows and Linux.
 putenv('GEE_PROJECT=' . GEE_PROJECT);
-if (GEE_SA_KEY && file_exists(GEE_SA_KEY)) {
-    putenv('GOOGLE_APPLICATION_CREDENTIALS=' . GEE_SA_KEY);
+$gee_key = GEE_SA_KEY;
+if ((!$gee_key || !file_exists($gee_key)) && file_exists('/var/www/html/secrets/gee-service-account.json')) {
+    $gee_key = '/var/www/html/secrets/gee-service-account.json';
+}
+if ($gee_key && file_exists($gee_key)) {
+    putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $gee_key);
 }
 
 // Pass MariaDB credentials to Python workers for hierarchical gap-filling.
-// The Python db_fill module reads these with the same defaults, so this is
-// only strictly necessary if your setup differs from standard XAMPP defaults.
-putenv('DB_HOST=127.0.0.1');
-putenv('DB_PORT=3306');
-putenv('DB_NAME=avilight');
-putenv('DB_USER=root');
-putenv('DB_PASS=');
+// Read from env so Railway/hosted DBs work (fallback to local defaults).
+$db_host = getenv('DB_HOST') ?: getenv('MYSQL_HOST') ?: '127.0.0.1';
+$db_port = getenv('DB_PORT') ?: '3306';
+$db_name = getenv('DB_NAME') ?: getenv('MYSQL_DATABASE') ?: 'avilight';
+$db_user = getenv('DB_USER') ?: getenv('MYSQL_USER') ?: 'root';
+$db_pass = getenv('DB_PASS') ?: getenv('MYSQL_PASSWORD') ?: '';
+$db_ssl_ca = getenv('DB_SSL_CA') ?: getenv('MYSQL_SSL_CA') ?: '';
+
+putenv('DB_HOST=' . $db_host);
+putenv('DB_PORT=' . $db_port);
+putenv('DB_NAME=' . $db_name);
+putenv('DB_USER=' . $db_user);
+putenv('DB_PASS=' . $db_pass);
+if ($db_ssl_ca) {
+    putenv('DB_SSL_CA=' . $db_ssl_ca);
+}
 
 $total_inserted = 0;
 $errors         = [];

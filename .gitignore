@@ -96,3 +96,6 @@ python_extraction_reference/
 # Misc
 *.orig
 *.rej
+
+# Database
+avilight_backup.sql
