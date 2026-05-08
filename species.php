@@ -193,34 +193,35 @@ $tolerant_count  = (int) $pdo->query("SELECT COUNT(*) FROM species_masterlist WH
 $migratory_count = (int) $pdo->query("SELECT COUNT(*) FROM species_masterlist WHERE migratory_status='migratory'")->fetchColumn();
 $resident_count  = (int) $pdo->query("SELECT COUNT(*) FROM species_masterlist WHERE migratory_status='resident'")->fetchColumn();
 
-// Edit tab: species missing data (include all fields for pre-population)
-$select_cols = "species_id AS id, species_name AS common_name, light_tolerance,
-                migratory_status AS migration_status, description, image_path";
+// Edit tab counts (lazy-load rows via API)
+$no_category_count = (int) $pdo->query(
+    "SELECT COUNT(*) FROM species_masterlist
+     WHERE light_tolerance='' OR light_tolerance IS NULL OR migratory_status='' OR migratory_status IS NULL"
+)->fetchColumn();
+$all_species_count = $total_species;
 
-$no_category = $pdo->query(
-    "SELECT $select_cols FROM species_masterlist
-     WHERE light_tolerance='' OR light_tolerance IS NULL OR migratory_status='' OR migratory_status IS NULL
-     ORDER BY species_name"
-)->fetchAll(PDO::FETCH_ASSOC);
+function cache_bust_image_path(?string $path): string {
+    if (empty($path)) {
+        return '';
+    }
+    $abs = __DIR__ . '/' . ltrim($path, '/');
+    if (is_file($abs)) {
+        return $path . '?v=' . filemtime($abs);
+    }
+    return $path;
+}
 
-// Combined query for species missing picture OR description (with flags)
-$lacking_details = $pdo->query(
-    "SELECT $select_cols,
-            (image_path IS NULL OR image_path='') AS no_image,
-            (description IS NULL OR description='') AS no_desc
-     FROM species_masterlist
-     WHERE (image_path IS NULL OR image_path='') OR (description IS NULL OR description='')
-     ORDER BY species_name"
-)->fetchAll(PDO::FETCH_ASSOC);
+function apply_image_cache_bust(array $rows): array {
+    foreach ($rows as &$row) {
+        if (!empty($row['image_path'])) {
+            $row['image_path'] = cache_bust_image_path($row['image_path']);
+        }
+    }
+    unset($row);
+    return $rows;
+}
 
-// All species for general editing
-$all_species = $pdo->query(
-    "SELECT $select_cols,
-            (image_path IS NULL OR image_path='') AS no_image,
-            (description IS NULL OR description='') AS no_desc
-     FROM species_masterlist
-     ORDER BY species_name"
-)->fetchAll(PDO::FETCH_ASSOC);
+$filtered_species = apply_image_cache_bust($filtered_species);
 ?>
 
 <div class="page-header">
@@ -253,7 +254,7 @@ $all_species = $pdo->query(
 </div>
 
 <?php
-$edit_total = count($no_category);
+$edit_total = $no_category_count;
 ?>
 
 <!-- Main Tab Navigation -->
@@ -407,7 +408,7 @@ $page_url = function(int $p) use ($base_query): string {
     <!-- Subtitle -->
     <p class="page-subtitle" style="margin-bottom:20px;">
         Managing <?php echo number_format($total_species); ?> bird species —
-        <strong><?php echo count($no_category); ?></strong> need categorization
+        <strong><?php echo number_format($no_category_count); ?></strong> need categorization
     </p>
 
     <!-- Sub-tab nav (same pill style as main tabs) -->
@@ -415,117 +416,48 @@ $page_url = function(int $p) use ($base_query): string {
         <button class="edit-tab-btn active" data-etab="no-category"
                 style="flex:1;padding:8px 16px;border-radius:6px;border:none;background:var(--bg-card);color:var(--text-primary);cursor:pointer;font-size:.9rem;font-weight:600;box-shadow:var(--shadow);transition:all .2s;">
             No Categories
-            <span style="background:var(--danger-color,#dc2626);color:#fff;border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;"><?php echo count($no_category); ?></span>
+            <span style="background:var(--danger-color,#dc2626);color:#fff;border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;"><?php echo number_format($no_category_count); ?></span>
         </button>
         <button class="edit-tab-btn" data-etab="edit-details"
                 style="flex:1;padding:8px 16px;border-radius:6px;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-size:.9rem;font-weight:500;transition:all .2s;">
             Edit / Incomplete
-            <span style="background:var(--bg-card-alt);border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;border:1px solid var(--border-color);"><?php echo count($all_species); ?></span>
+            <span style="background:var(--bg-card-alt);border-radius:999px;font-size:.72rem;padding:1px 7px;margin-left:4px;border:1px solid var(--border-color);"><?php echo number_format($all_species_count); ?></span>
         </button>
     </div>
 
-    <?php
-    function render_edit_table(array $rows, string $hint): void { ?>
-    <?php if (empty($rows)): ?>
-        <div class="alert alert-info" style="padding:16px;border-radius:8px;background:var(--bg-card-alt);border:1px solid var(--border-color);color:var(--text-secondary);">
-            All species in this category are complete.
-        </div>
-    <?php else: ?>
+    <div id="etab-no-category" class="edit-tab-panel" data-etab="no-category">
         <p style="color:var(--text-secondary);font-size:.875rem;margin-bottom:14px;padding:10px 14px;background:var(--bg-card-alt);border-left:3px solid var(--accent-blue);border-radius:0 6px 6px 0;">
-            <?php echo htmlspecialchars($hint); ?>
+            These species are missing a light tolerance or migration status. Assign both to include them in analysis.
         </p>
-        <!-- Live search -->
         <div style="margin-bottom:12px;">
-            <input type="text" class="form-control etable-search" placeholder="Search species..." onkeyup="filterEditTable(this)"
+            <input type="text" class="form-control etable-search" data-etab="no-category" placeholder="Search species..."
                    style="max-width:320px;padding:7px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);color:var(--text-primary);">
         </div>
-        <div style="overflow-x:auto;border:1px solid var(--border-color);border-radius:8px;">
-        <?php $has_detail_flags = array_key_exists('no_image', $rows[0] ?? []); ?>
-        <table class="etable" style="width:100%;border-collapse:collapse;font-size:.9rem;">
-            <thead>
-                <tr style="background:var(--bg-card-alt);">
-                    <th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">#</th>
-                    <th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Species Name</th>
-                    <?php if ($has_detail_flags): ?>
-                    <th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Missing</th>
-                    <?php else: ?>
-                    <th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Light Tolerance</th>
-                    <th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Migration Status</th>
-                    <?php endif; ?>
-                    <th style="padding:10px 14px;border-bottom:1px solid var(--border-color);"></th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php foreach ($rows as $i => $r): ?>
-                <tr class="etable-row" style="border-bottom:1px solid var(--border-color);transition:background .15s;"
-                    onmouseover="this.style.background='var(--bg-card-alt)'" onmouseout="this.style.background=''">
-                    <td style="padding:10px 14px;color:var(--text-muted);font-size:.8rem;"><?php echo $i+1; ?></td>
-                    <td style="padding:10px 14px;color:var(--text-primary);font-weight:500;"><?php echo htmlspecialchars($r['common_name']); ?></td>
-                    <?php if ($has_detail_flags): ?>
-                    <td style="padding:10px 14px;">
-                        <?php if ($r['no_image']): ?>
-                            <span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:var(--warning-color, #ca8a04);color:#fff;border:1px solid var(--warning-color, #ca8a04);margin-right:4px;">No Photo</span>
-                        <?php endif; ?>
-                        <?php if ($r['no_desc']): ?>
-                            <span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:var(--secondary-color, #6366f1);color:#fff;border:1px solid var(--secondary-color, #6366f1);">No Description</span>
-                        <?php endif; ?>
-                    </td>
-                    <?php else: ?>
-                    <td style="padding:10px 14px;">
-                        <?php if ($r['light_tolerance']): ?>
-                            <span class="badge <?php echo $r['light_tolerance']==='tolerant' ? 'badge-success' : 'badge-danger'; ?>">
-                                <?php echo ucfirst($r['light_tolerance']); ?>
-                            </span>
-                        <?php else: ?>
-                            <span style="color:var(--text-muted);font-size:.8rem;">Not set</span>
-                        <?php endif; ?>
-                    </td>
-                    <td style="padding:10px 14px;">
-                        <?php if ($r['migration_status']): ?>
-                            <span class="badge <?php echo $r['migration_status']==='migratory'?'badge-danger':'badge-success'; ?>">
-                                <?php echo ucfirst($r['migration_status']); ?>
-                            </span>
-                        <?php else: ?>
-                            <span style="color:var(--text-muted);font-size:.8rem;">Not set</span>
-                        <?php endif; ?>
-                    </td>
-                    <?php endif; ?>
-                    <td style="padding:10px 14px;text-align:right;white-space:nowrap;">
-                        <button style="font-size:.8rem;padding:5px 14px;border-radius:6px;margin-right:6px;cursor:pointer;transition:all .15s;background:var(--accent-blue,#2563eb);color:#fff;border:1px solid var(--accent-blue,#2563eb);"
-                                onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'"
-                                onclick='openEditModal(<?php echo htmlspecialchars(json_encode([
-                                    "id"               => (int)$r["id"],
-                                    "common_name"      => $r["common_name"],
-                                    "light_tolerance"  => $r["light_tolerance"] ?? "",
-                                    "migration_status" => $r["migration_status"] ?? "",
-                                    "image_path"       => $r["image_path"] ?? "",
-                                    "description"      => $r["description"] ?? "",
-                                ], JSON_HEX_QUOT|JSON_HEX_APOS), ENT_QUOTES); ?>)'>
-                            Edit
-                        </button>
-                        <button style="font-size:.8rem;padding:5px 14px;border-radius:6px;margin-right:6px;cursor:pointer;transition:all .15s;background:rgba(99,102,241,0.08);color:#4f46e5;border:1px solid rgba(99,102,241,0.4);"
-                                onmouseover="this.style.background='rgba(99,102,241,0.16)'" onmouseout="this.style.background='rgba(99,102,241,0.08)'"
-                                onclick='openMergeModal(<?php echo (int)$r["id"]; ?>, <?php echo htmlspecialchars(json_encode($r["common_name"]), ENT_QUOTES); ?>)'>
-                            Merge
-                        </button>
-                        <button style="font-size:.8rem;padding:5px 14px;border-radius:6px;cursor:pointer;transition:all .15s;background:rgba(220,38,38,0.07);color:#dc2626;border:1px solid rgba(220,38,38,0.35);"
-                                onmouseover="this.style.background='rgba(220,38,38,0.14)'" onmouseout="this.style.background='rgba(220,38,38,0.07)'"
-                                onclick='confirmDelete(<?php echo (int)$r["id"]; ?>, <?php echo htmlspecialchars(json_encode($r["common_name"]), ENT_QUOTES); ?>, this)'>
-                            Delete
-                        </button>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
+        <div id="etable-loading-no-category" style="padding:16px;border-radius:8px;background:var(--bg-card-alt);border:1px solid var(--border-color);color:var(--text-secondary);">
+            Loading species…
         </div>
-    <?php endif; } ?>
-
-    <div id="etab-no-category" class="edit-tab-panel">
-        <?php render_edit_table($no_category, 'These species are missing a light tolerance or migration status. Assign both to include them in analysis.'); ?>
+        <div id="etable-empty-no-category" style="display:none;padding:16px;border-radius:8px;background:var(--bg-card-alt);border:1px solid var(--border-color);color:var(--text-secondary);">
+            All species in this category are complete.
+        </div>
+        <div id="etable-no-category" style="display:none;"></div>
+        <div id="etable-pagination-no-category" style="display:flex;justify-content:center;gap:8px;margin:20px 0;flex-wrap:wrap;"></div>
     </div>
-    <div id="etab-edit-details" class="edit-tab-panel" style="display:none;">
-        <?php render_edit_table($all_species, 'All species — species missing a photo or description are flagged below. Click Edit to update any entry.'); ?>
+    <div id="etab-edit-details" class="edit-tab-panel" data-etab="edit-details" style="display:none;">
+        <p style="color:var(--text-secondary);font-size:.875rem;margin-bottom:14px;padding:10px 14px;background:var(--bg-card-alt);border-left:3px solid var(--accent-blue);border-radius:0 6px 6px 0;">
+            All species — species missing a photo or description are flagged below. Click Edit to update any entry.
+        </p>
+        <div style="margin-bottom:12px;">
+            <input type="text" class="form-control etable-search" data-etab="edit-details" placeholder="Search species..."
+                   style="max-width:320px;padding:7px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);color:var(--text-primary);">
+        </div>
+        <div id="etable-loading-edit-details" style="padding:16px;border-radius:8px;background:var(--bg-card-alt);border:1px solid var(--border-color);color:var(--text-secondary);">
+            Loading species…
+        </div>
+        <div id="etable-empty-edit-details" style="display:none;padding:16px;border-radius:8px;background:var(--bg-card-alt);border:1px solid var(--border-color);color:var(--text-secondary);">
+            No species found.
+        </div>
+        <div id="etable-edit-details" style="display:none;"></div>
+        <div id="etable-pagination-edit-details" style="display:flex;justify-content:center;gap:8px;margin:20px 0;flex-wrap:wrap;"></div>
     </div>
 
 </div><!-- /tab-edit -->
@@ -915,6 +847,264 @@ function initPillTabs(btnSelector, panelPrefix) {
 initPillTabs('.main-tab-btn',  'tab-');
 initPillTabs('.edit-tab-btn',  'etab-');
 
+// ── Edit tab lazy-load + pagination ───────────────────────────────────────
+const editTableState = {
+    'no-category': { loaded: false, page: 1, q: '', perPage: 25 },
+    'edit-details': { loaded: false, page: 1, q: '', perPage: 25 },
+};
+
+function escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function encodeAttr(value) {
+    return encodeURIComponent(String(value || ''));
+}
+
+function decodeAttr(value) {
+    return value ? decodeURIComponent(value) : '';
+}
+
+function setEditLoading(tab, loading) {
+    const loadingEl = document.getElementById('etable-loading-' + tab);
+    const emptyEl   = document.getElementById('etable-empty-' + tab);
+    const tableEl   = document.getElementById('etable-' + tab);
+    const pagEl     = document.getElementById('etable-pagination-' + tab);
+    if (loadingEl) loadingEl.style.display = loading ? '' : 'none';
+    if (emptyEl)   emptyEl.style.display   = 'none';
+    if (tableEl)   tableEl.style.display   = loading ? 'none' : '';
+    if (pagEl)     pagEl.style.display     = loading ? 'none' : '';
+}
+
+async function fetchEditTable(tab, pageOverride) {
+    const state = editTableState[tab];
+    if (!state) return;
+    const page = pageOverride || state.page || 1;
+    state.page = page;
+
+    setEditLoading(tab, true);
+
+    const params = new URLSearchParams({
+        tab,
+        page: String(page),
+        per_page: String(state.perPage),
+    });
+    if (state.q) params.set('q', state.q);
+
+    try {
+        const res = await fetch('api/get_species_edit_table.php?' + params.toString());
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load data');
+
+        renderEditTable(tab, data.rows || [], data);
+        state.loaded = true;
+    } catch {
+        const emptyEl = document.getElementById('etable-empty-' + tab);
+        if (emptyEl) {
+            emptyEl.textContent = 'Could not load species.';
+            emptyEl.style.display = '';
+        }
+    } finally {
+        setEditLoading(tab, false);
+    }
+}
+
+function renderEditTable(tab, rows, meta) {
+    const tableEl = document.getElementById('etable-' + tab);
+    const emptyEl = document.getElementById('etable-empty-' + tab);
+    const pagEl   = document.getElementById('etable-pagination-' + tab);
+    if (!tableEl || !emptyEl || !pagEl) return;
+
+    if (!rows.length) {
+        tableEl.innerHTML = '';
+        tableEl.style.display = 'none';
+        pagEl.innerHTML = '';
+        emptyEl.style.display = '';
+        return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    const hasDetailFlags = tab === 'edit-details';
+    const offset = ((meta.page || 1) - 1) * (meta.per_page || rows.length);
+
+    const headerCells = hasDetailFlags
+        ? '<th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Missing</th>'
+        : '<th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Light Tolerance</th>'
+          + '<th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Migration Status</th>';
+
+    const bodyRows = rows.map((r, idx) => {
+        const commonName = escapeHtml(r.common_name || '');
+        const lightTol   = (r.light_tolerance || '').toLowerCase();
+        const migStatus  = (r.migration_status || '').toLowerCase();
+        const noImage    = Number(r.no_image) === 1;
+        const noDesc     = Number(r.no_desc) === 1;
+
+        const missingCell = hasDetailFlags
+            ? '<td style="padding:10px 14px;">'
+                + (noImage ? '<span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:var(--warning-color, #ca8a04);color:#fff;border:1px solid var(--warning-color, #ca8a04);margin-right:4px;">No Photo</span>' : '')
+                + (noDesc  ? '<span style="display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:4px;background:var(--secondary-color, #6366f1);color:#fff;border:1px solid var(--secondary-color, #6366f1);">No Description</span>' : '')
+              + '</td>'
+            : '<td style="padding:10px 14px;">'
+                + (lightTol
+                    ? '<span class="badge ' + (lightTol === 'tolerant' ? 'badge-success' : 'badge-danger') + '">' + escapeHtml(lightTol.charAt(0).toUpperCase() + lightTol.slice(1)) + '</span>'
+                    : '<span style="color:var(--text-muted);font-size:.8rem;">Not set</span>')
+              + '</td>'
+              + '<td style="padding:10px 14px;">'
+                + (migStatus
+                    ? '<span class="badge ' + (migStatus === 'migratory' ? 'badge-danger' : 'badge-success') + '">' + escapeHtml(migStatus.charAt(0).toUpperCase() + migStatus.slice(1)) + '</span>'
+                    : '<span style="color:var(--text-muted);font-size:.8rem;">Not set</span>')
+              + '</td>';
+
+        return '<tr class="etable-row" style="border-bottom:1px solid var(--border-color);transition:background .15s;"'
+            + ' onmouseover="this.style.background=\'var(--bg-card-alt)\'" onmouseout="this.style.background=\''\'">'
+            + '<td style="padding:10px 14px;color:var(--text-muted);font-size:.8rem;">' + (offset + idx + 1) + '</td>'
+            + '<td style="padding:10px 14px;color:var(--text-primary);font-weight:500;">' + commonName + '</td>'
+            + missingCell
+            + '<td style="padding:10px 14px;text-align:right;white-space:nowrap;">'
+                + '<button data-action="edit"'
+                + ' data-id="' + Number(r.id) + '"'
+                + ' data-common-name="' + encodeAttr(r.common_name) + '"'
+                + ' data-light-tolerance="' + encodeAttr(r.light_tolerance) + '"'
+                + ' data-migration-status="' + encodeAttr(r.migration_status) + '"'
+                + ' data-image-path="' + encodeAttr(r.image_path) + '"'
+                + ' data-description="' + encodeAttr(r.description) + '"'
+                + ' style="font-size:.8rem;padding:5px 14px;border-radius:6px;margin-right:6px;cursor:pointer;transition:all .15s;background:var(--accent-blue,#2563eb);color:#fff;border:1px solid var(--accent-blue,#2563eb);"'
+                + ' onmouseover="this.style.opacity=\'.85\'" onmouseout="this.style.opacity=\'1\'">Edit</button>'
+                + '<button data-action="merge"'
+                + ' data-id="' + Number(r.id) + '"'
+                + ' data-common-name="' + encodeAttr(r.common_name) + '"'
+                + ' style="font-size:.8rem;padding:5px 14px;border-radius:6px;margin-right:6px;cursor:pointer;transition:all .15s;background:rgba(99,102,241,0.08);color:#4f46e5;border:1px solid rgba(99,102,241,0.4);"'
+                + ' onmouseover="this.style.background=\'rgba(99,102,241,0.16)\'" onmouseout="this.style.background=\'rgba(99,102,241,0.08)\'">Merge</button>'
+                + '<button data-action="delete"'
+                + ' data-id="' + Number(r.id) + '"'
+                + ' data-common-name="' + encodeAttr(r.common_name) + '"'
+                + ' style="font-size:.8rem;padding:5px 14px;border-radius:6px;cursor:pointer;transition:all .15s;background:rgba(220,38,38,0.07);color:#dc2626;border:1px solid rgba(220,38,38,0.35);"'
+                + ' onmouseover="this.style.background=\'rgba(220,38,38,0.14)\'" onmouseout="this.style.background=\'rgba(220,38,38,0.07)\'">Delete</button>'
+            + '</td>'
+            + '</tr>';
+    }).join('');
+
+    tableEl.innerHTML = '<div style="overflow-x:auto;border:1px solid var(--border-color);border-radius:8px;">'
+        + '<table class="etable" style="width:100%;border-collapse:collapse;font-size:.9rem;">'
+        + '<thead><tr style="background:var(--bg-card-alt);">'
+        + '<th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">#</th>'
+        + '<th style="text-align:left;padding:10px 14px;color:var(--text-secondary);font-weight:600;border-bottom:1px solid var(--border-color);">Species Name</th>'
+        + headerCells
+        + '<th style="padding:10px 14px;border-bottom:1px solid var(--border-color);"></th>'
+        + '</tr></thead>'
+        + '<tbody>' + bodyRows + '</tbody>'
+        + '</table>'
+        + '</div>';
+
+    tableEl.style.display = '';
+    renderEditPagination(tab, meta.page || 1, meta.total_pages || 1);
+}
+
+function renderEditPagination(tab, page, totalPages) {
+    const pagEl = document.getElementById('etable-pagination-' + tab);
+    if (!pagEl) return;
+    if (totalPages <= 1) {
+        pagEl.innerHTML = '';
+        return;
+    }
+
+    const mkBtn = (label, p, active) => {
+        const cls = active ? 'btn-primary' : 'btn-secondary';
+        return '<button class="btn ' + cls + '" data-etab="' + tab + '" data-page="' + p + '">' + label + '</button>';
+    };
+
+    const start = Math.max(1, page - 3);
+    const end   = Math.min(totalPages, page + 3);
+    let html = '';
+    if (page > 1) html += mkBtn('‹ Prev', page - 1, false);
+    if (start > 1) {
+        html += mkBtn('1', 1, false);
+        if (start > 2) html += '<span style="align-self:center;">…</span>';
+    }
+    for (let p = start; p <= end; p += 1) {
+        html += mkBtn(String(p), p, p === page);
+    }
+    if (end < totalPages) {
+        if (end < totalPages - 1) html += '<span style="align-self:center;">…</span>';
+        html += mkBtn(String(totalPages), totalPages, false);
+    }
+    if (page < totalPages) html += mkBtn('Next ›', page + 1, false);
+
+    pagEl.innerHTML = html;
+}
+
+function ensureEditTabLoaded(tab) {
+    const state = editTableState[tab];
+    if (!state) return;
+    if (!state.loaded) fetchEditTable(tab, 1);
+}
+
+const editSearchTimers = {};
+document.querySelectorAll('.etable-search').forEach(input => {
+    input.addEventListener('input', () => {
+        const tab = input.dataset.etab;
+        if (!tab || !editTableState[tab]) return;
+        clearTimeout(editSearchTimers[tab]);
+        editSearchTimers[tab] = setTimeout(() => {
+            editTableState[tab].q = input.value.trim();
+            editTableState[tab].page = 1;
+            fetchEditTable(tab, 1);
+        }, 250);
+    });
+});
+
+document.addEventListener('click', (e) => {
+    const pagBtn = e.target.closest('button[data-etab][data-page]');
+    if (pagBtn) {
+        const tab = pagBtn.dataset.etab;
+        const page = parseInt(pagBtn.dataset.page, 10) || 1;
+        fetchEditTable(tab, page);
+        return;
+    }
+    const actionBtn = e.target.closest('button[data-action]');
+    if (!actionBtn) return;
+
+    const row = {
+        id: parseInt(actionBtn.dataset.id, 10),
+        common_name: decodeAttr(actionBtn.dataset.commonName),
+        light_tolerance: decodeAttr(actionBtn.dataset.lightTolerance),
+        migration_status: decodeAttr(actionBtn.dataset.migrationStatus),
+        image_path: decodeAttr(actionBtn.dataset.imagePath),
+        description: decodeAttr(actionBtn.dataset.description),
+    };
+
+    if (actionBtn.dataset.action === 'edit') {
+        openEditModal(row);
+    } else if (actionBtn.dataset.action === 'merge') {
+        openMergeModal(row.id, row.common_name);
+    } else if (actionBtn.dataset.action === 'delete') {
+        confirmDelete(row.id, row.common_name, actionBtn);
+    }
+});
+
+document.querySelectorAll('.main-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (btn.dataset.tab === 'edit') {
+            ensureEditTabLoaded('no-category');
+        }
+    });
+});
+document.querySelectorAll('.edit-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        ensureEditTabLoaded(btn.dataset.etab);
+    });
+});
+const activeMainTab = document.querySelector('.main-tab-btn.active');
+if (activeMainTab && activeMainTab.dataset.tab === 'edit') {
+    ensureEditTabLoaded('no-category');
+}
+
 // ── Merge modal ───────────────────────────────────────────────────────────────
 let mergeSourceId   = null;
 let mergeTargetId   = null;
@@ -1097,14 +1287,6 @@ function handleImageDrop(e) {
     dt.items.add(file);
     document.getElementById('editImageFile').files = dt.files;
     previewImage(document.getElementById('editImageFile'));
-}
-
-function filterEditTable(input) {
-    const q    = input.value.toLowerCase();
-    const rows = input.closest('.edit-tab-panel').querySelectorAll('.etable-row');
-    rows.forEach(tr => {
-        tr.style.display = tr.querySelector('td:nth-child(2)').textContent.toLowerCase().includes(q) ? '' : 'none';
-    });
 }
 
 // ── Delete modal ──────────────────────────────────────────────────────────────

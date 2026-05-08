@@ -137,7 +137,7 @@ if ($remove_image) {
     }
     imagedestroy($dst);
 
-    $image_path = IMG_WEB . $filename;
+    $image_path = IMG_WEB . $filename . '?v=' . time();
 } // end elseif upload
 
 // ── Database update ───────────────────────────────────────────────────────────
