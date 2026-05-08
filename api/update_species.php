@@ -41,6 +41,13 @@ if (!in_array($migratory_status, $allowed_migrations, true)) {
     exit;
 }
 
+$prev_error_handler = set_error_handler(function ($severity, $message, $file, $line): bool {
+    if (!(error_reporting() & $severity)) {
+        return false;
+    }
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
 // ── Image upload ──────────────────────────────────────────────────────────────
 // Standard size: 320 × 320 px (square), saved as JPEG.
 define('IMG_W', 320);
@@ -68,8 +75,9 @@ if ($remove_image) {
     } catch (Throwable $e) { /* non-fatal */ }
     $image_path = '';  // empty string signals "set NULL in DB"
 } elseif (!empty($_FILES['image_file']['tmp_name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-    $tmp  = $_FILES['image_file']['tmp_name'];
-    $mime = mime_content_type($tmp);
+    try {
+        $tmp  = $_FILES['image_file']['tmp_name'];
+        $mime = mime_content_type($tmp);
 
     $allowed_mime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!in_array($mime, $allowed_mime, true)) {
@@ -117,27 +125,34 @@ if ($remove_image) {
     );
     imagedestroy($src);
 
-    if (!is_dir(IMG_DIR)) {
-        mkdir(IMG_DIR, 0755, true);
-    }
+        if (!is_dir(IMG_DIR) && !mkdir(IMG_DIR, 0755, true)) {
+            throw new RuntimeException('Failed to create image directory.');
+        }
+        if (!is_writable(IMG_DIR)) {
+            throw new RuntimeException('Image directory is not writable.');
+        }
 
     $base_filename = species_slug($species_name ?: (string)$species_id);
     $filename = $base_filename . '.jpg';
     $filepath = IMG_DIR . $filename;
 
-    if (!imagejpeg($dst, $filepath, 90)) {
+        if (!imagejpeg($dst, $filepath, 90)) {
+            imagedestroy($dst);
+            throw new RuntimeException('Failed to save image.');
+        }
+
+        if (function_exists('imagewebp')) {
+            $webp_path = IMG_DIR . $base_filename . '.webp';
+            imagewebp($dst, $webp_path, 80);
+        }
         imagedestroy($dst);
-        echo json_encode(['success' => false, 'error' => 'Failed to save image.']);
+
+        $image_path = IMG_WEB . $filename;
+    } catch (Throwable $e) {
+        restore_error_handler();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         exit;
     }
-
-    if (function_exists('imagewebp')) {
-        $webp_path = IMG_DIR . $base_filename . '.webp';
-        imagewebp($dst, $webp_path, 80);
-    }
-    imagedestroy($dst);
-
-    $image_path = IMG_WEB . $filename . '?v=' . time();
 } // end elseif upload
 
 // ── Database update ───────────────────────────────────────────────────────────
@@ -172,3 +187,5 @@ try {
 } catch (PDOException $ex) {
     echo json_encode(['success' => false, 'error' => $ex->getMessage()]);
 }
+
+restore_error_handler();

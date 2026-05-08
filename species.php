@@ -204,9 +204,10 @@ function cache_bust_image_path(?string $path): string {
     if (empty($path)) {
         return '';
     }
-    $abs = __DIR__ . '/' . ltrim($path, '/');
+    $clean = strtok($path, '?');
+    $abs = __DIR__ . '/' . ltrim($clean, '/');
     if (is_file($abs)) {
-        return $path . '?v=' . filemtime($abs);
+        return $clean . '?v=' . filemtime($abs);
     }
     return $path;
 }

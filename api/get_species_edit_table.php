@@ -68,9 +68,10 @@ try {
     $rows = array_map(function (array $row) use ($root): array {
         $path = $row['image_path'] ?? '';
         if (!empty($path)) {
-            $abs = $root . '/' . ltrim($path, '/');
+            $clean = strtok($path, '?');
+            $abs = $root . '/' . ltrim($clean, '/');
             if (is_file($abs)) {
-                $row['image_path'] = $path . '?v=' . filemtime($abs);
+                $row['image_path'] = $clean . '?v=' . filemtime($abs);
             }
         }
         return $row;

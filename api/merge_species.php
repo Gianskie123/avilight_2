@@ -53,7 +53,8 @@ try {
 
     // 4. Remove the source image file (outside transaction — non-critical)
     if ($image_path) {
-        $abs         = realpath(__DIR__ . '/../' . $image_path);
+        $clean_path = strtok((string)$image_path, '?');
+        $abs         = realpath(__DIR__ . '/../' . $clean_path);
         $allowed_dir = realpath(__DIR__ . '/../assets/species_images');
         if ($abs && $allowed_dir && str_starts_with($abs, $allowed_dir)) {
             @unlink($abs);
