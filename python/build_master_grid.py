@@ -45,6 +45,12 @@ from scipy.spatial import cKDTree
 
 warnings.filterwarnings('ignore')
 
+
+def emit(msg: str, level: str = 'info') -> None:
+    """Write one JSON progress line to stdout."""
+    sys.stdout.write(_json.dumps({'level': level, 'msg': msg}) + '\n')
+    sys.stdout.flush()
+
 # ── DB config ──────────────────────────────────────────────────────────────────
 def _get_db_port(raw: str) -> int:
     try:
@@ -107,12 +113,6 @@ if _db_ssl_ca:
 del _db_host, _db_port, _db_name, _db_user, _db_pass, _db_ssl_ca
 
 BATCH_SIZE = 5000
-
-
-def emit(msg: str, level: str = 'info') -> None:
-    """Write one JSON progress line to stdout."""
-    sys.stdout.write(_json.dumps({'level': level, 'msg': msg}) + '\n')
-    sys.stdout.flush()
 
 
 def get_conn():
