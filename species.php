@@ -962,7 +962,7 @@ function renderEditTable(tab, rows, meta) {
               + '</td>';
 
         return '<tr class="etable-row" style="border-bottom:1px solid var(--border-color);transition:background .15s;"'
-            + ' onmouseover="this.style.background=\'var(--bg-card-alt)\'" onmouseout="this.style.background=\''\'">'
+            + ' onmouseover="this.style.background=\'var(--bg-card-alt)\'" onmouseout="this.style.background=\'\'">'
             + '<td style="padding:10px 14px;color:var(--text-muted);font-size:.8rem;">' + (offset + idx + 1) + '</td>'
             + '<td style="padding:10px 14px;color:var(--text-primary);font-weight:500;">' + commonName + '</td>'
             + missingCell
