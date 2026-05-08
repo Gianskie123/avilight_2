@@ -60,6 +60,37 @@ _db_user = os.getenv('DB_USER') or os.getenv('MYSQL_USER') or 'root'
 _db_pass = os.getenv('DB_PASS') or os.getenv('MYSQL_PASSWORD') or ''
 _db_ssl_ca = os.getenv('DB_SSL_CA') or os.getenv('MYSQL_SSL_CA') or ''
 
+# Also accept full-PEM env var (some platforms) and a common typo seen in envs
+_db_ssl_ca_pem = os.getenv('DB_SSL_CA_PEM') or os.getenv('DB_SSL_CS_PEM') or os.getenv('MYSQL_SSL_CA_PEM') or ''
+
+# If PEM content provided, materialize to temp file
+if _db_ssl_ca_pem:
+    try:
+        _tmp_ca = os.path.join(os.getenv('TMPDIR') or '/tmp', 'db_ca.pem')
+        with open(_tmp_ca, 'w') as fh:
+            fh.write(_db_ssl_ca_pem)
+        os.chmod(_tmp_ca, 0o640)
+        _db_ssl_ca = _tmp_ca
+    except Exception:
+        # fallback to other detection below
+        _db_ssl_ca = _db_ssl_ca or ''
+
+# If path given but missing, clear it
+if _db_ssl_ca and not os.path.exists(_db_ssl_ca):
+    _db_ssl_ca = ''
+
+# Fallback to standard secrets path written at container startup
+if not _db_ssl_ca:
+    _ca_fallback = '/var/www/html/secrets/ca.pem'
+    if os.path.exists(_ca_fallback):
+        _db_ssl_ca = _ca_fallback
+
+# Emit which CA path will be used (or none)
+if _db_ssl_ca:
+    emit(f'Using DB SSL CA file: {_db_ssl_ca}')
+else:
+    emit('No DB SSL CA file found; SSL CA will not be used')
+
 DB = {
     'host':     _db_host,
     'port':     _db_port,
