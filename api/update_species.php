@@ -76,6 +76,9 @@ if ($remove_image) {
     $image_path = '';  // empty string signals "set NULL in DB"
 } elseif (!empty($_FILES['image_file']['tmp_name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
     try {
+        if (!function_exists('imagecreatefromjpeg')) {
+            throw new RuntimeException('Image processing is unavailable (PHP GD extension not enabled).');
+        }
         $tmp  = $_FILES['image_file']['tmp_name'];
         $mime = mime_content_type($tmp);
 
