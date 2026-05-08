@@ -388,13 +388,6 @@ try {
                     </select>
                 </div>
 
-                <div id="historicalDiagnostics" style="display:none; width:100%; gap:10px; align-items:center; flex-wrap:wrap; padding-top:8px; border-top:1px solid var(--border-color);">
-                    <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Diagnostics:</span>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="runDashboardDiagnostics('db')">Test DB</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="runDashboardDiagnostics('historical')">Test Historical API</button>
-                    <span id="dashboardDiagStatus" style="font-size:0.78rem; color:var(--text-secondary);"></span>
-                    <pre id="dashboardDiagOutput" style="margin:6px 0 0; width:100%; white-space:pre-wrap; background:var(--bg-card-alt); border:1px solid var(--border-color); border-radius:8px; padding:8px; font-size:0.78rem; color:var(--text-secondary); max-height:200px; overflow:auto;"></pre>
-                </div>
             </div>
 
             <div class="risk-site-panel" id="riskSitePanel" aria-label="Risk zone list" style="display:flex;">
@@ -2629,7 +2622,6 @@ function setMapView(view) {
     var filters = document.getElementById('historicalFilters');
     filters.style.display = isHist ? 'flex' : 'none';
     document.getElementById('historicalOverlayControls').style.display = isHist ? 'flex' : 'none';
-    document.getElementById('historicalDiagnostics').style.display = isHist ? 'flex' : 'none';
 
     document.getElementById('riskSidebarPanels').style.display = isHist ? 'none' : 'block';
     document.getElementById('historicalSidebarPanels').style.display = isHist ? 'block' : 'none';
@@ -2677,39 +2669,6 @@ function setMapView(view) {
         playRiskViewAnimation();
         prepareRiskSidebarAutoReveal();
     }
-}
-
-function setDashboardDiag(status, details) {
-    var statusEl = document.getElementById('dashboardDiagStatus');
-    var outputEl = document.getElementById('dashboardDiagOutput');
-    if (statusEl) statusEl.textContent = status || '';
-    if (outputEl) outputEl.textContent = details || '';
-}
-
-function runDashboardDiagnostics(kind) {
-    setDashboardDiag('Running diagnostics...', '');
-    var selections = getHistoricalSelections();
-    if (kind === 'db') {
-        fetch('health_db.php')
-            .then(function(resp) { return resp.text().then(function(txt) { return { status: resp.status, text: txt }; }); })
-            .then(function(payload) {
-                setDashboardDiag('DB check complete (HTTP ' + payload.status + ').', (payload.text || '').trim());
-            })
-            .catch(function(err) {
-                setDashboardDiag('DB check failed.', String(err || 'Unknown error'));
-            });
-        return;
-    }
-
-    var url = 'api/get_historical_data.php?year=' + selections.year + (selections.month > 0 ? '&month=' + selections.month : '');
-    fetch(url)
-        .then(function(resp) { return resp.text().then(function(txt) { return { status: resp.status, text: txt }; }); })
-        .then(function(payload) {
-            setDashboardDiag('Historical API check complete (HTTP ' + payload.status + ').', (payload.text || '').trim());
-        })
-        .catch(function(err) {
-            setDashboardDiag('Historical API check failed.', String(err || 'Unknown error'));
-        });
 }
 
 var histEnvToggleEl = document.getElementById('histEnvToggle');
