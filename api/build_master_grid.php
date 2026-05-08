@@ -205,6 +205,14 @@ function compute_year_readiness(PDO $pdo): array {
 if (!$confirmed) {
     try {
         $agg_rows     = rebuild_aggregated_bird_observation($pdo);
+        if ($agg_rows === 0) {
+            ob_end_clean();
+            echo json_encode([
+                'success' => false,
+                'error'   => 'No rows were produced in aggregated_bird_observation. Check raw_bird_observation and species_masterlist.',
+            ]);
+            exit;
+        }
         $readiness    = compute_year_readiness($pdo);
         $current_rows = (int)$pdo->query('SELECT COUNT(*) FROM final_master_grid')->fetchColumn();
 
@@ -241,7 +249,15 @@ if (!$confirmed) {
 // Re-aggregate raw observations then re-compute ready years (prevents races
 // since the user may have fetched more covariates between dry-run and confirm).
 try {
-    rebuild_aggregated_bird_observation($pdo);
+    $agg_rows    = rebuild_aggregated_bird_observation($pdo);
+    if ($agg_rows === 0) {
+        ob_end_clean();
+        echo json_encode([
+            'success' => false,
+            'error'   => 'No rows were produced in aggregated_bird_observation. Check raw_bird_observation and species_masterlist.',
+        ]);
+        exit;
+    }
     $readiness   = compute_year_readiness($pdo);
     $ready_years = $readiness['ready'];
 } catch (Throwable $e) {
@@ -256,6 +272,15 @@ if (empty($ready_years)) {
         'success' => false,
         'error'   => 'No years have complete covariate coverage. Nothing to rebuild.',
     ]);
+    exit;
+}
+
+// Full rebuild: clear final_master_grid before inserting fresh rows.
+try {
+    $pdo->exec('TRUNCATE TABLE final_master_grid');
+} catch (Throwable $e) {
+    ob_end_clean();
+    echo json_encode(['success' => false, 'error' => 'Failed to clear final_master_grid: ' . $e->getMessage()]);
     exit;
 }
 

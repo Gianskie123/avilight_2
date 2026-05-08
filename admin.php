@@ -198,7 +198,7 @@ require_once 'includes/header.php';
         <!-- Merge to Master Grid -->
         <h4>Prepare Analysis Data</h4>
         <p style="margin: 0 0 10px; color: var(--text-secondary, #94a3b8); font-size: 13px;">
-            Combines all bird observation records with environmental data (light, vegetation, temperature, rainfall, land type) into one unified dataset ready for analysis.<br><br>
+            One-click refresh of analysis data. It rebuilds bird summaries first, then rebuilds the analysis dataset used by dashboards and reports.<br><br>
             <strong>Press this button whenever:</strong>
             <ul style="margin: 6px 0 0 16px; padding: 0; font-size: 13px;">
                 <li>New bird observation records have been uploaded <em>and</em> environmental data for the same year is already fetched</li>
@@ -206,7 +206,7 @@ require_once 'includes/header.php';
             </ul>
         </p>
         <button class="btn btn-success" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
-            Prepare Analysis Data
+            Rebuild Analysis Data
         </button>
         <div id="masterGridStatus" style="margin-top: 10px;"></div>
 
@@ -1132,7 +1132,7 @@ function runCovariateDiagnostics() {
 function buildMasterGrid(btn) {
     const statusEl = document.getElementById('masterGridStatus');
     btn.disabled   = true;
-    btn.textContent = 'Checking coverage…';
+    btn.textContent = 'Checking data coverage…';
     statusEl.textContent = '';
 
     // Step 1 — dry run: check which years have complete covariate coverage
@@ -1144,7 +1144,7 @@ function buildMasterGrid(btn) {
     .then(safeJson)
     .then(data => {
         btn.disabled    = false;
-        btn.textContent = 'Build Master Grid';
+        btn.textContent = 'Rebuild Analysis Data';
 
         if (!data.success) {
             statusEl.innerHTML = `<span style="color:red;">Error: ${data.error}</span>`;
@@ -1171,7 +1171,7 @@ function buildMasterGrid(btn) {
             : '';
 
         const confirmed = confirm(
-            `Build Master Grid\n` +
+            `Rebuild Analysis Data\n` +
             `${'─'.repeat(40)}\n` +
             `${data.ready_years.length} year(s) ready: ${data.ready_years.join(', ')}\n\n` +
             `Coverage detail:\n${detail}\n` +
@@ -1184,8 +1184,8 @@ function buildMasterGrid(btn) {
 
         // Step 2 — execute
         btn.disabled    = true;
-        btn.textContent = 'Building… (do not close this page)';
-        statusEl.innerHTML = '<span style="color:#666;">Step 1: Aggregating raw observations… then merging covariates. Do not close this page.</span>';
+        btn.textContent = 'Rebuilding… (do not close this page)';
+        statusEl.innerHTML = '<span style="color:#666;">Step 1: Refreshing bird summaries. Step 2: Rebuilding the analysis dataset. Do not close this page.</span>';
 
         fetch('api/build_master_grid.php', {
             method: 'POST',
@@ -1195,7 +1195,7 @@ function buildMasterGrid(btn) {
         .then(safeJson)
         .then(result => {
             btn.disabled    = false;
-            btn.textContent = 'Build Master Grid';
+            btn.textContent = 'Rebuild Analysis Data';
 
             // Parse every log line and render as a scrollable pre block
             const logLines = (result.log || []).map(l => {
@@ -1226,13 +1226,13 @@ function buildMasterGrid(btn) {
         })
         .catch(err => {
             btn.disabled    = false;
-            btn.textContent = 'Build Master Grid';
+            btn.textContent = 'Rebuild Analysis Data';
             statusEl.innerHTML = `<span style="color:red;">Request failed: ${err.message}</span>`;
         });
     })
     .catch(err => {
         btn.disabled    = false;
-        btn.textContent = 'Build Master Grid';
+        btn.textContent = 'Rebuild Analysis Data';
         statusEl.innerHTML = `<span style="color:red;">Coverage check failed: ${err.message}</span>`;
     });
 }
