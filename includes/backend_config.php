@@ -17,18 +17,20 @@ define('PYTHON_BACKEND_URL', getenv('PYTHON_BACKEND_URL') ?: 'http://127.0.0.1:8
 // Priority: PYTHON_BIN env var → .venv/venv (auto-detected) → system python fallback.
 // Run setup_env.bat once to create the venv; after that this resolves automatically.
 if (!defined('PYTHON_BIN')) {
+    $_is_windows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
     $_venv_win  = realpath(__DIR__ . '/../.venv/Scripts/python.exe');  // Windows
     $_venv_unix = realpath(__DIR__ . '/../.venv/bin/python');          // Linux / Mac
     $_venv2_win  = realpath(__DIR__ . '/../venv/Scripts/python.exe');  // Windows fallback
     $_venv2_unix = realpath(__DIR__ . '/../venv/bin/python');          // Linux / Mac fallback
+    $_system_default = $_is_windows ? 'python' : 'python3';
     $_python    = getenv('PYTHON_BIN')
                ?: ($_venv_win  && file_exists($_venv_win)  ? $_venv_win  : null)
                ?: ($_venv_unix && file_exists($_venv_unix) ? $_venv_unix : null)
                ?: ($_venv2_win  && file_exists($_venv2_win) ? $_venv2_win  : null)
                ?: ($_venv2_unix && file_exists($_venv2_unix) ? $_venv2_unix : null)
-               ?: 'python';
+               ?: $_system_default;
     define('PYTHON_BIN', $_python);
-    unset($_venv_win, $_venv_unix, $_venv2_win, $_venv2_unix, $_python);
+    unset($_is_windows, $_venv_win, $_venv_unix, $_venv2_win, $_venv2_unix, $_system_default, $_python);
 }
 
 // Absolute path to the directory containing the extract_*.py worker scripts.
