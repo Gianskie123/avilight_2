@@ -11,12 +11,14 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     libjpeg-dev \
+    libjpeg62-turbo-dev \
     libpng-dev \
     libwebp-dev \
+    libfreetype6-dev \
     libxml2-dev \
     libzip-dev \
     libonig-dev \
-    && docker-php-ext-configure gd --with-jpeg --with-webp --with-png \
+    && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
     && docker-php-ext-install \
         pdo \
         pdo_mysql \
