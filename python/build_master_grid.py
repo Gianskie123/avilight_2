@@ -46,15 +46,34 @@ from scipy.spatial import cKDTree
 warnings.filterwarnings('ignore')
 
 # ── DB config ──────────────────────────────────────────────────────────────────
+def _get_db_port(raw: str) -> int:
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 3306
+
+
+_db_host = os.getenv('DB_HOST') or os.getenv('MYSQL_HOST') or '127.0.0.1'
+_db_port = _get_db_port(os.getenv('DB_PORT') or os.getenv('MYSQL_PORT') or '3306')
+_db_name = os.getenv('DB_NAME') or os.getenv('MYSQL_DATABASE') or 'avilight'
+_db_user = os.getenv('DB_USER') or os.getenv('MYSQL_USER') or 'root'
+_db_pass = os.getenv('DB_PASS') or os.getenv('MYSQL_PASSWORD') or ''
+_db_ssl_ca = os.getenv('DB_SSL_CA') or os.getenv('MYSQL_SSL_CA') or ''
+
 DB = {
-    'host':     '127.0.0.1',
-    'port':     3306,
-    'user':     'root',
-    'password': '',
-    'database': 'avilight',
+    'host':     _db_host,
+    'port':     _db_port,
+    'user':     _db_user,
+    'password': _db_pass,
+    'database': _db_name,
     'charset':  'utf8mb4',
     'connect_timeout': 30,
 }
+
+if _db_ssl_ca:
+    DB['ssl'] = {'ca': _db_ssl_ca}
+
+del _db_host, _db_port, _db_name, _db_user, _db_pass, _db_ssl_ca
 
 BATCH_SIZE = 5000
 
