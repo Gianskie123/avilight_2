@@ -85,14 +85,13 @@ foreach ($workers as $w) {
 
 // GEE configuration
 $geeKey = GEE_SA_KEY;
-if ((!$geeKey || !file_exists($geeKey)) && file_exists('/var/www/html/secrets/gee-service-account.json')) {
-    $geeKey = '/var/www/html/secrets/gee-service-account.json';
-}
 
 echo "\nGEE Configuration\n";
 echo "=================\n";
 line('GEE_PROJECT', GEE_PROJECT ?: 'NOT SET');
+line('GEE key source', defined('GEE_SA_KEY_SOURCE') ? GEE_SA_KEY_SOURCE : 'unknown');
 line('GEE key file', ($geeKey && file_exists($geeKey)) ? $geeKey : 'MISSING');
+line('GEE key readable', ($geeKey && is_readable($geeKey)) ? 'YES' : 'NO');
 line('proc_open', function_exists('proc_open') ? 'ENABLED' : 'DISABLED');
 
 if (!function_exists('proc_open')) {

@@ -37,7 +37,9 @@ if [ -n "$GEE_SA_KEY_JSON" ]; then
     echo "[GEE] Writing service account key..."
     mkdir -p /var/www/html/secrets
     echo "$GEE_SA_KEY_JSON" > /var/www/html/secrets/gee-service-account.json
-    chmod 600 /var/www/html/secrets/gee-service-account.json
+    chown -R www-data:www-data /var/www/html/secrets || true
+    chmod 750 /var/www/html/secrets || true
+    chmod 640 /var/www/html/secrets/gee-service-account.json
     echo "[GEE] Service account key written ✅"
 else
     echo "[GEE] WARNING: GEE_SA_KEY_JSON not set."

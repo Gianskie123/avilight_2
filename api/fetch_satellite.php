@@ -251,9 +251,6 @@ $is_windows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
 // syntax differences between Windows and Linux.
 putenv('GEE_PROJECT=' . GEE_PROJECT);
 $gee_key = GEE_SA_KEY;
-if ((!$gee_key || !file_exists($gee_key)) && file_exists('/var/www/html/secrets/gee-service-account.json')) {
-    $gee_key = '/var/www/html/secrets/gee-service-account.json';
-}
 if ($gee_key && file_exists($gee_key)) {
     putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $gee_key);
 }

@@ -38,15 +38,50 @@ define('PYTHON_SCRIPTS_DIR', realpath(__DIR__ . '/../python'));
 
 // GEE project ID — the Google Cloud project registered with Earth Engine.
 // Found in: console.cloud.google.com → select your project → copy the Project ID.
-define('GEE_PROJECT', getenv('GEE_PROJECT') ?: 'avilight-483312-492105-492107');
+// Accept either GEE_PROJECT or GEE_PROJECT_ID (common naming on hosting providers)
+define('GEE_PROJECT', getenv('GEE_PROJECT') ?: getenv('GEE_PROJECT_ID') ?: 'avilight-483312-492105-492107');
 
-// Absolute path to the GEE service-account JSON key file on THIS machine.
-// Steps to get this file:
-//   1. Go to console.cloud.google.com → IAM & Admin → Service Accounts
-//   2. Click your service account → Keys tab → Add Key → Create new key → JSON
-//   3. Save the downloaded file to a safe path (outside the web root)
-//   4. Paste the full path below, e.g.: C:\xampp\gee-keys\avilight-key.json
-define('GEE_SA_KEY', getenv('GOOGLE_APPLICATION_CREDENTIALS') ?: 'C:\\xampp\\gee-keys\\avilight-key.json');
+/**
+ * Resolve GEE service-account credentials path with env-first priority.
+ * Supports both path vars and raw JSON vars.
+ *
+ * Priority order:
+ *  1) GOOGLE_APPLICATION_CREDENTIALS (path)
+ *  2) GEE_SA_KEY (path)
+ *  3) GEE_SA_KEY_JSON / GOOGLE_CREDENTIALS_JSON (raw JSON)
+ *  4) legacy local dev default path
+ *
+ * @return array{0:string,1:string} [resolvedPath, source]
+ */
+function resolve_gee_sa_key_with_source(): array {
+    $pathFromGoogle = trim((string)(getenv('GOOGLE_APPLICATION_CREDENTIALS') ?: ''));
+    if ($pathFromGoogle !== '') {
+        return [$pathFromGoogle, 'GOOGLE_APPLICATION_CREDENTIALS'];
+    }
+
+    $pathFromGee = trim((string)(getenv('GEE_SA_KEY') ?: ''));
+    if ($pathFromGee !== '') {
+        return [$pathFromGee, 'GEE_SA_KEY'];
+    }
+
+    $rawJson = trim((string)(getenv('GEE_SA_KEY_JSON') ?: getenv('GOOGLE_CREDENTIALS_JSON') ?: ''));
+    if ($rawJson !== '') {
+        $decoded = json_decode($rawJson, true);
+        if (is_array($decoded)) {
+            $tmp = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'gee-service-account.json';
+            @file_put_contents($tmp, $rawJson);
+            @chmod($tmp, 0600);
+            return [$tmp, 'GEE_SA_KEY_JSON'];
+        }
+    }
+
+    return ['C:\\xampp\\gee-keys\\avilight-key.json', 'default'];
+}
+
+[$_gee_sa_key, $_gee_sa_key_source] = resolve_gee_sa_key_with_source();
+define('GEE_SA_KEY', $_gee_sa_key);
+define('GEE_SA_KEY_SOURCE', $_gee_sa_key_source);
+unset($_gee_sa_key, $_gee_sa_key_source);
 
 /**
  * Send a JSON POST request to the Python backend and return the decoded response.
