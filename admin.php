@@ -1091,7 +1091,10 @@ function fetchCovariate(btn, source, label) {
                 if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
                 showToast(`${label} Complete`, lines, result.errors?.length ? 'warning' : 'success');
             } else {
-                showToast(`${label} Fetch Failed`, [describeApiError(result, 'Unexpected error.')], 'danger');
+                const lines = [describeApiError(result, 'Unexpected error.')];
+                if (result.remaining_count > 0) lines.push(`${result.remaining_count} period(s) still remaining — click Fetch again to continue.`);
+                if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
+                showToast(`${label} Fetch Failed`, lines, 'danger');
             }
         })
         .catch(err => {
