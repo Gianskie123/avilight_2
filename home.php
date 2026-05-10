@@ -20,6 +20,9 @@ $total_species = 0;
 
 function loadHomeThresholdConfig(): array {
     $defaults = [
+        'high_risk'           => 60.0,
+        'mod_risk'            => 40.0,
+        'low_risk'            => 25.0,
         'kba_richness_weight' => 15.0,
         'kba_sensitive_weight' => 15.0,
         'kba_ndvi_weight' => 15.0,
@@ -88,13 +91,13 @@ function homeComputeReportsStatus(array $row, array $weights): string {
 }
 
 // Load KBA/PA monitoring rows directly from the same audit table used by Reports.
+$weights = loadHomeThresholdConfig();
 $kba_data = [];
 $db_failed = false;
 $avg_radiance = 0.0;
 $avg_radiance_year = null;
 try {
     $mysql  = get_mysql_db();
-    $weights = loadHomeThresholdConfig();
 
     // Match Species tab total source.
     $total_species = (int) $mysql->query('SELECT COUNT(*) FROM species_masterlist')->fetchColumn();
@@ -185,15 +188,15 @@ try {
     $avg_radiance = $metro_count > 0 ? round($metro_manila_light / $metro_count, 1) : 0.0;
 }
 
-// --- Current Light Risk Level (latest year from ecological_yearly_summary) ---
+// --- Current Light Risk Level — driven by configured thresholds, not hardcoded values ---
 $risk_label   = 'Low';
 $risk_class   = 'success';
 $risk_icon    = '🟢';
-if ($avg_radiance > 40) {
+if ($avg_radiance >= $weights['high_risk']) {
     $risk_label = 'High';
     $risk_class = 'danger';
     $risk_icon  = '🔴';
-} elseif ($avg_radiance > 30) {
+} elseif ($avg_radiance >= $weights['mod_risk']) {
     $risk_label = 'Medium';
     $risk_class = 'warning';
     $risk_icon  = '🟡';
@@ -261,39 +264,53 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
     <div class="card home-enter home-enter-9">
         <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2025)</span></div>
         <div class="card-body">
-            <table class="home-kba-table">
+            <table class="home-kba-table" id="kbaMonitoringTable">
                 <thead>
                     <tr>
-                        <th>Site Name</th>
+                        <th data-sort-col="name" class="kba-sortable kba-sort-asc" title="Sort by site name">Site Name <span class="kba-sort-icon" aria-hidden="true">↑</span></th>
                         <th>Type</th>
-                        <th>Species</th>
-                        <th>Light Exposure</th>
+                        <th data-sort-col="species" class="kba-sortable" title="Sort by species count">Species <span class="kba-sort-icon" aria-hidden="true"></span></th>
+                        <th data-sort-col="light" class="kba-sortable" title="Sort by light exposure">Light Exposure <span class="kba-sort-icon" aria-hidden="true"></span></th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($kba_data as $area): ?>
-                    <tr>
+                    <?php foreach ($kba_data as $area):
+                        $le_raw       = $area['light_exposure'];
+                        $species_raw  = $area['species_count'];
+                        $status_text  = $area['status'];
+                        $status_class = match($status_text) {
+                            'Good'     => 'success',
+                            'Critical' => 'danger',
+                            'At Risk'  => 'warning',
+                            default    => 'info',
+                        };
+                    ?>
+                    <tr data-val-name="<?php echo htmlspecialchars(mb_strtolower($area['name'])); ?>"
+                        data-val-species="<?php echo $species_raw !== null ? (int) $species_raw : ''; ?>"
+                        data-val-light="<?php echo $le_raw !== null ? (float) $le_raw : ''; ?>">
                         <td><?php echo htmlspecialchars($area['name']); ?></td>
                         <td>
                             <span class="badge badge-<?php echo $area['type'] === 'KBA' ? 'info' : 'success'; ?>">
                                 <?php echo htmlspecialchars($area['type']); ?>
                             </span>
                         </td>
-                        <td><?php echo $area['species_count'] !== null ? (int) $area['species_count'] : '—'; ?></td>
+                        <td><?php echo $species_raw !== null ? (int) $species_raw : '—'; ?></td>
                         <td>
-                            <?php if ($area['light_exposure'] !== null):
-                                $le       = $area['light_exposure'];
-                                $le_class = $le > 40 ? 'danger' : ($le > 30 ? 'warning' : 'success');
+                            <?php if ($le_raw !== null):
+                                $le       = (float) $le_raw;
+                                $le_class = $le >= $weights['high_risk'] ? 'danger' : ($le >= $weights['mod_risk'] ? 'warning' : 'success');
                             ?>
                             <span class="badge badge-<?php echo $le_class; ?>">
-                                <?php echo number_format((float) $le, 1); ?> nW
+                                <?php echo number_format($le, 1); ?> nW
                             </span>
                             <?php else: ?>
                             <span class="badge badge-secondary">—</span>
                             <?php endif; ?>
                         </td>
-                        <td><?php echo htmlspecialchars($area['status']); ?></td>
+                        <td>
+                            <span class="badge badge-<?php echo $status_class; ?>"><?php echo htmlspecialchars($status_text); ?></span>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -465,9 +482,77 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
 
 <?php
 $extra_scripts = <<<SCRIPTS
+<style>
+.kba-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.kba-sortable:hover { opacity: 0.8; }
+.kba-sort-icon { display: inline-block; margin-left: 4px; font-size: 0.75em; opacity: 0.5; }
+.kba-sort-asc .kba-sort-icon  { opacity: 1; }
+.kba-sort-desc .kba-sort-icon { opacity: 1; }
+</style>
 <script>
 (function () {
     document.documentElement.classList.add('home-entry-ready');
+
+    // ── KBA/PA table sort ──────────────────────────────────────────────────
+    var kbaTable = document.getElementById('kbaMonitoringTable');
+    if (kbaTable) {
+        var tbody = kbaTable.querySelector('tbody');
+        var headers = kbaTable.querySelectorAll('th[data-sort-col]');
+        var currentSort = { col: 'name', dir: 'asc' };
+
+        function getVal(row, col) {
+            return row.getAttribute('data-val-' + col) || '';
+        }
+
+        function doSort(col) {
+            var dir = currentSort.col === col
+                ? (currentSort.dir === 'asc' ? 'desc' : 'asc')
+                : 'asc';
+            currentSort = { col: col, dir: dir };
+
+            var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+            rows.sort(function (a, b) {
+                var av = getVal(a, col);
+                var bv = getVal(b, col);
+                var na = parseFloat(av);
+                var nb = parseFloat(bv);
+                var isNum = av !== '' && bv !== '' && !isNaN(na) && !isNaN(nb);
+                var cmp;
+                if (isNum) {
+                    cmp = na - nb;
+                } else if (av === '' && bv !== '') {
+                    cmp = 1;
+                } else if (av !== '' && bv === '') {
+                    cmp = -1;
+                } else {
+                    cmp = av.localeCompare(bv);
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            rows.forEach(function (r) { tbody.appendChild(r); });
+            updateIndicators();
+        }
+
+        function updateIndicators() {
+            headers.forEach(function (th) {
+                th.classList.remove('kba-sort-asc', 'kba-sort-desc');
+                var icon = th.querySelector('.kba-sort-icon');
+                if (th.getAttribute('data-sort-col') === currentSort.col) {
+                    th.classList.add('kba-sort-' + currentSort.dir);
+                    if (icon) { icon.textContent = currentSort.dir === 'asc' ? '↑' : '↓'; }
+                } else {
+                    if (icon) { icon.textContent = ''; }
+                }
+            });
+        }
+
+        headers.forEach(function (th) {
+            th.addEventListener('click', function () {
+                doSort(th.getAttribute('data-sort-col'));
+            });
+        });
+    }
+    // ── End KBA/PA table sort ──────────────────────────────────────────────
 
     var feedEl = document.getElementById('bmbAnnouncementsFeed');
     if (!feedEl) return;
