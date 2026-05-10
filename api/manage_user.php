@@ -31,7 +31,7 @@ try {
     $pdo = get_mysql_db();
 
     // Fetch target user
-    $target = $pdo->prepare('SELECT user_id, email, is_active FROM users WHERE user_id = :id LIMIT 1');
+    $target = $pdo->prepare('SELECT user_id, email, full_name, user_type, is_active FROM users WHERE user_id = :id LIMIT 1');
     $target->execute([':id' => $user_id]);
     $user = $target->fetch(PDO::FETCH_ASSOC);
 
@@ -66,6 +66,59 @@ try {
                 ->execute([':hash' => password_hash($new_password, PASSWORD_BCRYPT), ':id' => $user_id]);
             _log($pdo, 'change_password: ' . $user['email']);
             echo json_encode(['success' => true, 'message' => 'Password updated successfully.']);
+            break;
+
+        case 'edit':
+            $new_name  = trim($_POST['full_name']  ?? '');
+            $new_email = trim($_POST['email']      ?? '');
+            $new_type  = $_POST['user_type']       ?? '';
+            $new_pass  = $_POST['new_password']    ?? '';
+
+            if ($new_name === '') {
+                echo json_encode(['success' => false, 'error' => 'Full name is required.']);
+                exit;
+            }
+            if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+                echo json_encode(['success' => false, 'error' => 'Invalid email address.']);
+                exit;
+            }
+            if (!in_array($new_type, ['EMS', 'IT_admin'], true)) {
+                echo json_encode(['success' => false, 'error' => 'Invalid user type.']);
+                exit;
+            }
+
+            // Check email uniqueness if changed
+            if (strtolower($new_email) !== strtolower($user['email'])) {
+                $chk = $pdo->prepare('SELECT user_id FROM users WHERE email = :e AND user_id != :id LIMIT 1');
+                $chk->execute([':e' => $new_email, ':id' => $user_id]);
+                if ($chk->fetch()) {
+                    echo json_encode(['success' => false, 'error' => 'Email is already in use by another account.']);
+                    exit;
+                }
+            }
+
+            $changes = [];
+            if ($new_name  !== $user['full_name'])  $changes[] = 'name';
+            if (strtolower($new_email) !== strtolower($user['email'])) $changes[] = 'email';
+            if ($new_type  !== $user['user_type'])  $changes[] = 'role';
+
+            if ($new_pass !== '') {
+                if (strlen($new_pass) < 8) {
+                    echo json_encode(['success' => false, 'error' => 'Password must be at least 8 characters.']);
+                    exit;
+                }
+                $pdo->prepare('UPDATE users SET full_name = :n, email = :e, user_type = :t, password_hash = :h WHERE user_id = :id')
+                    ->execute([':n' => $new_name, ':e' => $new_email, ':t' => $new_type,
+                               ':h' => password_hash($new_pass, PASSWORD_BCRYPT), ':id' => $user_id]);
+                $changes[] = 'password';
+            } else {
+                $pdo->prepare('UPDATE users SET full_name = :n, email = :e, user_type = :t WHERE user_id = :id')
+                    ->execute([':n' => $new_name, ':e' => $new_email, ':t' => $new_type, ':id' => $user_id]);
+            }
+
+            $detail = implode(', ', $changes) ?: 'no-field-change';
+            _log($pdo, 'edit_user: ' . $user['email'] . ' [' . $detail . ']');
+            echo json_encode(['success' => true, 'message' => 'Account updated successfully.']);
             break;
 
         case 'delete':

@@ -122,6 +122,55 @@ require_once 'includes/header.php';
     </div>
 </div>
 
+<!-- Edit User Modal -->
+<div id="editUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;overflow-y:auto;backdrop-filter:blur(2px);">
+    <div style="max-width:480px;margin:100px auto 40px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.25);overflow:hidden;">
+        <div style="padding:6px 20px 0;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;align-items:center;gap:12px;padding:16px 4px;">
+                <div style="width:38px;height:38px;border-radius:50%;background:rgba(37,99,235,0.12);color:#2563eb;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:.95rem;color:var(--text-primary);">Edit Account</div>
+                    <div id="editUserModalSubtitle" style="font-size:.78rem;color:var(--text-muted);margin-top:2px;"></div>
+                </div>
+            </div>
+        </div>
+        <div style="padding:20px 24px 24px;">
+            <div style="display:flex;flex-direction:column;gap:14px;">
+                <div>
+                    <label class="form-label">Full Name</label>
+                    <input type="text" id="editUserFullName" class="form-control" placeholder="Full name">
+                </div>
+                <div>
+                    <label class="form-label">Email</label>
+                    <input type="email" id="editUserEmail" class="form-control" placeholder="Email address">
+                </div>
+                <div>
+                    <label class="form-label">Account Type</label>
+                    <select id="editUserType" class="form-control">
+                        <option value="EMS">EMS</option>
+                        <option value="IT_admin">IT Admin</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">New Password <small style="color:var(--text-muted);font-weight:400;">(leave blank to keep current)</small></label>
+                    <input type="password" id="editUserPassword" class="form-control" placeholder="Min. 8 characters" autocomplete="new-password">
+                </div>
+            </div>
+            <div id="editUserModalErr" style="color:#dc2626;font-size:.83rem;margin-top:10px;min-height:1.2em;"></div>
+            <div style="display:flex;gap:10px;margin-top:16px;">
+                <button id="editUserSaveBtn" onclick="submitEditUser()"
+                    style="flex:1;padding:10px;border-radius:7px;border:none;cursor:pointer;font-size:.9rem;font-weight:600;color:#fff;background:#2563eb;transition:opacity .15s;"
+                    onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">Save Changes</button>
+                <button onclick="closeEditUserModal()"
+                    style="flex:1;padding:10px;border-radius:7px;border:1px solid var(--border-color);cursor:pointer;font-size:.9rem;background:var(--bg-card);color:var(--text-secondary);transition:background .15s;"
+                    onmouseover="this.style.background='var(--bg-card-alt)'" onmouseout="this.style.background='var(--bg-card)'">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="page-header">
     <h1 class="page-title">Admin & Staff Controls</h1>
     <p class="page-subtitle">Data management, model configuration, and system monitoring</p>
@@ -438,12 +487,11 @@ require_once 'includes/header.php';
                         <th>Email</th>
                         <th>Role</th>
                         <th>Status</th>
-                        <th>Last Login</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="userListBody">
-                    <tr><td colspan="6" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
+                    <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
                 </tbody>
             </table>
         </div>
@@ -494,21 +542,24 @@ require_once 'includes/header.php';
             <div>
                 <h4 style="margin-bottom:10px;">Recent Activity</h4>
                 <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;">
+                    <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">User Action</label>
                     <select id="accessLogAction" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                         <option value="">All Actions</option>
                         <option value="login">Login</option>
                         <option value="logout">Logout</option>
                         <option value="add_user">Add User</option>
+                        <option value="edit_user">Edit User</option>
                         <option value="activate_user">Activate User</option>
                         <option value="deactivate_user">Deactivate User</option>
-                        <option value="reset_password">Change Password</option>
+                        <option value="change_password">Change Password</option>
                         <option value="delete_user">Delete User</option>
                     </select>
-                    <input type="date" id="accessLogFrom" title="From date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
-                    <span style="font-size:0.8rem;color:#94a3b8;">–</span>
-                    <input type="date" id="accessLogTo" title="To date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;margin-left:4px;">Start Date</label>
+                    <input type="date" id="accessLogFrom" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">End Date</label>
+                    <input type="date" id="accessLogTo" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                     <button onclick="loadAuditLog()" class="btn btn-secondary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
-                    <button onclick="clearAuditFilters()" style="background:none;border:none;color:#94a3b8;font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
+                    <button onclick="clearAuditFilters()" style="background:none;border:none;color:var(--text-secondary);font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
@@ -532,11 +583,12 @@ require_once 'includes/header.php';
             <div>
                 <h4 style="margin-bottom:10px;">Failed Login Attempts</h4>
                 <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;">
-                    <input type="date" id="failLogFrom" title="From date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
-                    <span style="font-size:0.8rem;color:#94a3b8;">–</span>
-                    <input type="date" id="failLogTo" title="To date" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">Start Date</label>
+                    <input type="date" id="failLogFrom" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
+                    <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">End Date</label>
+                    <input type="date" id="failLogTo" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                     <button onclick="loadFailedAttempts()" class="btn btn-secondary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
-                    <button onclick="clearFailFilters()" style="background:none;border:none;color:#94a3b8;font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
+                    <button onclick="clearFailFilters()" style="background:none;border:none;color:var(--text-secondary);font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
@@ -696,6 +748,12 @@ function renderPager(containerId, page, totalPages, fnName) {
 const ICON_CLOUD   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>`;
 const ICON_REBUILD = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
 const ICON_SWITCH  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
+const ICON_PENCIL  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+const ICON_BLOCK   = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.582-7 8-7"/><line x1="17" y1="14" x2="23" y2="20"/><line x1="23" y1="14" x2="17" y2="20"/></svg>`;
+const ICON_PERSON_OK = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M2 20c0-4 3.582-7 8-7"/><polyline points="16 18 18 20 22 16"/></svg>`;
+const ICON_TRASH   = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+
+const _userCache = new Map();
 
 // ── Confirmation modal (replaces native confirm()) ────────────────────────────
 
@@ -1345,29 +1403,20 @@ async function buildMasterGrid(btn) {
 
     btn.disabled    = false;
     btn.textContent = 'Rebuild Analysis Data';
-
-    const logLines = (result.log || []).map(l => {
-        try { const p = JSON.parse(l); return p.msg || l; } catch { return l; }
-    });
-
-    const logHtml = logLines.length
-        ? `<pre style="max-height:200px;overflow-y:auto;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#e2e8f0);padding:8px;font-size:12px;border-radius:4px;margin-top:8px;border:1px solid var(--border-color,#334155);">${logLines.map(l => {
-            const esc = l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            if (/error|fail|✗/i.test(l)) return `<span style="color:#f87171;">${esc}</span>`;
-            if (/success|complete|✓/i.test(l)) return `<span style="color:#4ade80;">${esc}</span>`;
-            if (/warning|warn/i.test(l)) return `<span style="color:#fbbf24;">${esc}</span>`;
-            return `<span style="color:var(--text-secondary,#94a3b8);">${esc}</span>`;
-        }).join('\n')}</pre>`
-        : '';
+    statusEl.innerHTML = '';
 
     if (result.success) {
+        const logLines = (result.log || []).map(l => {
+            try { const p = JSON.parse(l); return p.msg || l; } catch { return l; }
+        });
         const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
-        statusEl.innerHTML = `<span style="color:#4ade80;">✓ ${lastMsg}</span>${logHtml}`;
-        showToast('Analysis Data Rebuilt', ['Dataset rebuilt successfully. Dashboards and Reports will use the updated data on next load.'], 'success');
+        showToast('Analysis Data Rebuilt', [
+            'Dataset rebuilt successfully.',
+            lastMsg
+        ], 'success');
         loadSpatialChecks();
     } else {
         const errMsg = result.error || 'Did not complete successfully.';
-        statusEl.innerHTML = `<span style="color:#f87171;">✗ ${errMsg}</span>${logHtml}`;
         showToast('Rebuild Failed', [errMsg], 'danger');
     }
 }
@@ -1467,6 +1516,10 @@ function updateKbaWeightTotal() {
 
 // ── User Management ───────────────────────────────────────────────────────────
 
+const _iconBtn = (title, svg, onclick, extraStyle = '') =>
+    `<button title="${title}" onclick="${onclick}" style="background:none;border:1px solid var(--border-color);border-radius:6px;padding:5px;cursor:pointer;color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s;${extraStyle}"
+        onmouseover="this.style.background='var(--bg-card-alt)'" onmouseout="this.style.background='none'">${svg}</button>`;
+
 function loadUserList() {
     fetch('api/list_users.php')
         .then(r => r.json())
@@ -1474,31 +1527,31 @@ function loadUserList() {
             const tbody = document.getElementById('userListBody');
             if (!tbody || !data.success) return;
             if (!data.users.length) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:16px;">No accounts found.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">No accounts found.</td></tr>';
                 return;
             }
+            _userCache.clear();
             tbody.innerHTML = data.users.map(u => {
-                const lastLogin  = u.last_login_at ? formatUtcToManila(u.last_login_at) : 'Never';
+                _userCache.set(u.user_id, u);
                 const isActive   = u.is_active == 1;
                 const statusBadge = isActive
                     ? `<span class="badge badge-success">Active</span>`
                     : `<span class="badge badge-secondary">Inactive</span>`;
                 const typeBadge  = u.user_type === 'IT_admin'
-                    ? `<span class="badge badge-info">IT Admin</span>`
+                    ? `<span class="badge badge-secondary">IT Admin</span>`
                     : `<span class="badge badge-secondary">EMS</span>`;
-                const toggleBtn  = isActive
-                    ? `<button class="btn btn-secondary" style="padding:3px 8px;font-size:0.8rem;" onclick="manageUser(${u.user_id},'deactivate')">Deactivate</button>`
-                    : `<button class="btn btn-primary"   style="padding:3px 8px;font-size:0.8rem;" onclick="manageUser(${u.user_id},'activate')">Activate</button>`;
+                const toggleBtn = isActive
+                    ? _iconBtn('Deactivate', ICON_BLOCK,     `manageUser(${u.user_id},'deactivate')`)
+                    : _iconBtn('Activate',   ICON_PERSON_OK, `manageUser(${u.user_id},'activate')`);
+                const editBtn   = _iconBtn('Edit',           ICON_PENCIL, `showEditUserModal(${u.user_id})`);
+                const deleteBtn = _iconBtn('Delete',         ICON_TRASH,  `manageUser(${u.user_id},'delete')`, 'color:#dc2626;');
                 return `<tr>
                     <td>${u.full_name ? escHtml(u.full_name) : '—'}</td>
                     <td style="font-size:0.82rem;">${escHtml(u.email)}</td>
                     <td>${typeBadge}</td>
                     <td>${statusBadge}</td>
-                    <td style="color:#666;font-size:0.82rem;">${lastLogin}</td>
-                    <td style="white-space:nowrap;">
-                        ${toggleBtn}
-                        <button class="btn btn-secondary" style="padding:3px 8px;font-size:0.8rem;margin-left:4px;" onclick="showPasswordChangeModal(${u.user_id})">Change Password</button>
-                        <button class="btn btn-danger"    style="padding:3px 8px;font-size:0.8rem;margin-left:4px;" onclick="manageUser(${u.user_id},'delete','${escHtml(u.email)}')">Delete</button>
+                    <td style="white-space:nowrap;display:flex;gap:4px;align-items:center;">
+                        ${editBtn}${toggleBtn}${deleteBtn}
                     </td>
                 </tr>`;
             }).join('');
@@ -1510,9 +1563,22 @@ function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function manageUser(userId, action, label) {
-    const statusEl = document.getElementById('manageUserStatus');
-    if (action === 'delete' && !confirm(`Delete account "${label}"? This cannot be undone.`)) return;
+async function manageUser(userId, action) {
+    if (action === 'delete') {
+        const u = _userCache.get(userId);
+        const label = u ? escHtml(u.email) : `#${userId}`;
+        const confirmed = await showConfirmModal({
+            title: 'Delete Account',
+            subtitle: label,
+            iconSvg: ICON_TRASH,
+            iconBg: 'rgba(220,38,38,0.12)',
+            iconColor: '#dc2626',
+            body: `<p style="margin:0 0 8px;">Permanently delete this account?</p><p style="margin:0;font-size:.82rem;color:var(--text-muted);">This action cannot be undone. All associated session data will be removed.</p>`,
+            confirmText: 'Delete Account',
+            confirmBg: '#dc2626',
+        });
+        if (!confirmed) return;
+    }
 
     const body = new FormData();
     body.append('user_id', userId);
@@ -1522,79 +1588,86 @@ function manageUser(userId, action, label) {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                let msg = data.message || 'Done.';
-                if (action === 'reset_password' && data.temp_password) {
-                    msg += `<br><strong>Temporary password:</strong> <code style="font-size:1em;">${escHtml(data.temp_password)}</code><br><small>Share this with the user and ask them to change it on first login.</small>`;
-                }
-                statusEl.innerHTML = `<div class="alert alert-success">${msg}</div>`;
+                showToast('Done', [data.message || 'Action completed.'], 'success');
                 loadUserList();
             } else {
-                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Action failed.'}</div>`;
+                showToast('Action Failed', [data.error || 'Could not complete this action.'], 'danger');
             }
         })
-        .catch(() => {
-            statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
-        });
+        .catch(() => showToast('Request Failed', ['Check server connection and try again.'], 'danger'));
 }
 
-function showPasswordChangeModal(userId) {
-    document.getElementById('pwChangeModal')?.remove();
-    const overlay = document.createElement('div');
-    overlay.id = 'pwChangeModal';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
-    overlay.innerHTML = `
-        <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border-color,#334155);border-radius:12px;padding:28px 24px;width:360px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
-            <h4 style="margin:0 0 18px;font-size:1rem;">Change Password</h4>
-            <div style="margin-bottom:12px;">
-                <label class="form-label">New Password</label>
-                <input type="password" id="pwNew" class="form-control" placeholder="Minimum 8 characters" autocomplete="new-password">
-            </div>
-            <div style="margin-bottom:16px;">
-                <label class="form-label">Confirm Password</label>
-                <input type="password" id="pwConfirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password">
-            </div>
-            <div id="pwModalErr" style="color:#f87171;font-size:0.85rem;margin-bottom:10px;min-height:1.2em;"></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end;">
-                <button onclick="document.getElementById('pwChangeModal').remove()" class="btn btn-secondary">Cancel</button>
-                <button onclick="submitPasswordChange(${userId})" class="btn btn-primary">Update Password</button>
-            </div>
-        </div>`;
-    document.body.appendChild(overlay);
-    // Close on backdrop click
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    document.getElementById('pwNew').focus();
+let _editingUserId = null;
+
+function showEditUserModal(userId) {
+    const u = _userCache.get(userId);
+    if (!u) return;
+    _editingUserId = userId;
+
+    document.getElementById('editUserModalSubtitle').textContent = u.email || '';
+    document.getElementById('editUserFullName').value   = u.full_name  || '';
+    document.getElementById('editUserEmail').value      = u.email      || '';
+    document.getElementById('editUserType').value       = u.user_type  || 'EMS';
+    document.getElementById('editUserPassword').value   = '';
+    document.getElementById('editUserModalErr').textContent = '';
+
+    document.getElementById('editUserModal').style.display = 'block';
+    document.getElementById('editUserFullName').focus();
 }
 
-function submitPasswordChange(userId) {
-    const pw  = document.getElementById('pwNew')?.value    || '';
-    const pw2 = document.getElementById('pwConfirm')?.value || '';
-    const err = document.getElementById('pwModalErr');
+function closeEditUserModal() {
+    document.getElementById('editUserModal').style.display = 'none';
+    _editingUserId = null;
+}
 
-    if (pw.length < 8) { err.textContent = 'Password must be at least 8 characters.'; return; }
-    if (pw !== pw2)    { err.textContent = 'Passwords do not match.'; return; }
+function submitEditUser() {
+    const err     = document.getElementById('editUserModalErr');
+    const saveBtn = document.getElementById('editUserSaveBtn');
+    const name    = document.getElementById('editUserFullName').value.trim();
+    const email   = document.getElementById('editUserEmail').value.trim();
+    const type    = document.getElementById('editUserType').value;
+    const pass    = document.getElementById('editUserPassword').value;
+
     err.textContent = '';
 
+    if (!name)  { err.textContent = 'Full name is required.'; return; }
+    if (!email) { err.textContent = 'Email is required.'; return; }
+    if (pass && pass.length < 8) { err.textContent = 'New password must be at least 8 characters.'; return; }
+
+    saveBtn.disabled    = true;
+    saveBtn.textContent = 'Saving…';
+
     const body = new FormData();
-    body.append('user_id',      userId);
-    body.append('action',       'change_password');
-    body.append('new_password', pw);
+    body.append('user_id',   _editingUserId);
+    body.append('action',    'edit');
+    body.append('full_name', name);
+    body.append('email',     email);
+    body.append('user_type', type);
+    if (pass) body.append('new_password', pass);
 
     fetch('api/manage_user.php', { method: 'POST', body })
         .then(r => r.json())
         .then(data => {
-            document.getElementById('pwChangeModal')?.remove();
-            const statusEl = document.getElementById('manageUserStatus');
+            saveBtn.disabled    = false;
+            saveBtn.textContent = 'Save Changes';
             if (data.success) {
-                statusEl.innerHTML = `<div class="alert alert-success">${escHtml(data.message)}</div>`;
+                closeEditUserModal();
+                showToast('Account Updated', [data.message || 'Changes saved successfully.'], 'success');
+                loadUserList();
             } else {
-                statusEl.innerHTML = `<div class="alert alert-danger">${escHtml(data.error || 'Failed to update password.')}</div>`;
+                err.textContent = data.error || 'Could not save changes.';
             }
         })
         .catch(() => {
-            document.getElementById('pwChangeModal')?.remove();
-            document.getElementById('manageUserStatus').innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
+            saveBtn.disabled    = false;
+            saveBtn.textContent = 'Save Changes';
+            err.textContent = 'Request failed. Check server connection.';
         });
 }
+
+document.getElementById('editUserModal')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('editUserModal')) closeEditUserModal();
+});
 
 document.getElementById('addUserForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
