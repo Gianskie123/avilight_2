@@ -96,6 +96,14 @@ $kba_data = [];
 $db_failed = false;
 $avg_radiance = 0.0;
 $avg_radiance_year = null;
+$total_critical      = 0;
+$total_atrisk        = 0;
+$kba_critical_count  = 0;
+$kba_atrisk_count    = 0;
+$pa_critical_count   = 0;
+$pa_atrisk_count     = 0;
+$audit_updated_at    = null;
+$audit_snapshot_year = null;
 try {
     $mysql  = get_mysql_db();
 
@@ -118,6 +126,24 @@ try {
             'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : null,
             'status' => homeComputeReportsStatus($row, $weights),
         ];
+    }
+
+    // Audit metadata: last refresh timestamp + snapshot year (single fast aggregation).
+    $auditMetaRow = $mysql->query(
+        "SELECT MAX(updated_at) AS last_run, MAX(snapshot_year) AS snap_year FROM kba_pa_audit_live"
+    )->fetch(PDO::FETCH_ASSOC) ?: [];
+    $audit_updated_at    = $auditMetaRow['last_run']   ?? null;
+    $audit_snapshot_year = isset($auditMetaRow['snap_year']) ? (int) $auditMetaRow['snap_year'] : null;
+
+    // Status counts for the summary callout (derived from already-loaded kba_data — no extra query).
+    foreach ($kba_data as $area) {
+        if ($area['status'] === 'Critical') {
+            $total_critical++;
+            ($area['type'] === 'KBA') ? $kba_critical_count++ : $pa_critical_count++;
+        } elseif ($area['status'] === 'At Risk') {
+            $total_atrisk++;
+            ($area['type'] === 'KBA') ? $kba_atrisk_count++ : $pa_atrisk_count++;
+        }
     }
 
     // Match Reports trend source, but avoid single-city fallback: use Metro Manila average when All Areas is missing.
@@ -184,23 +210,40 @@ try {
             $metro_manila_light += $area['light_exposure'];
             $metro_count++;
         }
+        if ($area['status'] === 'Critical') {
+            $total_critical++;
+            ($area['type'] === 'KBA') ? $kba_critical_count++ : $pa_critical_count++;
+        } elseif ($area['status'] === 'At Risk') {
+            $total_atrisk++;
+            ($area['type'] === 'KBA') ? $kba_atrisk_count++ : $pa_atrisk_count++;
+        }
     }
     $avg_radiance = $metro_count > 0 ? round($metro_manila_light / $metro_count, 1) : 0.0;
 }
 
 // --- Current Light Risk Level — driven by configured thresholds, not hardcoded values ---
-$risk_label   = 'Low';
-$risk_class   = 'success';
-$risk_icon    = '🟢';
+$risk_label = 'Low';
+$risk_class = 'success';
 if ($avg_radiance >= $weights['high_risk']) {
     $risk_label = 'High';
     $risk_class = 'danger';
-    $risk_icon  = '🔴';
 } elseif ($avg_radiance >= $weights['mod_risk']) {
     $risk_label = 'Medium';
     $risk_class = 'warning';
-    $risk_icon  = '🟡';
 }
+
+// SVG status dot — consistent rendering across all OS/browsers (no emoji variance).
+$risk_svg_colors = ['success' => '#22c55e', 'warning' => '#eab308', 'danger' => '#ef4444'];
+$risk_svg_color  = $risk_svg_colors[$risk_class] ?? '#94a3b8';
+
+// Gauge: scale 0–100% against high_risk * 1.5 so there is visual room above the red zone.
+$gauge_max_nw = max(1.0, $weights['high_risk'] * 1.5);
+$gauge_pct    = (int) min(100, round($avg_radiance / $gauge_max_nw * 100));
+$gauge_color  = $risk_svg_color;
+
+// Threshold marker positions on the gauge track.
+$gauge_mod_pct  = (int) min(99, round($weights['mod_risk']  / $gauge_max_nw * 100));
+$gauge_high_pct = (int) min(99, round($weights['high_risk'] / $gauge_max_nw * 100));
 
 // --- DENR-BMB Announcements (live feed from faps.bmb.gov.ph) ---
 require_once 'includes/fetch_bmb_announcements.php';
@@ -213,9 +256,16 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
     <p class="page-subtitle">Overview of AVILIGHT monitoring status for Metro Manila using live database records.</p>
 </div>
 
-<div class="alert alert-info home-enter home-enter-2" role="status">
-    📅 <strong>Dataset Period: 2014 – 2025</strong> | <strong>Monitoring Status: 2014 – 2025</strong> —
-    Metrics and site analyses are loaded from the database and aligned with the latest Reports KBA/PA audit table.
+<div class="home-meta-bar home-enter home-enter-2">
+    <span class="home-meta-chip">📅 Records: 2014 – <?php echo $avg_radiance_year ? (int)$avg_radiance_year : '2025'; ?></span>
+    <span class="home-meta-sep">·</span>
+    <span class="home-meta-chip">📡 Radiance: VIIRS</span>
+    <span class="home-meta-sep">·</span>
+    <span class="home-meta-chip">🌿 Biodiversity: DENR-BMB / eBird</span>
+    <?php if (!$db_failed && $audit_updated_at): ?>
+    <span class="home-meta-sep">·</span>
+    <span class="home-meta-chip">🔄 KBA audit: <?php echo htmlspecialchars(date('M j, Y', strtotime($audit_updated_at))); ?></span>
+    <?php endif; ?>
 </div>
 
 <?php if ($db_failed): ?>
@@ -225,36 +275,74 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
 <?php endif; ?>
 
 <!-- Top stat cards -->
+<?php
+$kba_count = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'KBA')) : 0;
+$pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'PA'))  : 0;
+?>
 <div class="stats-grid home-stats-grid home-enter home-enter-3">
+
     <!-- Total Species -->
     <div class="stat-card home-enter home-enter-4">
         <div class="stat-label">Total Species Tracked</div>
         <div class="stat-value"><?php echo $total_species; ?></div>
-        <div class="stat-description">Unique bird species in the current database</div>
+        <div class="stat-description">Unique bird species in the database</div>
     </div>
 
-    <!-- Light Risk Level -->
-    <div class="stat-card <?php echo $risk_class; ?> home-enter home-enter-5">
+    <!-- Light Risk Level — most prominent card; includes a radiance gauge -->
+    <div class="stat-card <?php echo $risk_class; ?> home-enter home-enter-5" style="position:relative;">
         <div class="stat-label">Current Light Risk Level</div>
-        <div class="stat-value"><?php echo $risk_icon . ' ' . $risk_label; ?></div>
-        <div class="stat-description">
-            Metro Manila avg. VIIRS radiance<?php echo $avg_radiance_year ? ' (' . (int) $avg_radiance_year . ')' : ''; ?>: <strong><?php echo number_format((float) $avg_radiance, 1); ?> nW/cm²/sr</strong>
+        <div class="stat-value" style="display:flex;align-items:center;gap:10px;">
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style="flex-shrink:0;margin-top:2px;">
+                <circle cx="9" cy="9" r="9" fill="<?php echo $risk_svg_color; ?>" opacity="0.25"/>
+                <circle cx="9" cy="9" r="5.5" fill="<?php echo $risk_svg_color; ?>"/>
+            </svg>
+            <?php echo htmlspecialchars($risk_label); ?>
+        </div>
+        <div class="stat-description" style="margin-bottom:10px;">
+            Metro Manila avg. VIIRS<?php echo $avg_radiance_year ? ' (' . (int)$avg_radiance_year . ')' : ''; ?>:
+            <strong><?php echo number_format((float)$avg_radiance, 1); ?> nW/cm²/sr</strong>
+        </div>
+        <!-- Radiance gauge bar -->
+        <div class="risk-gauge-track" title="<?php echo number_format((float)$avg_radiance,1); ?> nW / <?php echo number_format($gauge_max_nw,1); ?> nW max scale">
+            <div class="risk-gauge-fill" style="width:<?php echo $gauge_pct; ?>%;background:<?php echo $gauge_color; ?>;"></div>
+            <div class="risk-gauge-marker" style="left:<?php echo $gauge_mod_pct; ?>%;" title="Moderate threshold: <?php echo number_format($weights['mod_risk'],0); ?> nW"></div>
+            <div class="risk-gauge-marker risk-gauge-marker-high" style="left:<?php echo $gauge_high_pct; ?>%;" title="High threshold: <?php echo number_format($weights['high_risk'],0); ?> nW"></div>
+        </div>
+        <div class="risk-gauge-labels">
+            <span>0</span>
+            <span><?php echo number_format($weights['mod_risk'],0); ?> nW</span>
+            <span><?php echo number_format($weights['high_risk'],0); ?> nW</span>
         </div>
     </div>
 
-    <!-- KBA count -->
+    <!-- KBAs Monitored -->
     <div class="stat-card info home-enter home-enter-6">
         <div class="stat-label">KBAs Monitored</div>
-        <div class="stat-value"><?php echo $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'KBA')) : 0; ?></div>
-        <div class="stat-description">Key Biodiversity Areas currently covered</div>
+        <div class="stat-value"><?php echo $kba_count; ?></div>
+        <div class="stat-description">
+            <?php if ($kba_critical_count > 0 || $kba_atrisk_count > 0): ?>
+                <span style="color:var(--accent-red,#ef4444);font-weight:600;"><?php echo $kba_critical_count; ?> Critical</span>
+                · <span style="color:var(--accent-yellow,#eab308);font-weight:600;"><?php echo $kba_atrisk_count; ?> At Risk</span>
+            <?php else: ?>
+                All sites in good standing
+            <?php endif; ?>
+        </div>
     </div>
 
-    <!-- PA count -->
+    <!-- PAs Monitored -->
     <div class="stat-card warning home-enter home-enter-7">
         <div class="stat-label">Protected Areas Monitored</div>
-        <div class="stat-value"><?php echo $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 'PA')) : 0; ?></div>
-        <div class="stat-description">Protected Areas currently covered</div>
+        <div class="stat-value"><?php echo $pa_count; ?></div>
+        <div class="stat-description">
+            <?php if ($pa_critical_count > 0 || $pa_atrisk_count > 0): ?>
+                <span style="color:var(--accent-red,#ef4444);font-weight:600;"><?php echo $pa_critical_count; ?> Critical</span>
+                · <span style="color:var(--accent-yellow,#eab308);font-weight:600;"><?php echo $pa_atrisk_count; ?> At Risk</span>
+            <?php else: ?>
+                All sites in good standing
+            <?php endif; ?>
+        </div>
     </div>
+
 </div>
 
 <!-- Two-column lower section -->
@@ -262,15 +350,55 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
 
     <!-- KBA / PA Monitoring Status -->
     <div class="card home-enter home-enter-9">
-        <div class="card-header">KBA / PA Monitoring Status <span style="font-size:0.75rem;font-weight:400;opacity:0.7;">(2025)</span></div>
+        <div class="card-header" style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <span>KBA / PA Monitoring Status
+                <?php if ($audit_snapshot_year): ?>
+                <span style="font-size:0.75rem;font-weight:400;opacity:0.65;">(<?php echo (int)$audit_snapshot_year; ?>)</span>
+                <?php endif; ?>
+            </span>
+            <?php if (!$db_failed && $audit_updated_at): ?>
+            <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted);">
+                Last audit: <?php echo htmlspecialchars(date('M j, Y', strtotime($audit_updated_at))); ?>
+            </span>
+            <?php endif; ?>
+        </div>
         <div class="card-body">
+
+            <?php
+            $needs_attention = $total_critical + $total_atrisk;
+            $total_sites     = count($kba_data);
+            ?>
+            <?php if ($needs_attention > 0): ?>
+            <div class="kba-summary-callout kba-summary-<?php echo $total_critical > 0 ? 'critical' : 'warning'; ?>">
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex-shrink:0;margin-top:1px;">
+                    <path fill="currentColor" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4zm0 7.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+                </svg>
+                <span>
+                    <?php if ($total_critical > 0): ?>
+                        <strong><?php echo $total_critical; ?> site<?php echo $total_critical > 1 ? 's' : ''; ?> Critical</strong><?php echo $total_atrisk > 0 ? ' and <strong>' . $total_atrisk . ' At Risk</strong>' : ''; ?>
+                    <?php else: ?>
+                        <strong><?php echo $total_atrisk; ?> site<?php echo $total_atrisk > 1 ? 's' : ''; ?> At Risk</strong>
+                    <?php endif; ?>
+                    — <?php echo $needs_attention; ?> of <?php echo $total_sites; ?> monitored sites require attention.
+                    <a href="reports.php#kba-audit-table" style="color:inherit;font-weight:600;white-space:nowrap;">View Report →</a>
+                </span>
+            </div>
+            <?php else: ?>
+            <div class="kba-summary-callout kba-summary-good">
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex-shrink:0;margin-top:1px;">
+                    <path fill="currentColor" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.28 5.03-4 4a.75.75 0 0 1-1.06 0l-1.5-1.5a.75.75 0 1 1 1.06-1.06l.97.97 3.47-3.47a.75.75 0 1 1 1.06 1.06z"/>
+                </svg>
+                <span>All <?php echo $total_sites; ?> monitored sites are in <strong>Moderate</strong> or <strong>Good</strong> standing.</span>
+            </div>
+            <?php endif; ?>
+
             <table class="home-kba-table" id="kbaMonitoringTable">
                 <thead>
                     <tr>
                         <th data-sort-col="name" class="kba-sortable kba-sort-asc" title="Sort by site name">Site Name <span class="kba-sort-icon" aria-hidden="true">↑</span></th>
                         <th>Type</th>
                         <th data-sort-col="species" class="kba-sortable" title="Sort by species count">Species <span class="kba-sort-icon" aria-hidden="true"></span></th>
-                        <th data-sort-col="light" class="kba-sortable" title="Sort by light exposure">Light Exposure <span class="kba-sort-icon" aria-hidden="true"></span></th>
+                        <th data-sort-col="light" class="kba-sortable" title="Sort by light exposure — avg. VIIRS ALAN in nW/cm²/sr. Higher = more artificial light at night.">Light Exposure ⓘ <span class="kba-sort-icon" aria-hidden="true"></span></th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -285,13 +413,19 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
                             'At Risk'  => 'warning',
                             default    => 'info',
                         };
+                        $row_class = match($status_text) {
+                            'Critical' => 'kba-row-critical',
+                            'At Risk'  => 'kba-row-atrisk',
+                            default    => '',
+                        };
                     ?>
-                    <tr data-val-name="<?php echo htmlspecialchars(mb_strtolower($area['name'])); ?>"
+                    <tr class="<?php echo $row_class; ?>"
+                        data-val-name="<?php echo htmlspecialchars(mb_strtolower($area['name'])); ?>"
                         data-val-species="<?php echo $species_raw !== null ? (int) $species_raw : ''; ?>"
                         data-val-light="<?php echo $le_raw !== null ? (float) $le_raw : ''; ?>">
                         <td><?php echo htmlspecialchars($area['name']); ?></td>
                         <td>
-                            <span class="badge badge-<?php echo $area['type'] === 'KBA' ? 'info' : 'success'; ?>">
+                            <span class="badge kba-type-badge kba-type-<?php echo strtolower($area['type']); ?>">
                                 <?php echo htmlspecialchars($area['type']); ?>
                             </span>
                         </td>
@@ -315,12 +449,15 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
                     <?php endforeach; ?>
                 </tbody>
             </table>
-            <p style="margin:12px 0 0;font-size:0.78rem;color:var(--text-muted);">
-                * <strong>Status</strong> is derived from the KBA/PA effectiveness score computed in the
-                <a href="reports.php#kba-audit-table" style="color:var(--accent-blue,#3b82f6);text-decoration:none;">Reports tab</a>.
-                Scoring weights (Richness, Sensitive Ratio, NDVI, ALAN, LST, Precipitation) can be adjusted in
-                <a href="admin.php#threshold-config" style="color:var(--accent-blue,#3b82f6);text-decoration:none;">Admin &rsaquo; Threshold Configuration</a>.
-            </p>
+
+            <div class="kba-table-footer">
+                <p class="kba-footnote">
+                    Status is scored from Richness, NDVI, ALAN, LST, and Precipitation weights.
+                    Adjust weights in <a href="admin.php#threshold-config">Admin › Threshold Config</a>.
+                </p>
+                <a href="reports.php#kba-audit-table" class="kba-report-link">View Full Report →</a>
+            </div>
+
         </div>
     </div>
 
@@ -483,11 +620,147 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
 <?php
 $extra_scripts = <<<SCRIPTS
 <style>
+/* ── Metadata chip bar ───────────────────────────────────────────────────── */
+.home-meta-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 4px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    padding: 8px 12px;
+    background: var(--bg-card-alt, rgba(148,163,184,0.08));
+    border-radius: 8px;
+    border: 1px solid var(--border-color, rgba(148,163,184,0.15));
+}
+.home-meta-chip { white-space: nowrap; }
+.home-meta-sep  { opacity: 0.4; }
+
+/* ── Risk gauge bar ──────────────────────────────────────────────────────── */
+.risk-gauge-track {
+    position: relative;
+    height: 6px;
+    background: var(--bg-card-alt, rgba(148,163,184,0.18));
+    border-radius: 99px;
+    overflow: visible;
+    margin-top: 4px;
+}
+.risk-gauge-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.6s ease;
+    min-width: 4px;
+}
+.risk-gauge-marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    background: var(--text-muted, rgba(100,116,139,0.5));
+    border-radius: 1px;
+    transform: translateX(-50%);
+}
+.risk-gauge-marker-high { background: rgba(239,68,68,0.55); }
+.risk-gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-top: 5px;
+    opacity: 0.75;
+}
+
+/* ── Sortable headers ────────────────────────────────────────────────────── */
 .kba-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .kba-sortable:hover { opacity: 0.8; }
 .kba-sort-icon { display: inline-block; margin-left: 4px; font-size: 0.75em; opacity: 0.5; }
-.kba-sort-asc .kba-sort-icon  { opacity: 1; }
-.kba-sort-desc .kba-sort-icon { opacity: 1; }
+.kba-sort-asc .kba-sort-icon, .kba-sort-desc .kba-sort-icon { opacity: 1; }
+
+/* ── Type badges (distinct from status badges) ───────────────────────────── */
+.kba-type-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1.5px solid transparent;
+}
+.kba-type-kba {
+    background: rgba(100,116,139,0.12);
+    color: var(--text-secondary, #64748b);
+    border-color: rgba(100,116,139,0.25);
+}
+.kba-type-pa {
+    background: rgba(139,92,246,0.12);
+    color: #7c3aed;
+    border-color: rgba(139,92,246,0.28);
+}
+[data-theme="dark"] .kba-type-kba { color: #94a3b8; border-color: rgba(148,163,184,0.3); }
+[data-theme="dark"] .kba-type-pa  { color: #a78bfa; border-color: rgba(167,139,250,0.35); }
+
+/* ── Row-level priority highlights ──────────────────────────────────────── */
+.kba-row-critical td:first-child { border-left: 3px solid var(--accent-red, #ef4444); }
+.kba-row-atrisk   td:first-child { border-left: 3px solid var(--accent-yellow, #eab308); }
+.kba-row-critical { background: rgba(239,68,68,0.035); }
+.kba-row-atrisk   { background: rgba(234,179,8,0.035); }
+
+/* ── Status summary callout ──────────────────────────────────────────────── */
+.kba-summary-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.84rem;
+    margin-bottom: 14px;
+    line-height: 1.5;
+}
+.kba-summary-critical {
+    background: rgba(239,68,68,0.08);
+    color: var(--accent-red, #dc2626);
+    border: 1px solid rgba(239,68,68,0.2);
+}
+.kba-summary-warning {
+    background: rgba(234,179,8,0.08);
+    color: var(--accent-yellow, #ca8a04);
+    border: 1px solid rgba(234,179,8,0.2);
+}
+.kba-summary-good {
+    background: rgba(34,197,94,0.07);
+    color: var(--accent-green, #16a34a);
+    border: 1px solid rgba(34,197,94,0.18);
+}
+
+/* ── Table footer (footnote + action link) ───────────────────────────────── */
+.kba-table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+.kba-footnote {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    flex: 1;
+}
+.kba-footnote a { color: var(--accent-blue, #3b82f6); text-decoration: none; }
+.kba-footnote a:hover { text-decoration: underline; }
+.kba-report-link {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent-blue, #3b82f6);
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 5px 12px;
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 6px;
+    transition: background 0.15s;
+}
+.kba-report-link:hover { background: rgba(59,130,246,0.08); }
 </style>
 <script>
 (function () {
@@ -604,7 +877,7 @@ $extra_scripts = <<<SCRIPTS
     var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timeoutId = setTimeout(function() {
         if (controller) controller.abort();
-    }, 12000);
+    }, 3000); // API now responds from cache (disk), not network — 3 s is generous
 
     fetch('api/get_bmb_announcements.php?limit=5', controller ? { signal: controller.signal } : undefined)
         .then(function(resp) {
