@@ -11,6 +11,7 @@ if (!is_logged_in()) {
     exit;
 }
 require_once __DIR__ . '/../includes/backend_config.php';
+require_once __DIR__ . '/../includes/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'error' => 'POST required']);
@@ -59,6 +60,16 @@ if ($writeOk === false) {
         'error' => 'Unable to persist threshold configuration to cache file.',
     ]);
     exit;
+}
+
+// Touch kba_pa_audit_live so the Home tab "Last Audit" timestamp reflects
+// this config change — weights drive computed statuses, so any change here
+// is effectively a re-evaluation of all sites.
+try {
+    $mysql = get_mysql_db();
+    $mysql->exec('UPDATE kba_pa_audit_live SET updated_at = NOW()');
+} catch (Throwable $e) {
+    // Non-fatal: JSON already saved; DB touch is best-effort.
 }
 
 echo json_encode([

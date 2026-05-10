@@ -7,6 +7,11 @@
  *   bmb_read_cache()            Disk-only read; never touches the network.
  *   bmb_refresh_cache()         Network fetch with exclusive lock; writes cache.
  *   _bmb_flush_and_close()      Flush HTTP response to browser so PHP can keep running.
+ *
+ * Fetch order inside bmb_refresh_cache():
+ *   1. WordPress REST API  — fast JSON, works when WP REST is enabled.
+ *   2. RSS /feed/          — standard XML, works on almost every WordPress/CMS site.
+ *   3. HTML scrape         — last resort; XPath over <article> elements.
  */
 
 if (!defined('BMB_BASE_URL'))   define('BMB_BASE_URL',   'https://faps.bmb.gov.ph/faps/');
@@ -16,10 +21,6 @@ if (!defined('BMB_CACHE_TTL'))  define('BMB_CACHE_TTL',  3600); // 1 hour
 
 // ── Public: legacy entry point ────────────────────────────────────────────────
 
-/**
- * Return announcements from cache (or network if allowed and cache is empty/stale).
- * The $allow_network = false path used by home.php server-render is always instant.
- */
 function fetch_bmb_announcements(int $limit = 5, int $cache_ttl = BMB_CACHE_TTL, bool $allow_network = true): array
 {
     $result = bmb_read_cache($limit, $cache_ttl);
@@ -79,13 +80,18 @@ function bmb_read_cache(int $limit = 5, int $cache_ttl = BMB_CACHE_TTL): array
  * Fetch fresh data from DENR-BMB and persist to cache.
  *
  * Uses a non-blocking exclusive file lock so only ONE concurrent process
- * performs the network call. All others return [] immediately and the
- * caller falls back to stale cache — no thundering herd.
+ * performs the network call (cache stampede prevention).
  *
  * @return list<array> Fresh items, or [] on failure / lock contention.
  */
 function bmb_refresh_cache(int $limit = 10): array
 {
+    // Ensure the data directory is writable before trying to create files in it.
+    $dataDir = dirname(BMB_CACHE_FILE);
+    if (!is_dir($dataDir)) {
+        @mkdir($dataDir, 0775, true);
+    }
+
     $lock = @fopen(BMB_LOCK_FILE, 'c');
     if (!$lock) {
         return [];
@@ -98,7 +104,7 @@ function bmb_refresh_cache(int $limit = 10): array
     }
 
     try {
-        // Double-check: cache may have been refreshed while we waited for the lock.
+        // Double-check: another process may have refreshed while we waited for the lock.
         $raw = @file_get_contents(BMB_CACHE_FILE);
         if ($raw !== false) {
             $cached = json_decode($raw, true);
@@ -111,8 +117,15 @@ function bmb_refresh_cache(int $limit = 10): array
             }
         }
 
-        // WordPress REST API first, HTML scrape as fallback.
+        // 1. WordPress REST API
         $items = _bmb_fetch_via_rest(BMB_BASE_URL, $limit);
+
+        // 2. RSS feed (most reliable on standard WP / CMS sites)
+        if (empty($items)) {
+            $items = _bmb_fetch_via_rss(BMB_BASE_URL, $limit);
+        }
+
+        // 3. HTML scrape last resort
         if (empty($items)) {
             $items = _bmb_fetch_via_html(BMB_BASE_URL, $limit);
         }
@@ -147,8 +160,6 @@ function _bmb_flush_and_close(): void
         return;
     }
 
-    // Generic fallback: set Content-Length so the browser knows the response
-    // is complete even after the connection is marked for close.
     ignore_user_abort(true);
     $len = ob_get_length();
     if ($len !== false) {
@@ -184,9 +195,7 @@ function _bmb_fetch_via_rest(string $base_url, int $limit): array
         $excerpt = isset($post['excerpt']['rendered'])
                     ? strip_tags(html_entity_decode($post['excerpt']['rendered'], ENT_QUOTES | ENT_HTML5, 'UTF-8'))
                     : '';
-        $date    = isset($post['date'])
-                    ? date('M j, Y', strtotime($post['date']))
-                    : '';
+        $date    = isset($post['date']) ? date('M j, Y', strtotime($post['date'])) : '';
         $link    = $post['link'] ?? $base_url;
 
         if ($title === '') {
@@ -197,6 +206,72 @@ function _bmb_fetch_via_rest(string $base_url, int $limit): array
             'date'      => $date,
             'title'     => $title,
             'summary'   => mb_strimwidth($excerpt, 0, 200, '…'),
+            'tag'       => 'News',
+            'tag_class' => 'info',
+            'link'      => $link,
+        ];
+    }
+
+    return $items;
+}
+
+// ── Internal: RSS feed fetch ─────────────────────────────────────────────────
+
+/**
+ * Parse the site's RSS feed — far more reliable than HTML scraping and works
+ * on virtually every WordPress / CMS installation even when the REST API is off.
+ */
+function _bmb_fetch_via_rss(string $base_url, int $limit): array
+{
+    $rss_url = rtrim($base_url, '/') . '/feed/';
+    $xml_str = _bmb_http_get($rss_url);
+    if ($xml_str === false) {
+        return [];
+    }
+
+    libxml_use_internal_errors(true);
+    $xml = simplexml_load_string($xml_str);
+    libxml_clear_errors();
+
+    if (!($xml instanceof SimpleXMLElement)) {
+        return [];
+    }
+
+    $channel = $xml->channel ?? null;
+    if (!($channel instanceof SimpleXMLElement)) {
+        return [];
+    }
+
+    $items = [];
+    foreach ($channel->item as $item) {
+        if (count($items) >= $limit) {
+            break;
+        }
+
+        $title = trim((string) ($item->title ?? ''));
+        $link  = trim((string) ($item->link  ?? $base_url));
+        $date  = '';
+        if (!empty($item->pubDate)) {
+            $ts   = strtotime((string) $item->pubDate);
+            $date = $ts ? date('M j, Y', $ts) : '';
+        }
+
+        $desc = '';
+        if (!empty($item->description)) {
+            $desc = mb_strimwidth(
+                trim(strip_tags(html_entity_decode((string) $item->description, ENT_QUOTES | ENT_HTML5, 'UTF-8'))),
+                0, 200, '…'
+            );
+        }
+
+        if ($title === '') {
+            continue;
+        }
+
+        $items[] = [
+            'date'      => $date,
+            'title'     => $title,
+            'summary'   => $desc,
             'tag'       => 'News',
             'tag_class' => 'info',
             'link'      => $link,
@@ -240,7 +315,9 @@ function _bmb_fetch_via_html(string $base_url, int $limit): array
         $date = $date_node ? trim($date_node->textContent) : '';
 
         $excerpt_node = $xpath->query('.//*[contains(@class,"entry-summary")]|.//*[contains(@class,"entry-content")]', $article)->item(0);
-        $excerpt = $excerpt_node ? mb_strimwidth(trim(strip_tags($excerpt_node->textContent)), 0, 200, '…') : '';
+        $excerpt = $excerpt_node
+            ? mb_strimwidth(trim(strip_tags($excerpt_node->textContent)), 0, 200, '…')
+            : '';
 
         if ($title === '') {
             continue;
@@ -270,8 +347,14 @@ function _bmb_http_get(string $url)
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT        => 8,
             CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_USERAGENT      => 'AVILIGHT/1.0 (DENR-BMB feed reader)',
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; AVILIGHT/1.0; +https://avilight.ph)',
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_ENCODING       => '',        // accept gzip/deflate
+            CURLOPT_HTTPHEADER     => [
+                'Accept: text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
+                'Accept-Language: en-US,en;q=0.5',
+                'Cache-Control: no-cache',
+            ],
         ]);
         $body = curl_exec($ch);
         $err  = curl_errno($ch);
@@ -281,7 +364,7 @@ function _bmb_http_get(string $url)
 
     $ctx = stream_context_create(['http' => [
         'timeout'       => 8,
-        'user_agent'    => 'AVILIGHT/1.0 (DENR-BMB feed reader)',
+        'user_agent'    => 'Mozilla/5.0 (compatible; AVILIGHT/1.0; +https://avilight.ph)',
         'ignore_errors' => true,
     ]]);
     $body = @file_get_contents($url, false, $ctx);

@@ -102,6 +102,8 @@ $kba_critical_count  = 0;
 $kba_atrisk_count    = 0;
 $pa_critical_count   = 0;
 $pa_atrisk_count     = 0;
+$kba_worst_status    = 'Moderate'; // tracks worst health for KBA card color
+$pa_worst_status     = 'Moderate'; // tracks worst health for PA  card color
 $audit_updated_at    = null;
 $audit_snapshot_year = null;
 try {
@@ -135,14 +137,21 @@ try {
     $audit_updated_at    = $auditMetaRow['last_run']   ?? null;
     $audit_snapshot_year = isset($auditMetaRow['snap_year']) ? (int) $auditMetaRow['snap_year'] : null;
 
-    // Status counts for the summary callout (derived from already-loaded kba_data — no extra query).
+    // Status counts + worst-per-type for card accent colors (no extra query needed).
+    $statusRank = ['Critical' => 3, 'At Risk' => 2, 'Moderate' => 1, 'Good' => 0];
     foreach ($kba_data as $area) {
-        if ($area['status'] === 'Critical') {
+        $s = $area['status'];
+        if ($s === 'Critical') {
             $total_critical++;
             ($area['type'] === 'KBA') ? $kba_critical_count++ : $pa_critical_count++;
-        } elseif ($area['status'] === 'At Risk') {
+        } elseif ($s === 'At Risk') {
             $total_atrisk++;
             ($area['type'] === 'KBA') ? $kba_atrisk_count++ : $pa_atrisk_count++;
+        }
+        if ($area['type'] === 'KBA' && ($statusRank[$s] ?? 0) > ($statusRank[$kba_worst_status] ?? 0)) {
+            $kba_worst_status = $s;
+        } elseif ($area['type'] === 'PA' && ($statusRank[$s] ?? 0) > ($statusRank[$pa_worst_status] ?? 0)) {
+            $pa_worst_status = $s;
         }
     }
 
@@ -210,12 +219,18 @@ try {
             $metro_manila_light += $area['light_exposure'];
             $metro_count++;
         }
-        if ($area['status'] === 'Critical') {
+        $s = $area['status'];
+        if ($s === 'Critical') {
             $total_critical++;
             ($area['type'] === 'KBA') ? $kba_critical_count++ : $pa_critical_count++;
-        } elseif ($area['status'] === 'At Risk') {
+        } elseif ($s === 'At Risk') {
             $total_atrisk++;
             ($area['type'] === 'KBA') ? $kba_atrisk_count++ : $pa_atrisk_count++;
+        }
+        if ($area['type'] === 'KBA' && ($statusRank[$s] ?? 0) > ($statusRank[$kba_worst_status] ?? 0)) {
+            $kba_worst_status = $s;
+        } elseif ($area['type'] === 'PA' && ($statusRank[$s] ?? 0) > ($statusRank[$pa_worst_status] ?? 0)) {
+            $pa_worst_status = $s;
         }
     }
     $avg_radiance = $metro_count > 0 ? round($metro_manila_light / $metro_count, 1) : 0.0;
@@ -245,6 +260,15 @@ $gauge_color  = $risk_svg_color;
 $gauge_mod_pct  = (int) min(99, round($weights['mod_risk']  / $gauge_max_nw * 100));
 $gauge_high_pct = (int) min(99, round($weights['high_risk'] / $gauge_max_nw * 100));
 
+// Map worst KBA/PA status to a stat-card accent class.
+function worstStatusToCardClass(string $worst): string {
+    return match($worst) {
+        'Critical' => 'danger',
+        'At Risk'  => 'warning',
+        default    => 'success',
+    };
+}
+
 // --- DENR-BMB Announcements (live feed from faps.bmb.gov.ph) ---
 require_once 'includes/fetch_bmb_announcements.php';
 $announcements = fetch_bmb_announcements(5, 3600, false);
@@ -257,15 +281,7 @@ $announcements = fetch_bmb_announcements(5, 3600, false);
 </div>
 
 <div class="home-meta-bar home-enter home-enter-2">
-    <span class="home-meta-chip">📅 Records: 2014 – <?php echo $avg_radiance_year ? (int)$avg_radiance_year : '2025'; ?></span>
-    <span class="home-meta-sep">·</span>
-    <span class="home-meta-chip">📡 Radiance: VIIRS</span>
-    <span class="home-meta-sep">·</span>
-    <span class="home-meta-chip">🌿 Biodiversity: DENR-BMB / eBird</span>
-    <?php if (!$db_failed && $audit_updated_at): ?>
-    <span class="home-meta-sep">·</span>
-    <span class="home-meta-chip">🔄 KBA audit: <?php echo htmlspecialchars(date('M j, Y', strtotime($audit_updated_at))); ?></span>
-    <?php endif; ?>
+    📅 Dataset coverage: <strong>2014 – <?php echo $avg_radiance_year ? (int)$avg_radiance_year : '2025'; ?></strong>
 </div>
 
 <?php if ($db_failed): ?>
@@ -315,28 +331,30 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
         </div>
     </div>
 
-    <!-- KBAs Monitored -->
-    <div class="stat-card info home-enter home-enter-6">
+    <!-- KBAs Monitored — accent driven by worst KBA health state -->
+    <div class="stat-card <?php echo worstStatusToCardClass($kba_worst_status); ?> home-enter home-enter-6">
         <div class="stat-label">KBAs Monitored</div>
         <div class="stat-value"><?php echo $kba_count; ?></div>
         <div class="stat-description">
             <?php if ($kba_critical_count > 0 || $kba_atrisk_count > 0): ?>
-                <span style="color:var(--accent-red,#ef4444);font-weight:600;"><?php echo $kba_critical_count; ?> Critical</span>
-                · <span style="color:var(--accent-yellow,#eab308);font-weight:600;"><?php echo $kba_atrisk_count; ?> At Risk</span>
+                <?php if ($kba_critical_count > 0): ?><span style="color:var(--accent-red,#ef4444);font-weight:600;"><?php echo $kba_critical_count; ?> Critical</span><?php endif; ?>
+                <?php if ($kba_critical_count > 0 && $kba_atrisk_count > 0): ?> · <?php endif; ?>
+                <?php if ($kba_atrisk_count > 0): ?><span style="color:var(--accent-yellow,#eab308);font-weight:600;"><?php echo $kba_atrisk_count; ?> At Risk</span><?php endif; ?>
             <?php else: ?>
                 All sites in good standing
             <?php endif; ?>
         </div>
     </div>
 
-    <!-- PAs Monitored -->
-    <div class="stat-card warning home-enter home-enter-7">
+    <!-- PAs Monitored — accent driven by worst PA health state -->
+    <div class="stat-card <?php echo worstStatusToCardClass($pa_worst_status); ?> home-enter home-enter-7">
         <div class="stat-label">Protected Areas Monitored</div>
         <div class="stat-value"><?php echo $pa_count; ?></div>
         <div class="stat-description">
             <?php if ($pa_critical_count > 0 || $pa_atrisk_count > 0): ?>
-                <span style="color:var(--accent-red,#ef4444);font-weight:600;"><?php echo $pa_critical_count; ?> Critical</span>
-                · <span style="color:var(--accent-yellow,#eab308);font-weight:600;"><?php echo $pa_atrisk_count; ?> At Risk</span>
+                <?php if ($pa_critical_count > 0): ?><span style="color:var(--accent-red,#ef4444);font-weight:600;"><?php echo $pa_critical_count; ?> Critical</span><?php endif; ?>
+                <?php if ($pa_critical_count > 0 && $pa_atrisk_count > 0): ?> · <?php endif; ?>
+                <?php if ($pa_atrisk_count > 0): ?><span style="color:var(--accent-yellow,#eab308);font-weight:600;"><?php echo $pa_atrisk_count; ?> At Risk</span><?php endif; ?>
             <?php else: ?>
                 All sites in good standing
             <?php endif; ?>
@@ -407,11 +425,13 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
                         $le_raw       = $area['light_exposure'];
                         $species_raw  = $area['species_count'];
                         $status_text  = $area['status'];
+                        // Moderate = green because it is the best achievable status in Metro Manila
+                        // (no KBA/PA site has ever scored ≥ 75 — "Good" is not reachable here).
                         $status_class = match($status_text) {
-                            'Good'     => 'success',
-                            'Critical' => 'danger',
-                            'At Risk'  => 'warning',
-                            default    => 'info',
+                            'Good', 'Moderate' => 'success',
+                            'Critical'         => 'danger',
+                            'At Risk'          => 'warning',
+                            default            => 'secondary',
                         };
                         $row_class = match($status_text) {
                             'Critical' => 'kba-row-critical',
@@ -425,7 +445,7 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
                         data-val-light="<?php echo $le_raw !== null ? (float) $le_raw : ''; ?>">
                         <td><?php echo htmlspecialchars($area['name']); ?></td>
                         <td>
-                            <span class="badge kba-type-badge kba-type-<?php echo strtolower($area['type']); ?>">
+                            <span class="kba-type-badge">
                                 <?php echo htmlspecialchars($area['type']); ?>
                             </span>
                         </td>
@@ -686,19 +706,6 @@ $extra_scripts = <<<SCRIPTS
     border-radius: 4px;
     border: 1.5px solid transparent;
 }
-.kba-type-kba {
-    background: rgba(100,116,139,0.12);
-    color: var(--text-secondary, #64748b);
-    border-color: rgba(100,116,139,0.25);
-}
-.kba-type-pa {
-    background: rgba(139,92,246,0.12);
-    color: #7c3aed;
-    border-color: rgba(139,92,246,0.28);
-}
-[data-theme="dark"] .kba-type-kba { color: #94a3b8; border-color: rgba(148,163,184,0.3); }
-[data-theme="dark"] .kba-type-pa  { color: #a78bfa; border-color: rgba(167,139,250,0.35); }
-
 /* ── Row-level priority highlights ──────────────────────────────────────── */
 .kba-row-critical td:first-child { border-left: 3px solid var(--accent-red, #ef4444); }
 .kba-row-atrisk   td:first-child { border-left: 3px solid var(--accent-yellow, #eab308); }
@@ -761,6 +768,20 @@ $extra_scripts = <<<SCRIPTS
     transition: background 0.15s;
 }
 .kba-report-link:hover { background: rgba(59,130,246,0.08); }
+
+/* ── Announcement shimmer skeleton ───────────────────────────────────────── */
+@keyframes bmbShimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position:  400px 0; }
+}
+.bmb-shimmer {
+    background: linear-gradient(90deg,
+        var(--bg-card-alt, rgba(148,163,184,0.12)) 25%,
+        rgba(148,163,184,0.22) 50%,
+        var(--bg-card-alt, rgba(148,163,184,0.12)) 75%);
+    background-size: 800px 100%;
+    animation: bmbShimmer 1.4s infinite linear;
+}
 </style>
 <script>
 (function () {
@@ -839,6 +860,11 @@ $extra_scripts = <<<SCRIPTS
             .replace(/'/g, '&#39;');
     }
 
+    // Returns true only when items look like real announcements (not the fallback).
+    function isRealContent(items) {
+        return Array.isArray(items) && items.length > 0 && items[0].date !== '';
+    }
+
     function renderAnnouncements(items) {
         if (!Array.isArray(items) || items.length === 0) return;
 
@@ -874,27 +900,55 @@ $extra_scripts = <<<SCRIPTS
         feedEl.innerHTML = html;
     }
 
-    var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timeoutId = setTimeout(function() {
-        if (controller) controller.abort();
-    }, 3000); // API now responds from cache (disk), not network — 3 s is generous
+    function showLoadingState() {
+        feedEl.innerHTML =
+            '<div style="display:flex;flex-direction:column;gap:12px;padding:4px 0;">' +
+                '<div class="bmb-shimmer" style="height:14px;width:55%;border-radius:4px;"></div>' +
+                '<div class="bmb-shimmer" style="height:56px;border-radius:6px;"></div>' +
+                '<div class="bmb-shimmer" style="height:14px;width:80%;border-radius:4px;"></div>' +
+                '<div class="bmb-shimmer" style="height:14px;width:65%;border-radius:4px;"></div>' +
+                '<div class="bmb-shimmer" style="height:14px;width:72%;border-radius:4px;"></div>' +
+            '</div>';
+    }
 
-    fetch('api/get_bmb_announcements.php?limit=5', controller ? { signal: controller.signal } : undefined)
-        .then(function(resp) {
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            return resp.json();
-        })
-        .then(function(data) {
-            if (data && data.success && Array.isArray(data.items)) {
-                renderAnnouncements(data.items);
-            }
-        })
-        .catch(function() {
-            // Keep server-rendered fallback content.
-        })
-        .finally(function() {
-            clearTimeout(timeoutId);
-      });
+    function fetchAnnouncements(retryOnPending) {
+        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        // 8 s: the API always responds instantly from cache/fallback, so this is
+        // only a true safety net for unexpected network issues between browser and server.
+        var tid = setTimeout(function() { if (ctrl) ctrl.abort(); }, 8000);
+
+        fetch('api/get_bmb_announcements.php?limit=5', ctrl ? { signal: ctrl.signal } : undefined)
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return resp.json();
+            })
+            .then(function(data) {
+                clearTimeout(tid);
+                if (!data || !data.success || !Array.isArray(data.items)) return;
+
+                if (data.pending) {
+                    // Background refresh triggered server-side.
+                    // Show loading shimmer and retry once after the refresh window.
+                    if (retryOnPending) {
+                        showLoadingState();
+                        setTimeout(function() { fetchAnnouncements(false); }, 7000);
+                    }
+                    // If this was already a retry and still pending, keep server-rendered fallback.
+                    return;
+                }
+
+                if (isRealContent(data.items)) {
+                    renderAnnouncements(data.items);
+                }
+                // If items are fallback-only (date === ''), keep server-rendered content.
+            })
+            .catch(function() {
+                clearTimeout(tid);
+                // Network error or timeout — keep whatever the server rendered.
+            });
+    }
+
+    fetchAnnouncements(true);
 })();
 </script>
 SCRIPTS;
