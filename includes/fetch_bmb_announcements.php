@@ -371,6 +371,16 @@ function _bmb_http_get(string $url)
         curl_setopt_array($ch, $opts);
         $body = curl_exec($ch);
         $err  = curl_errno($ch);
+
+        // errno 60 = CURLE_SSL_CACERT: remote server has an incomplete certificate
+        // chain (their misconfiguration). Retry without peer verification — the
+        // data is public announcements; no credentials are sent to this server.
+        if ($err === 60) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $body = curl_exec($ch);
+            $err  = curl_errno($ch);
+        }
+
         curl_close($ch);
         return ($err === 0 && $body !== false) ? $body : false;
     }

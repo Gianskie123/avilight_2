@@ -61,12 +61,13 @@ function _diag_http_probe(string $url, int $timeout = 6): array
     $t = microtime(true);
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+
+        $caBundle = _bmb_find_ca_bundle();
+        $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT        => $timeout,
             CURLOPT_CONNECTTIMEOUT => 4,
-            CURLOPT_NOBODY         => false,
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; AVILIGHT/1.0; +https://avilight.ph)',
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_HTTPHEADER     => [
@@ -74,21 +75,40 @@ function _diag_http_probe(string $url, int $timeout = 6): array
                 'Accept-Language: en-US,en;q=0.5',
                 'Cache-Control: no-cache',
             ],
-        ]);
+        ];
+        if ($caBundle !== '') {
+            $opts[CURLOPT_CAINFO] = $caBundle;
+        }
+        curl_setopt_array($ch, $opts);
+
         $body   = curl_exec($ch);
         $errno  = curl_errno($ch);
         $errmsg = curl_error($ch);
-        $http   = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $size   = strlen($body ?: '');
+        $sslRetried = false;
+
+        // Same retry logic as _bmb_http_get(): broken remote cert chain.
+        if ($errno === 60) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $body   = curl_exec($ch);
+            $errno  = curl_errno($ch);
+            $errmsg = curl_error($ch);
+            $sslRetried = true;
+        }
+
+        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $size = strlen($body ?: '');
         curl_close($ch);
+
         return [
-            'ok'            => ($errno === 0 && $http >= 200 && $http < 400),
-            'http_code'     => $http,
-            'curl_errno'    => $errno,
-            'curl_error'    => $errmsg ?: null,
-            'response_size' => $size,
-            'elapsed_ms'    => (int) round((microtime(true) - $t) * 1000),
-            'body_snippet'  => $body ? substr(strip_tags($body), 0, 200) : null,
+            'ok'              => ($errno === 0 && $http >= 200 && $http < 400),
+            'http_code'       => $http,
+            'curl_errno'      => $errno ?: null,
+            'curl_error'      => ($errno && $errmsg) ? $errmsg : null,
+            'ssl_peer_verify' => !$sslRetried,
+            'ssl_retried'     => $sslRetried,
+            'response_size'   => $size,
+            'elapsed_ms'      => (int) round((microtime(true) - $t) * 1000),
+            'body_snippet'    => $body ? substr(strip_tags($body), 0, 200) : null,
         ];
     }
     // fallback: file_get_contents
@@ -96,13 +116,15 @@ function _diag_http_probe(string $url, int $timeout = 6): array
         'user_agent' => 'Mozilla/5.0 (compatible; AVILIGHT/1.0)']]);
     $body = @file_get_contents($url, false, $ctx);
     return [
-        'ok'            => ($body !== false && strlen($body) > 0),
-        'http_code'     => null,
-        'curl_errno'    => null,
-        'curl_error'    => null,
-        'response_size' => $body ? strlen($body) : 0,
-        'elapsed_ms'    => (int) round((microtime(true) - $t) * 1000),
-        'body_snippet'  => $body ? substr(strip_tags($body), 0, 200) : null,
+        'ok'              => ($body !== false && strlen($body) > 0),
+        'http_code'       => null,
+        'curl_errno'      => null,
+        'curl_error'      => null,
+        'ssl_peer_verify' => null,
+        'ssl_retried'     => null,
+        'response_size'   => $body ? strlen($body) : 0,
+        'elapsed_ms'      => (int) round((microtime(true) - $t) * 1000),
+        'body_snippet'    => $body ? substr(strip_tags($body), 0, 200) : null,
     ];
 }
 
