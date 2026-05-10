@@ -488,7 +488,16 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
             <a href="https://faps.bmb.gov.ph/faps/" target="_blank" rel="noopener noreferrer" class="bmb-view-all">View All ›</a>
         </div>
         <div class="card-body">
-            <div class="announcements-feed screenshot-announcements" id="bmbAnnouncementsFeed">
+            <?php
+            $ann_per_page  = 3;
+            $ann_all_json  = json_encode($announcements, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_UNESCAPED_UNICODE);
+            $ann_pages     = empty($announcements) ? 0 : (int) ceil(count($announcements) / $ann_per_page);
+            $ann_page0     = array_slice($announcements, 0, $ann_per_page);
+            $ann_featured  = $ann_page0[0] ?? null;
+            $ann_rows      = array_slice($ann_page0, 1);
+            ?>
+            <div class="announcements-feed screenshot-announcements" id="bmbAnnouncementsFeed"
+                 data-bmb-items='<?php echo $ann_all_json; ?>'>
                 <?php if (empty($announcements)): ?>
                 <div class="announcement-row" role="status" aria-live="polite">
                     <div class="announcement-row-icon">ⓘ</div>
@@ -500,10 +509,6 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
                     </div>
                 </div>
                 <?php else: ?>
-                <?php
-                $ann_featured = $announcements[0];
-                $ann_rows     = count($announcements) > 1 ? array_slice($announcements, 1) : [];
-                ?>
                 <div class="announcement-featured">
                     <div class="announcement-featured-chip"><?php echo htmlspecialchars($ann_featured['tag']); ?></div>
                     <div class="announcement-featured-title"><?php echo htmlspecialchars($ann_featured['title']); ?></div>
@@ -514,21 +519,25 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
                         <?php echo empty($ann_featured['date']) ? 'Visit Portal ↗' : 'Read More ↗'; ?>
                     </a>
                 </div>
-
                 <?php foreach ($ann_rows as $ann): ?>
                 <div class="announcement-row">
                     <div class="announcement-row-icon">ⓘ</div>
                     <div class="announcement-row-content">
-                        <div class="announcement-row-title"><?php echo htmlspecialchars($ann['title']); ?></div>
+                        <a href="<?php echo htmlspecialchars($ann['link']); ?>" target="_blank" rel="noopener noreferrer" class="announcement-row-link"><?php echo htmlspecialchars($ann['title']); ?></a>
                         <div class="announcement-row-meta">
                             <span class="announcement-row-badge"><?php echo htmlspecialchars($ann['tag']); ?></span>
-                            <?php if (!empty($ann['date'])): ?>
-                            <span><?php echo htmlspecialchars($ann['date']); ?></span>
-                            <?php endif; ?>
+                            <?php if (!empty($ann['date'])): ?><span><?php echo htmlspecialchars($ann['date']); ?></span><?php endif; ?>
                         </div>
                     </div>
                 </div>
                 <?php endforeach; ?>
+                <?php if ($ann_pages > 1): ?>
+                <div class="bmb-pagination">
+                    <button class="bmb-page-btn bmb-prev" disabled aria-label="Previous">&#8249;</button>
+                    <span class="bmb-page-info">1 / <?php echo $ann_pages; ?></span>
+                    <button class="bmb-page-btn bmb-next" aria-label="Next">&#8250;</button>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -769,14 +778,50 @@ $extra_scripts = <<<SCRIPTS
 }
 .kba-report-link:hover { background: rgba(59,130,246,0.08); }
 
-/* ── (shimmer removed — server-rendered fallback stays visible while cache warms) */
-.bmb-shimmer {
-    background: linear-gradient(90deg,
-        var(--bg-card-alt, rgba(148,163,184,0.12)) 25%,
-        rgba(148,163,184,0.22) 50%,
-        var(--bg-card-alt, rgba(148,163,184,0.12)) 75%);
-    background-size: 800px 100%;
-    animation: bmbShimmer 1.4s infinite linear;
+/* ── Announcement row links ──────────────────────────────────────────────── */
+.announcement-row-link {
+    display: block;
+    color: var(--text-primary, #f1f5f9);
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+    line-height: 1.35;
+    margin-bottom: 4px;
+}
+.announcement-row-link:hover { color: var(--accent-blue, #3b82f6); text-decoration: underline; }
+
+/* ── Announcement pagination ─────────────────────────────────────────────── */
+.bmb-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 0 2px;
+    margin-top: 8px;
+    border-top: 1px solid var(--border-color, rgba(148,163,184,0.15));
+}
+.bmb-page-btn {
+    background: none;
+    border: 1px solid var(--border-color, rgba(148,163,184,0.3));
+    border-radius: 4px;
+    color: var(--text-secondary, #64748b);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 1px 9px 3px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.bmb-page-btn:hover:not(:disabled) {
+    background: rgba(59,130,246,0.08);
+    color: var(--accent-blue, #3b82f6);
+    border-color: rgba(59,130,246,0.4);
+}
+.bmb-page-btn:disabled { opacity: 0.35; cursor: default; }
+.bmb-page-info {
+    font-size: 12px;
+    color: var(--text-secondary, #64748b);
+    min-width: 32px;
+    text-align: center;
 }
 </style>
 <script>
@@ -847,44 +892,57 @@ $extra_scripts = <<<SCRIPTS
     var feedEl = document.getElementById('bmbAnnouncementsFeed');
     if (!feedEl) return;
 
-    function escapeHtml(value) {
-        return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+    var BMB_PER  = 3;   // items visible per page (1 featured + up to 2 rows)
+    var bmbItems = [];
+    var bmbPage  = 0;
+
+    // Seed from server-rendered data so pagination works before the API responds.
+    try {
+        var _seed = feedEl.getAttribute('data-bmb-items');
+        if (_seed) bmbItems = JSON.parse(_seed);
+    } catch (e) {}
+
+    function escapeHtml(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
-    // Returns true only when items look like real announcements (not the fallback).
     function isRealContent(items) {
         return Array.isArray(items) && items.length > 0 && items[0].date !== '';
     }
 
-    function renderAnnouncements(items) {
-        if (!Array.isArray(items) || items.length === 0) return;
+    function bmbPageCount() {
+        return Math.max(1, Math.ceil(bmbItems.length / BMB_PER));
+    }
 
-        var featured = items[0] || {};
-        var rows = items.slice(1);
+    function renderBmbPage(page) {
+        bmbPage = Math.max(0, Math.min(page, bmbPageCount() - 1));
+        var slice    = bmbItems.slice(bmbPage * BMB_PER, (bmbPage + 1) * BMB_PER);
+        var featured = slice[0] || {};
+        var rows     = slice.slice(1);
+        var fallbackUrl = 'https://faps.bmb.gov.ph/faps/';
 
-        var html = '' +
+        var html =
             '<div class="announcement-featured">' +
                 '<div class="announcement-featured-chip">' + escapeHtml(featured.tag || 'Info') + '</div>' +
-                '<div class="announcement-featured-title">' + escapeHtml(featured.title || 'DENR-BMB FAPS announcements') + '</div>' +
+                '<div class="announcement-featured-title">' + escapeHtml(featured.title || '') + '</div>' +
                 ((featured.summary && String(featured.summary).trim())
                     ? ('<div class="announcement-featured-summary">' + escapeHtml(featured.summary) + '</div>')
                     : '') +
-                '<a href="' + escapeHtml(featured.link || 'https://faps.bmb.gov.ph/faps/') + '" target="_blank" rel="noopener noreferrer" class="announcement-featured-link">' +
+                '<a href="' + escapeHtml(featured.link || fallbackUrl) + '" target="_blank" rel="noopener noreferrer" class="announcement-featured-link">' +
                     (featured.date ? 'Read More ↗' : 'Visit Portal ↗') +
                 '</a>' +
             '</div>';
 
         rows.forEach(function(item) {
-            html += '' +
+            html +=
                 '<div class="announcement-row">' +
                     '<div class="announcement-row-icon">ⓘ</div>' +
                     '<div class="announcement-row-content">' +
-                        '<div class="announcement-row-title">' + escapeHtml(item.title || '') + '</div>' +
+                        '<a href="' + escapeHtml(item.link || fallbackUrl) + '" target="_blank" rel="noopener noreferrer" class="announcement-row-link">' +
+                            escapeHtml(item.title || '') +
+                        '</a>' +
                         '<div class="announcement-row-meta">' +
                             '<span class="announcement-row-badge">' + escapeHtml(item.tag || 'News') + '</span>' +
                             (item.date ? ('<span>' + escapeHtml(item.date) + '</span>') : '') +
@@ -893,13 +951,29 @@ $extra_scripts = <<<SCRIPTS
                 '</div>';
         });
 
+        var total = bmbPageCount();
+        if (total > 1) {
+            html +=
+                '<div class="bmb-pagination">' +
+                    '<button class="bmb-page-btn bmb-prev"' + (bmbPage === 0 ? ' disabled' : '') + ' aria-label="Previous">&#8249;</button>' +
+                    '<span class="bmb-page-info">' + (bmbPage + 1) + ' / ' + total + '</span>' +
+                    '<button class="bmb-page-btn bmb-next"' + (bmbPage >= total - 1 ? ' disabled' : '') + ' aria-label="Next">&#8250;</button>' +
+                '</div>';
+        }
+
         feedEl.innerHTML = html;
+
+        var prevBtn = feedEl.querySelector('.bmb-prev');
+        var nextBtn = feedEl.querySelector('.bmb-next');
+        if (prevBtn) prevBtn.onclick = function() { renderBmbPage(bmbPage - 1); };
+        if (nextBtn) nextBtn.onclick = function() { renderBmbPage(bmbPage + 1); };
     }
+
+    // Boot pagination from server-rendered data if available.
+    if (bmbItems.length) renderBmbPage(0);
 
     function fetchAnnouncements(retryOnPending) {
         var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        // 8 s: the API always responds instantly from cache/fallback, so this is
-        // only a true safety net for unexpected network issues between browser and server.
         var tid = setTimeout(function() { if (ctrl) ctrl.abort(); }, 8000);
 
         fetch('api/get_bmb_announcements.php?limit=5', ctrl ? { signal: ctrl.signal } : undefined)
@@ -912,26 +986,19 @@ $extra_scripts = <<<SCRIPTS
                 if (!data || !data.success || !Array.isArray(data.items)) return;
 
                 if (data.pending) {
-                    // Cache is cold — background refresh is running server-side.
-                    // Don't wipe out the server-rendered fallback with a shimmer;
-                    // just silently retry once after the refresh window (≥ cURL timeout).
                     if (retryOnPending) {
                         setTimeout(function() { fetchAnnouncements(false); }, 12000);
                     }
-                    // Second attempt still pending → background fetch failed (network/bot-block).
-                    // Server-rendered fallback content stays visible. Nothing more to do.
                     return;
                 }
 
                 if (isRealContent(data.items)) {
-                    renderAnnouncements(data.items);
+                    bmbItems = data.items;
+                    feedEl.setAttribute('data-bmb-items', JSON.stringify(data.items));
+                    renderBmbPage(0);
                 }
-                // Fallback-only items (date === '') — keep server-rendered content.
             })
-            .catch(function() {
-                clearTimeout(tid);
-                // Network error or timeout — keep whatever the server rendered.
-            });
+            .catch(function() { clearTimeout(tid); });
     }
 
     fetchAnnouncements(true);
