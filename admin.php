@@ -51,24 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-$model_rows = [];
-$model_error = null;
-try {
-    $model_db = get_mysql_db();
-    $stmt = $model_db->query(
-        "SELECT version_name, status, created_at
-         FROM models
-         ORDER BY created_at DESC, id DESC"
-    );
-    $model_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) {
-    $model_error = $e->getMessage();
-}
+// Validation log, spatial checks, and model list are loaded asynchronously via JS on DOMContentLoaded.
 
-// Validation log and spatial checks are loaded asynchronously via JS on DOMContentLoaded.
-
-// ── Load saved thresholds ─────────────────────────────────────────────────
-$thresholds_file = __DIR__ . '/data/cache/thresholds.json';
+// ── Load saved thresholds from DB (falls back to defaults) ────────────────
 $thresholds = [
     'high_risk'            => 60,
     'mod_risk'             => 40,
@@ -80,11 +65,22 @@ $thresholds = [
     'kba_lst_weight'       => 15,
     'kba_precip_weight'    => 10,
 ];
-if (file_exists($thresholds_file)) {
-    $saved = json_decode(file_get_contents($thresholds_file), true);
-    if (is_array($saved)) {
-        $thresholds = array_merge($thresholds, $saved);
+try {
+    $cfg_db = get_mysql_db();
+    $cfg_db->exec("CREATE TABLE IF NOT EXISTS system_settings (
+        setting_key VARCHAR(100) PRIMARY KEY,
+        setting_value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $cfg_row = $cfg_db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if ($cfg_row) {
+        $saved = json_decode($cfg_row['setting_value'], true);
+        if (is_array($saved)) {
+            $thresholds = array_merge($thresholds, $saved);
+        }
     }
+} catch (Throwable $_) {
+    // Non-fatal — defaults are fine
 }
 
 
@@ -324,43 +320,8 @@ require_once 'includes/header.php';
                             <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <?php if ($model_error !== null): ?>
-                        <tr>
-                            <td colspan="4" style="color: #b91c1c;">Failed to load model versions: <?php echo htmlspecialchars($model_error); ?></td>
-                        </tr>
-                        <?php elseif (empty($model_rows)): ?>
-                        <tr>
-                            <td colspan="4" style="color: #666;">No model versions found yet.</td>
-                        </tr>
-                        <?php else: ?>
-                        <?php foreach ($model_rows as $row): ?>
-                        <?php
-                            $status = (string)($row['status'] ?? 'Archived');
-                            $version = (string)($row['version_name'] ?? '');
-                            $created_at = (string)($row['created_at'] ?? '');
-                            $badge = 'badge-secondary';
-                            if ($status === 'Active') {
-                                $badge = 'badge-success';
-                            }
-                        ?>
-                        <tr>
-                            <td><?php echo $status === 'Active' ? '<strong>' . htmlspecialchars($version) . '</strong>' : htmlspecialchars($version); ?></td>
-                            <td><?php echo htmlspecialchars(substr($created_at, 0, 10)); ?></td>
-                            <td><span class="badge <?php echo $badge; ?>"><?php echo htmlspecialchars($status); ?></span></td>
-                            <td style="white-space:nowrap;">
-                                <?php if ($status === 'Active'): ?>
-                                <span style="color:var(--text-muted,#64748b);font-size:0.82rem;">—</span>
-                                <?php else: ?>
-                                <div style="display:flex;gap:4px;align-items:center;">
-                                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:0.8rem;" onclick='switchModel(<?php echo json_encode($version, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>)'>Switch</button>
-                                    <button style="padding:4px 8px;font-size:0.8rem;border:none;border-radius:6px;background:#dc2626;color:#fff;cursor:pointer;font-weight:600;transition:opacity .15s;" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'" onclick='deleteModel(<?php echo json_encode($version, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>)'>Delete</button>
-                                </div>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                        <?php endif; ?>
+                    <tbody id="modelListBody">
+                        <tr><td colspan="4" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
                     </tbody>
                 </table>
                 <div id="modelStatus" style="margin-top: 10px;"></div>
@@ -1026,6 +987,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tier 1 — critical, load immediately
     loadCovariateStatus();
     loadUserList();
+    loadModelList();
 
     // Tier 2 — important but not above the fold on first glance
     setTimeout(() => {
@@ -1149,9 +1111,8 @@ document.getElementById('modelUploadForm')?.addEventListener('submit', function(
             }
             showToast('Model Uploaded', [
                 data.message || `Version ${version} uploaded successfully.`,
-                'Reloading to update the version list…'
             ], 'success');
-            setTimeout(() => window.location.reload(), 2000);
+            loadModelList();
         })
         .catch(() => {
             uploadBtn.disabled = false;
@@ -1422,6 +1383,52 @@ async function buildMasterGrid(btn) {
     }
 }
 
+// ── Model list (AJAX) ────────────────────────────────────────────────────────
+
+function loadModelList() {
+    const tbody = document.getElementById('modelListBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>';
+
+    fetch('api/list_models.php')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                tbody.innerHTML = `<tr><td colspan="4" style="color:#f87171;padding:16px;">Failed to load models: ${escHtml(data.error || 'Unknown error')}</td></tr>`;
+                return;
+            }
+            if (!data.models || !data.models.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="color:#888;padding:16px;">No model versions found yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.models.map(row => {
+                const status    = row.status      || 'Backup';
+                const version   = row.version_name || '';
+                const date      = (row.created_at  || '').substring(0, 10);
+                const badgeCls  = status === 'Active' ? 'badge-success' : 'badge-secondary';
+                const nameCell  = status === 'Active'
+                    ? `<strong>${escHtml(version)}</strong>`
+                    : escHtml(version);
+                const safeV = version.replace(/'/g, "\\'");
+                const actions = status === 'Active'
+                    ? `<span style="color:var(--text-muted,#64748b);font-size:0.82rem;">—</span>`
+                    : `<div style="display:flex;gap:4px;align-items:center;">
+                        ${_iconBtn('Switch to this version', ICON_SWITCH, `switchModel('${safeV}')`, 'color:#6366f1;')}
+                        ${_iconBtn('Delete this version',    ICON_TRASH,  `deleteModel('${safeV}')`, 'color:#dc2626;')}
+                       </div>`;
+                return `<tr>
+                    <td>${nameCell}</td>
+                    <td>${escHtml(date)}</td>
+                    <td><span class="badge ${badgeCls}">${escHtml(status)}</span></td>
+                    <td style="white-space:nowrap;">${actions}</td>
+                </tr>`;
+            }).join('');
+        })
+        .catch(err => {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="color:#f87171;padding:16px;">Network error: ${escHtml(err.message)}</td></tr>`;
+        });
+}
+
 // Model delete
 async function deleteModel(version) {
     const confirmed = await showConfirmModal({
@@ -1447,8 +1454,8 @@ async function deleteModel(version) {
                 showToast('Delete Failed', [data.error || 'Could not delete this model version.'], 'danger');
                 return;
             }
-            showToast('Version Deleted', [data.message || `Version ${escHtml(version)} has been removed.`, 'Reloading…'], 'success');
-            setTimeout(() => window.location.reload(), 1800);
+            showToast('Version Deleted', [data.message || `Version ${escHtml(version)} removed.`], 'success');
+            loadModelList();
         })
         .catch(() => showToast('Request Failed', ['Check server connection and try again.'], 'danger'));
 }
@@ -1479,28 +1486,71 @@ async function switchModel(version) {
                 showToast('Switch Failed', [data.error || 'Model switch failed. Try again.'], 'danger');
                 return;
             }
-            showToast('Model Activated', [
-                data.message || `Version ${escHtml(version)} is now active.`,
-                'Reloading page…'
-            ], 'success');
-            setTimeout(() => window.location.reload(), 2000);
+            showToast('Model Activated', [data.message || `Version ${escHtml(version)} is now active.`], 'success');
+            loadModelList();
         })
         .catch(() => showToast('Request Failed', ['Check server connection and try again.'], 'danger'));
 }
 
-// Save thresholds
+// Save thresholds (with client-side validation mirroring server rules)
 function saveThresholds() {
-    const payload = {
-        high_risk:     document.getElementById('highRiskThreshold').value,
-        mod_risk:      document.getElementById('modRiskThreshold').value,
-        low_risk:      document.getElementById('lowRiskThreshold').value,
-        kba_richness_weight: document.getElementById('kbaRichnessWeight').value,
-        kba_sensitive_weight: document.getElementById('kbaSensitiveWeight').value,
-        kba_ndvi_weight: document.getElementById('kbaNdviWeight').value,
-        kba_alan_weight: document.getElementById('kbaAlanWeight').value,
-        kba_lst_weight: document.getElementById('kbaLstWeight').value,
-        kba_precip_weight: document.getElementById('kbaPrecipWeight').value
-    };
+    const riskFields = [
+        { id: 'highRiskThreshold',  key: 'high_risk',  label: 'High Risk Threshold' },
+        { id: 'modRiskThreshold',   key: 'mod_risk',   label: 'Moderate Risk Threshold' },
+        { id: 'lowRiskThreshold',   key: 'low_risk',   label: 'Low Risk Threshold' },
+    ];
+    const weightFields = [
+        { id: 'kbaRichnessWeight',  key: 'kba_richness_weight',  label: 'Richness Weight' },
+        { id: 'kbaSensitiveWeight', key: 'kba_sensitive_weight', label: 'Sensitive Species Weight' },
+        { id: 'kbaNdviWeight',      key: 'kba_ndvi_weight',      label: 'NDVI Weight' },
+        { id: 'kbaAlanWeight',      key: 'kba_alan_weight',      label: 'ALAN Weight' },
+        { id: 'kbaLstWeight',       key: 'kba_lst_weight',       label: 'LST Weight' },
+        { id: 'kbaPrecipWeight',    key: 'kba_precip_weight',    label: 'Precipitation Weight' },
+    ];
+
+    // 4.1 — no field may be empty
+    for (const f of [...riskFields, ...weightFields]) {
+        const raw = (document.getElementById(f.id)?.value ?? '').trim();
+        if (raw === '') {
+            showToast('Missing Value', [`"${f.label}" cannot be empty.`], 'warning');
+            document.getElementById(f.id)?.focus();
+            return;
+        }
+    }
+
+    // 4.2 — risk thresholds must be whole integers
+    const payload = {};
+    for (const f of riskFields) {
+        const raw = document.getElementById(f.id).value.trim();
+        if (!/^-?\d+$/.test(raw)) {
+            showToast('Invalid Value', [`"${f.label}" must be a whole number (e.g. 60), not "${escHtml(raw)}".`], 'warning');
+            document.getElementById(f.id)?.focus();
+            return;
+        }
+        payload[f.key] = parseInt(raw, 10);
+    }
+
+    // weights — must be valid numbers
+    for (const f of weightFields) {
+        const raw = document.getElementById(f.id).value.trim();
+        const num = parseFloat(raw);
+        if (isNaN(num)) {
+            showToast('Invalid Value', [`"${f.label}" must be a valid number.`], 'warning');
+            document.getElementById(f.id)?.focus();
+            return;
+        }
+        payload[f.key] = num;
+    }
+
+    // 4.3 — KBA/PA weights must sum to exactly 100
+    const weightSum = weightFields.reduce((s, f) => s + payload[f.key], 0);
+    if (Math.abs(weightSum - 100) > 0.01) {
+        showToast('Weight Total Invalid', [
+            `KBA/PA weights must total exactly 100%. Current total: ${weightSum.toFixed(2)}%.`,
+            'Adjust the weights so they add up to 100% before saving.',
+        ], 'warning');
+        return;
+    }
 
     fetch('api/save_thresholds.php', {
         method: 'POST',
@@ -1510,12 +1560,7 @@ function saveThresholds() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                showToast('Thresholds Saved', ['Dashboard and Reports will use the updated values on next refresh.'], 'success');
-                try {
-                    localStorage.setItem('avilight-thresholds-updated', String(Date.now()));
-                } catch (e) {
-                    // Ignore storage write failures.
-                }
+                showToast('Thresholds Saved', [data.message || 'Configuration applied for all users.'], 'success');
             } else {
                 showToast('Save Failed', [data.error || 'Failed to save thresholds.'], 'danger');
             }

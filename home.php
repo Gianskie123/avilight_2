@@ -415,8 +415,8 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
                     <tr>
                         <th data-sort-col="name" class="kba-sortable kba-sort-asc" title="Sort by site name">Site Name <span class="kba-sort-icon" aria-hidden="true">↑</span></th>
                         <th>Type</th>
-                        <th data-sort-col="species" class="kba-sortable" title="Sort by species count">Species <span class="kba-sort-icon" aria-hidden="true"></span></th>
-                        <th data-sort-col="light" class="kba-sortable" title="Sort by light exposure — avg. VIIRS ALAN in nW/cm²/sr. Higher = more artificial light at night.">Light Exposure ⓘ <span class="kba-sort-icon" aria-hidden="true"></span></th>
+                        <th data-sort-col="species" class="kba-sortable" title="Sort by species count">Species <span class="kba-sort-icon" aria-hidden="true">↕</span></th>
+                        <th data-sort-col="light" class="kba-sortable" title="Sort by light exposure — avg. VIIRS ALAN in nW/cm²/sr. Higher = more artificial light at night.">Light Exposure ⓘ <span class="kba-sort-icon" aria-hidden="true">↕</span></th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -900,7 +900,7 @@ $extra_scripts = <<<SCRIPTS
                     th.classList.add('kba-sort-' + currentSort.dir);
                     if (icon) { icon.textContent = currentSort.dir === 'asc' ? '↑' : '↓'; }
                 } else {
-                    if (icon) { icon.textContent = ''; }
+                    if (icon) { icon.textContent = '↕'; }
                 }
             });
         }
