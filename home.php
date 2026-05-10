@@ -769,11 +769,7 @@ $extra_scripts = <<<SCRIPTS
 }
 .kba-report-link:hover { background: rgba(59,130,246,0.08); }
 
-/* ── Announcement shimmer skeleton ───────────────────────────────────────── */
-@keyframes bmbShimmer {
-    0%   { background-position: -400px 0; }
-    100% { background-position:  400px 0; }
-}
+/* ── (shimmer removed — server-rendered fallback stays visible while cache warms) */
 .bmb-shimmer {
     background: linear-gradient(90deg,
         var(--bg-card-alt, rgba(148,163,184,0.12)) 25%,
@@ -900,17 +896,6 @@ $extra_scripts = <<<SCRIPTS
         feedEl.innerHTML = html;
     }
 
-    function showLoadingState() {
-        feedEl.innerHTML =
-            '<div style="display:flex;flex-direction:column;gap:12px;padding:4px 0;">' +
-                '<div class="bmb-shimmer" style="height:14px;width:55%;border-radius:4px;"></div>' +
-                '<div class="bmb-shimmer" style="height:56px;border-radius:6px;"></div>' +
-                '<div class="bmb-shimmer" style="height:14px;width:80%;border-radius:4px;"></div>' +
-                '<div class="bmb-shimmer" style="height:14px;width:65%;border-radius:4px;"></div>' +
-                '<div class="bmb-shimmer" style="height:14px;width:72%;border-radius:4px;"></div>' +
-            '</div>';
-    }
-
     function fetchAnnouncements(retryOnPending) {
         var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         // 8 s: the API always responds instantly from cache/fallback, so this is
@@ -927,20 +912,21 @@ $extra_scripts = <<<SCRIPTS
                 if (!data || !data.success || !Array.isArray(data.items)) return;
 
                 if (data.pending) {
-                    // Background refresh triggered server-side.
-                    // Show loading shimmer and retry once after the refresh window.
+                    // Cache is cold — background refresh is running server-side.
+                    // Don't wipe out the server-rendered fallback with a shimmer;
+                    // just silently retry once after the refresh window (≥ cURL timeout).
                     if (retryOnPending) {
-                        showLoadingState();
-                        setTimeout(function() { fetchAnnouncements(false); }, 7000);
+                        setTimeout(function() { fetchAnnouncements(false); }, 12000);
                     }
-                    // If this was already a retry and still pending, keep server-rendered fallback.
+                    // Second attempt still pending → background fetch failed (network/bot-block).
+                    // Server-rendered fallback content stays visible. Nothing more to do.
                     return;
                 }
 
                 if (isRealContent(data.items)) {
                     renderAnnouncements(data.items);
                 }
-                // If items are fallback-only (date === ''), keep server-rendered content.
+                // Fallback-only items (date === '') — keep server-rendered content.
             })
             .catch(function() {
                 clearTimeout(tid);
