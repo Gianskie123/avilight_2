@@ -339,22 +339,23 @@ require_once 'includes/header.php';
                             $status = (string)($row['status'] ?? 'Archived');
                             $version = (string)($row['version_name'] ?? '');
                             $created_at = (string)($row['created_at'] ?? '');
-                            $badge = 'badge-info';
+                            $badge = 'badge-secondary';
                             if ($status === 'Active') {
                                 $badge = 'badge-success';
-                            } elseif ($status === 'Archived') {
-                                $badge = 'badge-secondary';
                             }
                         ?>
                         <tr>
                             <td><?php echo $status === 'Active' ? '<strong>' . htmlspecialchars($version) . '</strong>' : htmlspecialchars($version); ?></td>
                             <td><?php echo htmlspecialchars(substr($created_at, 0, 10)); ?></td>
                             <td><span class="badge <?php echo $badge; ?>"><?php echo htmlspecialchars($status); ?></span></td>
-                            <td>
+                            <td style="white-space:nowrap;">
                                 <?php if ($status === 'Active'): ?>
-                                -
+                                <span style="color:var(--text-muted,#64748b);font-size:0.82rem;">—</span>
                                 <?php else: ?>
-                                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick='switchModel(<?php echo json_encode($version, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>)'>Switch</button>
+                                <div style="display:flex;gap:4px;align-items:center;">
+                                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:0.8rem;" onclick='switchModel(<?php echo json_encode($version, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>)'>Switch</button>
+                                    <button style="padding:4px 8px;font-size:0.8rem;border:none;border-radius:6px;background:#dc2626;color:#fff;cursor:pointer;font-weight:600;transition:opacity .15s;" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'" onclick='deleteModel(<?php echo json_encode($version, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>)'>Delete</button>
+                                </div>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -478,26 +479,8 @@ require_once 'includes/header.php';
     <h2 class="card-header">Account Management</h2>
     <div class="card-body">
 
-        <!-- User list -->
-        <div style="overflow-x:auto; margin-bottom:24px;">
-            <table style="font-size:0.88rem; width:100%;" id="userListTable">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Role</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="userListBody">
-                    <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
-                </tbody>
-            </table>
-        </div>
-
         <!-- Add new user -->
-        <details id="addUserDetails">
+        <details id="addUserDetails" style="margin-bottom:20px;">
             <summary style="cursor:pointer;font-size:0.9rem;color:var(--accent-blue,#3b82f6);margin-bottom:12px;">+ Add new account</summary>
             <div id="addUserStatus" style="margin-bottom:8px;"></div>
             <form id="addUserForm" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
@@ -525,6 +508,24 @@ require_once 'includes/header.php';
                 </div>
             </form>
         </details>
+
+        <!-- User list -->
+        <div style="overflow-x:auto; margin-bottom:24px;">
+            <table style="font-size:0.88rem; width:100%;" id="userListTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortUserList('name')" style="cursor:pointer;user-select:none;white-space:nowrap;">Name <span id="userSortName" style="font-size:0.72rem;opacity:0.45;">↕</span></th>
+                        <th onclick="sortUserList('email')" style="cursor:pointer;user-select:none;white-space:nowrap;">Email <span id="userSortEmail" style="font-size:0.72rem;opacity:0.45;">↕</span></th>
+                        <th onclick="sortUserList('role')" style="cursor:pointer;user-select:none;white-space:nowrap;">Role <span id="userSortRole" style="font-size:0.72rem;opacity:0.45;">↕</span></th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userListBody">
+                    <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
 
         <div id="manageUserStatus" style="margin-top:12px;"></div>
     </div>
@@ -558,8 +559,8 @@ require_once 'includes/header.php';
                     <input type="date" id="accessLogFrom" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                     <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">End Date</label>
                     <input type="date" id="accessLogTo" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
-                    <button onclick="loadAuditLog()" class="btn btn-secondary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
-                    <button onclick="clearAuditFilters()" style="background:none;border:none;color:var(--text-secondary);font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
+                    <button onclick="loadAuditLog()" class="btn btn-primary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
+                    <button onclick="clearAuditFilters()" style="background:#7c3aed;border:none;border-radius:6px;color:#fff;font-size:0.8rem;font-weight:600;cursor:pointer;padding:3px 10px;transition:opacity .15s;" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
@@ -587,8 +588,8 @@ require_once 'includes/header.php';
                     <input type="date" id="failLogFrom" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                     <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">End Date</label>
                     <input type="date" id="failLogTo" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
-                    <button onclick="loadFailedAttempts()" class="btn btn-secondary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
-                    <button onclick="clearFailFilters()" style="background:none;border:none;color:var(--text-secondary);font-size:0.75rem;cursor:pointer;padding:3px 0;text-decoration:underline;">Clear</button>
+                    <button onclick="loadFailedAttempts()" class="btn btn-primary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
+                    <button onclick="clearFailFilters()" style="background:#7c3aed;border:none;border-radius:6px;color:#fff;font-size:0.8rem;font-weight:600;cursor:pointer;padding:3px 10px;transition:opacity .15s;" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
@@ -1421,6 +1422,37 @@ async function buildMasterGrid(btn) {
     }
 }
 
+// Model delete
+async function deleteModel(version) {
+    const confirmed = await showConfirmModal({
+        title: 'Delete Model Version',
+        subtitle: `Version: ${version}`,
+        iconSvg: ICON_TRASH,
+        iconBg: 'rgba(220,38,38,0.12)',
+        iconColor: '#dc2626',
+        body: `<p style="margin:0 0 8px;">Permanently delete model version <strong style="color:var(--text-primary);">${escHtml(version)}</strong>?</p><p style="margin:0;font-size:.82rem;color:var(--text-muted);">The bundle files stored on disk will also be removed. This cannot be undone.</p>`,
+        confirmText: 'Delete Version',
+        confirmBg: '#dc2626',
+    });
+    if (!confirmed) return;
+
+    fetch('api/delete_model.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                showToast('Delete Failed', [data.error || 'Could not delete this model version.'], 'danger');
+                return;
+            }
+            showToast('Version Deleted', [data.message || `Version ${escHtml(version)} has been removed.`, 'Reloading…'], 'success');
+            setTimeout(() => window.location.reload(), 1800);
+        })
+        .catch(() => showToast('Request Failed', ['Check server connection and try again.'], 'danger'));
+}
+
 // Model switching
 async function switchModel(version) {
     const confirmed = await showConfirmModal({
@@ -1520,41 +1552,88 @@ const _iconBtn = (title, svg, onclick, extraStyle = '') =>
     `<button title="${title}" onclick="${onclick}" style="background:none;border:1px solid var(--border-color);border-radius:6px;padding:5px;cursor:pointer;color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s;${extraStyle}"
         onmouseover="this.style.background='var(--bg-card-alt)'" onmouseout="this.style.background='none'">${svg}</button>`;
 
+let _allUsers = [];
+let _sortCol  = '';
+let _sortDir  = 1; // 1 = asc, -1 = desc
+
+function sortUserList(col) {
+    if (_sortCol === col) {
+        _sortDir = -_sortDir;
+    } else {
+        _sortCol = col;
+        _sortDir = 1;
+    }
+    // Update header indicators
+    ['name', 'email', 'role'].forEach(c => {
+        const el = document.getElementById('userSort' + c.charAt(0).toUpperCase() + c.slice(1));
+        if (!el) return;
+        if (c === _sortCol) {
+            el.textContent = _sortDir === 1 ? '↑' : '↓';
+            el.style.opacity = '1';
+            el.style.color = 'var(--accent-blue,#3b82f6)';
+        } else {
+            el.textContent = '↕';
+            el.style.opacity = '0.45';
+            el.style.color = '';
+        }
+    });
+    renderUserList();
+}
+
+function renderUserList() {
+    const tbody = document.getElementById('userListBody');
+    if (!tbody) return;
+
+    if (!_allUsers.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">No accounts found.</td></tr>';
+        return;
+    }
+
+    let users = [..._allUsers];
+    if (_sortCol) {
+        users.sort((a, b) => {
+            let va = '', vb = '';
+            if (_sortCol === 'name')  { va = (a.full_name  || '').toLowerCase(); vb = (b.full_name  || '').toLowerCase(); }
+            if (_sortCol === 'email') { va = (a.email      || '').toLowerCase(); vb = (b.email      || '').toLowerCase(); }
+            if (_sortCol === 'role')  { va = (a.user_type  || '').toLowerCase(); vb = (b.user_type  || '').toLowerCase(); }
+            return va < vb ? -_sortDir : va > vb ? _sortDir : 0;
+        });
+    }
+
+    tbody.innerHTML = users.map(u => {
+        const isActive    = u.is_active == 1;
+        const statusBadge = isActive
+            ? `<span class="badge badge-success">Active</span>`
+            : `<span class="badge badge-secondary">Inactive</span>`;
+        const typeBadge   = u.user_type === 'IT_admin'
+            ? `<span class="badge badge-secondary">IT Admin</span>`
+            : `<span class="badge badge-secondary">EMS</span>`;
+        const toggleBtn = isActive
+            ? _iconBtn('Deactivate', ICON_BLOCK,     `manageUser(${u.user_id},'deactivate')`)
+            : _iconBtn('Activate',   ICON_PERSON_OK, `manageUser(${u.user_id},'activate')`);
+        const editBtn   = _iconBtn('Edit',   ICON_PENCIL, `showEditUserModal(${u.user_id})`);
+        const deleteBtn = _iconBtn('Delete', ICON_TRASH,  `manageUser(${u.user_id},'delete')`, 'color:#dc2626;');
+        return `<tr>
+            <td>${u.full_name ? escHtml(u.full_name) : '—'}</td>
+            <td style="font-size:0.82rem;">${escHtml(u.email)}</td>
+            <td>${typeBadge}</td>
+            <td>${statusBadge}</td>
+            <td style="white-space:nowrap;">
+                <div style="display:flex;gap:4px;align-items:center;">${editBtn}${toggleBtn}${deleteBtn}</div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
 function loadUserList() {
     fetch('api/list_users.php')
         .then(r => r.json())
         .then(data => {
-            const tbody = document.getElementById('userListBody');
-            if (!tbody || !data.success) return;
-            if (!data.users.length) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">No accounts found.</td></tr>';
-                return;
-            }
+            if (!data.success) return;
             _userCache.clear();
-            tbody.innerHTML = data.users.map(u => {
-                _userCache.set(u.user_id, u);
-                const isActive   = u.is_active == 1;
-                const statusBadge = isActive
-                    ? `<span class="badge badge-success">Active</span>`
-                    : `<span class="badge badge-secondary">Inactive</span>`;
-                const typeBadge  = u.user_type === 'IT_admin'
-                    ? `<span class="badge badge-secondary">IT Admin</span>`
-                    : `<span class="badge badge-secondary">EMS</span>`;
-                const toggleBtn = isActive
-                    ? _iconBtn('Deactivate', ICON_BLOCK,     `manageUser(${u.user_id},'deactivate')`)
-                    : _iconBtn('Activate',   ICON_PERSON_OK, `manageUser(${u.user_id},'activate')`);
-                const editBtn   = _iconBtn('Edit',           ICON_PENCIL, `showEditUserModal(${u.user_id})`);
-                const deleteBtn = _iconBtn('Delete',         ICON_TRASH,  `manageUser(${u.user_id},'delete')`, 'color:#dc2626;');
-                return `<tr>
-                    <td>${u.full_name ? escHtml(u.full_name) : '—'}</td>
-                    <td style="font-size:0.82rem;">${escHtml(u.email)}</td>
-                    <td>${typeBadge}</td>
-                    <td>${statusBadge}</td>
-                    <td style="white-space:nowrap;display:flex;gap:4px;align-items:center;">
-                        ${editBtn}${toggleBtn}${deleteBtn}
-                    </td>
-                </tr>`;
-            }).join('');
+            _allUsers = data.users || [];
+            _allUsers.forEach(u => _userCache.set(u.user_id, u));
+            renderUserList();
         })
         .catch(() => {});
 }
@@ -1691,18 +1770,19 @@ document.getElementById('addUserForm')?.addEventListener('submit', function (e) 
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                statusEl.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+                showToast('Account Created', [data.message || 'New account added successfully.'], 'success');
                 document.getElementById('newUserFullName').value = '';
                 document.getElementById('newUserEmail').value    = '';
                 document.getElementById('newUserPassword').value = '';
                 document.getElementById('newUserType').value     = 'EMS';
+                document.getElementById('addUserDetails').removeAttribute('open');
                 loadUserList();
             } else {
-                statusEl.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                showToast('Add Account Failed', [data.error || 'Could not create account.'], 'danger');
             }
         })
         .catch(() => {
-            statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
+            showToast('Request Failed', ['Check server connection and try again.'], 'danger');
         })
         .finally(() => { btn.disabled = false; });
 });
