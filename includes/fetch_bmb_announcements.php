@@ -342,7 +342,8 @@ function _bmb_http_get(string $url)
 {
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+
+        $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT        => 8,
@@ -355,7 +356,19 @@ function _bmb_http_get(string $url)
                 'Accept-Language: en-US,en;q=0.5',
                 'Cache-Control: no-cache',
             ],
-        ]);
+        ];
+
+        // Docker/Railway containers ship the system CA bundle but cURL may not
+        // know the path. Discover it explicitly; fall back to skipping peer
+        // verification only when no bundle is found.
+        $caBundle = _bmb_find_ca_bundle();
+        if ($caBundle !== '') {
+            $opts[CURLOPT_CAINFO] = $caBundle;
+        } else {
+            $opts[CURLOPT_SSL_VERIFYPEER] = false;
+        }
+
+        curl_setopt_array($ch, $opts);
         $body = curl_exec($ch);
         $err  = curl_errno($ch);
         curl_close($ch);
@@ -375,6 +388,29 @@ function _bmb_http_get(string $url)
         return false;
     }
     return $body;
+}
+
+function _bmb_find_ca_bundle(): string
+{
+    static $found = null;
+    if ($found !== null) {
+        return $found;
+    }
+    foreach ([
+        '/etc/ssl/certs/ca-certificates.crt',      // Debian / Ubuntu (Railway)
+        '/etc/pki/tls/certs/ca-bundle.crt',        // RHEL / CentOS / Fedora
+        '/etc/ssl/ca-bundle.pem',                   // OpenSUSE
+        '/etc/ssl/cert.pem',                        // Alpine / macOS
+        '/usr/local/share/certs/ca-root-nss.crt',  // FreeBSD
+    ] as $path) {
+        if (is_readable($path)) {
+            return $found = $path;
+        }
+    }
+    // Let PHP/cURL use its compiled-in default; if that also fails,
+    // the caller will have already set CURLOPT_SSL_VERIFYPEER => false.
+    $compiled = curl_version()['ssl_cert_path'] ?? '';
+    return $found = (is_readable($compiled) ? $compiled : '');
 }
 
 // ── Internal: hardcoded fallback ─────────────────────────────────────────────

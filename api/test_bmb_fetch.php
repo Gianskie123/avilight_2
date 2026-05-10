@@ -23,12 +23,15 @@ $report = [];
 
 // ── 1. Environment ────────────────────────────────────────────────────────────
 
+$caBundleUsed = _bmb_find_ca_bundle();
 $report['env'] = [
     'php_version'         => PHP_VERSION,
     'curl_available'      => function_exists('curl_init'),
     'curl_version'        => function_exists('curl_version') ? (curl_version()['version'] ?? 'unknown') : null,
     'fastcgi_finish_req'  => function_exists('fastcgi_finish_request'),
     'allow_url_fopen'     => (bool) ini_get('allow_url_fopen'),
+    'ca_bundle_found'     => $caBundleUsed !== '',
+    'ca_bundle_path'      => $caBundleUsed ?: '(none — will skip SSL peer verification)',
     'data_dir_writable'   => is_writable(dirname(BMB_CACHE_FILE)),
     'cache_file'          => BMB_CACHE_FILE,
     'lock_file'           => BMB_LOCK_FILE,
