@@ -790,6 +790,30 @@ $extra_scripts = <<<SCRIPTS
 }
 .announcement-row-link:hover { color: var(--accent-blue, #3b82f6); text-decoration: underline; }
 
+/* ── Lower grid: both cards fill cell height so footers can float ─────────── */
+.home-lower-grid > .card {
+    display: flex;
+    flex-direction: column;
+}
+.home-lower-grid > .card > .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* KBA/PA: footnote floats near bottom with breathing room above */
+.home-lower-grid > .card:first-child .kba-table-footer {
+    margin-top: auto;
+    padding-top: 20px;
+}
+
+/* DENR-BMB: feed fills card-body; pagination anchored to bottom */
+.announcements-feed {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
 /* ── Announcement pagination ─────────────────────────────────────────────── */
 .bmb-pagination {
     display: flex;
@@ -797,7 +821,7 @@ $extra_scripts = <<<SCRIPTS
     justify-content: flex-end;
     gap: 8px;
     padding: 10px 0 2px;
-    margin-top: 8px;
+    margin-top: auto;                                          /* always at bottom */
     border-top: 1px solid var(--border-color, rgba(148,163,184,0.15));
 }
 .bmb-page-btn {
@@ -895,6 +919,7 @@ $extra_scripts = <<<SCRIPTS
     var BMB_PER  = 3;   // items visible per page (1 featured + up to 2 rows)
     var bmbItems = [];
     var bmbPage  = 0;
+    var bmbFixedH = 0; // locked container height set after page 0 renders
 
     // Seed from server-rendered data so pagination works before the API responds.
     try {
@@ -967,6 +992,19 @@ $extra_scripts = <<<SCRIPTS
         var nextBtn = feedEl.querySelector('.bmb-next');
         if (prevBtn) prevBtn.onclick = function() { renderBmbPage(bmbPage - 1); };
         if (nextBtn) nextBtn.onclick = function() { renderBmbPage(bmbPage + 1); };
+
+        // After page 0 renders, lock the natural height so subsequent pages
+        // (which may have fewer items) never shrink the container.
+        if (page === 0) {
+            feedEl.style.minHeight = '';          // reset to measure natural height
+            var h = feedEl.offsetHeight;          // forces layout; reads real height
+            if (h > 0) {
+                bmbFixedH = h;
+                feedEl.style.minHeight = h + 'px';
+            }
+        } else if (bmbFixedH > 0) {
+            feedEl.style.minHeight = bmbFixedH + 'px';
+        }
     }
 
     // Boot pagination from server-rendered data if available.

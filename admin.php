@@ -94,6 +94,34 @@ require_once 'includes/header.php';
 <!-- Toast notification container -->
 <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:380px;"></div>
 
+<!-- Confirmation modal — replaces native browser confirm() dialogs -->
+<div id="avlConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;overflow-y:auto;backdrop-filter:blur(2px);">
+    <div style="max-width:480px;margin:100px auto 40px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.25);overflow:hidden;">
+        <div style="padding:6px 20px 0;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;align-items:center;gap:12px;padding:16px 4px;">
+                <div id="avlConfirmModalIconWrap" style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <span id="avlConfirmModalIcon" style="display:flex;align-items:center;justify-content:center;"></span>
+                </div>
+                <div>
+                    <div id="avlConfirmModalTitle" style="font-weight:700;font-size:.95rem;color:var(--text-primary);"></div>
+                    <div id="avlConfirmModalSubtitle" style="font-size:.78rem;color:var(--text-muted);margin-top:2px;"></div>
+                </div>
+            </div>
+        </div>
+        <div style="padding:20px 24px 24px;">
+            <div id="avlConfirmModalBody" style="color:var(--text-secondary);font-size:.875rem;line-height:1.6;margin-bottom:20px;"></div>
+            <div style="display:flex;gap:10px;">
+                <button id="avlConfirmModalOk"
+                    style="flex:1;padding:10px;border-radius:7px;border:none;cursor:pointer;font-size:.9rem;font-weight:600;color:#fff;transition:opacity .15s;"
+                    onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">Proceed</button>
+                <button id="avlConfirmModalCancel"
+                    style="flex:1;padding:10px;border-radius:7px;border:1px solid var(--border-color);cursor:pointer;font-size:.9rem;background:var(--bg-card);color:var(--text-secondary);transition:background .15s;"
+                    onmouseover="this.style.background='var(--bg-card-alt)'" onmouseout="this.style.background='var(--bg-card)'">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="page-header">
     <h1 class="page-title">Admin & Staff Controls</h1>
     <p class="page-subtitle">Data management, model configuration, and system monitoring</p>
@@ -536,7 +564,7 @@ require_once 'includes/header.php';
 $extra_scripts = <<<'EOD'
 <style>
 @keyframes toastIn { from { opacity:0; transform:translateX(30px); } to { opacity:1; transform:translateX(0); } }
-#toastContainer > div { transition: opacity .3s ease; }
+.avl-toast { transition: opacity .3s ease; }
 </style>
 <script>
 // ── Audit log loaders (paginated) ────────────────────────────────────────────
@@ -570,7 +598,7 @@ function loadAuditLog(page) {
                     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.email)}">${escHtml(r.email)}</td>
                     <td style="font-size:0.8rem;">${escHtml(r.action.charAt(0).toUpperCase() + r.action.slice(1))}</td>
                     <td style="color:#64748b;font-size:0.8rem;">${escHtml(r.ip_address)}</td>
-                    <td style="color:#64748b;font-size:0.8rem;white-space:nowrap;">${escHtml(r.logged_at.substring(0,16))}</td>
+                    <td style="color:#64748b;font-size:0.8rem;white-space:nowrap;">${escHtml(formatUtcToManila(r.logged_at))}</td>
                 </tr>`).join('');
             renderPager('accessLogPager', data.page, data.total_pages, 'loadAuditLog');
         })
@@ -603,7 +631,7 @@ function loadFailedAttempts(page) {
                 <tr>
                     <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.email)}">${escHtml(r.email)}</td>
                     <td style="color:#64748b;font-size:0.8rem;">${escHtml(r.ip_address)}</td>
-                    <td style="color:#64748b;font-size:0.8rem;white-space:nowrap;">${escHtml(r.attempted_at.substring(0,16))}</td>
+                    <td style="color:#64748b;font-size:0.8rem;white-space:nowrap;">${escHtml(formatUtcToManila(r.attempted_at))}</td>
                 </tr>`).join('');
             renderPager('failLogPager', data.page, data.total_pages, 'loadFailedAttempts');
         })
@@ -663,31 +691,110 @@ function renderPager(containerId, page, totalPages, fnName) {
     el.innerHTML = html;
 }
 
+// ── Shared SVG icon constants ─────────────────────────────────────────────────
+
+const ICON_CLOUD   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>`;
+const ICON_REBUILD = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
+const ICON_SWITCH  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
+
+// ── Confirmation modal (replaces native confirm()) ────────────────────────────
+
+function showConfirmModal({ title, subtitle, iconSvg, iconBg, iconColor, body, confirmText, confirmBg }) {
+    return new Promise(resolve => {
+        const modal     = document.getElementById('avlConfirmModal');
+        const titleEl   = document.getElementById('avlConfirmModalTitle');
+        const subEl     = document.getElementById('avlConfirmModalSubtitle');
+        const iconWrap  = document.getElementById('avlConfirmModalIconWrap');
+        const iconEl    = document.getElementById('avlConfirmModalIcon');
+        const bodyEl    = document.getElementById('avlConfirmModalBody');
+        const okBtn     = document.getElementById('avlConfirmModalOk');
+        const cancelBtn = document.getElementById('avlConfirmModalCancel');
+
+        titleEl.textContent       = title    || '';
+        subEl.textContent         = subtitle || '';
+        iconWrap.style.background = iconBg    || 'rgba(37,99,235,0.12)';
+        iconWrap.style.color      = iconColor || '#2563eb';
+        iconEl.innerHTML          = iconSvg   || '';
+        bodyEl.innerHTML          = body      || '';
+        okBtn.textContent         = confirmText || 'Proceed';
+        okBtn.style.background    = confirmBg   || 'var(--accent-blue,#2563eb)';
+
+        modal.style.display = 'block';
+
+        function close(result) {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click',     onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click',     onBackdrop);
+            resolve(result);
+        }
+        const onOk       = ()  => close(true);
+        const onCancel   = ()  => close(false);
+        const onBackdrop = (e) => { if (e.target === modal) close(false); };
+
+        okBtn.addEventListener('click',     onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        modal.addEventListener('click',     onBackdrop);
+    });
+}
+
+// ── Timezone helpers (all stored timestamps are UTC, display in PHT) ──────────
+
+function formatUtcToManila(ts) {
+    if (!ts) return '—';
+    try {
+        const str = ts.includes('T') ? ts : ts.replace(' ', 'T');
+        const d   = new Date(str.endsWith('Z') ? str : str + 'Z');
+        if (isNaN(d.getTime())) return ts.substring(0, 16);
+        return d.toLocaleString('en-PH', {
+            timeZone: 'Asia/Manila',
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        }) + ' PHT';
+    } catch (_) { return ts.substring(0, 16); }
+}
+
 // ── Toast notifications ───────────────────────────────────────────────────────
 
 function showToast(title, lines, type = 'info') {
-    const colors = {
-        success: { bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.4)',  icon: '✓', titleColor: '#4ade80' },
-        danger:  { bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.4)', icon: '✗', titleColor: '#f87171' },
-        warning: { bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)', icon: '⚠', titleColor: '#fbbf24' },
-        info:    { bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)',  icon: 'ℹ', titleColor: '#60a5fa' },
+    const meta = {
+        success: {
+            border: '#16a34a', circleBg: 'rgba(22,163,74,0.12)', iconColor: '#16a34a',
+            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+        },
+        danger: {
+            border: '#dc2626', circleBg: 'rgba(220,38,38,0.12)', iconColor: '#dc2626',
+            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+        },
+        warning: {
+            border: '#ca8a04', circleBg: 'rgba(202,138,4,0.12)', iconColor: '#ca8a04',
+            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+        },
+        info: {
+            border: '#2563eb', circleBg: 'rgba(37,99,235,0.12)', iconColor: '#2563eb',
+            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+        },
     };
-    const c = colors[type] || colors.info;
-    const toast = document.createElement('div');
-    toast.style.cssText = `background:${c.bg};border:1px solid ${c.border};border-radius:10px;padding:14px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);backdrop-filter:blur(8px);animation:toastIn .2s ease;`;
+    const m = meta[type] || meta.info;
     const bodyLines = (Array.isArray(lines) ? lines : [lines]).filter(Boolean);
-    toast.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-            <div style="flex:1;">
-                <div style="font-weight:600;color:${c.titleColor};margin-bottom:${bodyLines.length ? 6 : 0}px;">${c.icon} ${title}</div>
-                ${bodyLines.map(l => `<div style="font-size:0.82rem;color:var(--text-secondary,#94a3b8);margin-top:3px;">${l}</div>`).join('')}
-            </div>
-            <button onclick="this.closest('div[data-toast]').remove()" style="background:none;border:none;color:#666;cursor:pointer;font-size:1.1rem;line-height:1;padding:0;flex-shrink:0;">×</button>
-        </div>`;
+
+    const toast = document.createElement('div');
     toast.setAttribute('data-toast', '1');
+    toast.className = 'avl-toast';
+    toast.style.cssText = `background:var(--bg-card,#fff);border:1px solid var(--border-color,#dde1ea);border-left:4px solid ${m.border};border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.12);animation:toastIn .2s ease;`;
+    toast.innerHTML = `
+        <div style="padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
+            <div style="width:32px;height:32px;border-radius:50%;background:${m.circleBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${m.iconColor};">${m.icon}</div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:.88rem;color:var(--text-primary);line-height:1.3;">${title}</div>
+                ${bodyLines.map(l => `<div style="font-size:.8rem;color:var(--text-secondary,#5c6278);margin-top:3px;line-height:1.4;">${l}</div>`).join('')}
+            </div>
+            <button onclick="this.closest('[data-toast]').remove()" style="background:none;border:none;color:var(--text-muted,#9ca3af);cursor:pointer;font-size:1.1rem;line-height:1;padding:0;flex-shrink:0;margin-top:-2px;">×</button>
+        </div>`;
+
     document.getElementById('toastContainer').appendChild(toast);
-    setTimeout(() => toast.style.opacity = '0', 4700);
-    setTimeout(() => toast.remove(), 5000);
+    setTimeout(() => { if (toast.parentNode) toast.style.opacity = '0'; }, 4700);
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 5000);
 }
 
 // ── Validation log loader ─────────────────────────────────────────────────────
@@ -730,7 +837,7 @@ function loadValidationLog() {
 
                 // Upload summary row
                 rows.push(`<tr style="border-top:2px solid var(--border-color,#334155);">
-                    <td style="white-space:nowrap;font-size:0.83rem;vertical-align:top;">${upload.uploaded_at || '—'}</td>
+                    <td style="white-space:nowrap;font-size:0.83rem;vertical-align:top;">${escHtml(upload.uploaded_at ? formatUtcToManila(upload.uploaded_at) : '—')}</td>
                     <td style="font-size:0.83rem;vertical-align:top;">${upload.uploaded_by || '—'}</td>
                     <td style="vertical-align:top;"><span class="badge badge-info">Upload</span></td>
                     <td style="font-size:0.85rem;">
@@ -816,8 +923,7 @@ const STATUS_BADGE = {
 
 function formatLastFetch(ingestedAt) {
     if (!ingestedAt) return 'Never';
-    const ts = ingestedAt.replace('T', ' ').substring(0, 16) + ' UTC';
-    return ts;
+    return formatUtcToManila(ingestedAt);
 }
 
 function loadCovariateStatus() {
@@ -884,31 +990,34 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
     const statusDiv = document.getElementById('uploadStatus');
     
     if (fileInput.files.length === 0) {
-        statusDiv.innerHTML = '<div class="alert alert-danger">Please select a file</div>';
+        showToast('No File Selected', ['Please select a CSV or XLSX file before uploading.'], 'warning');
         return;
     }
-    
+
     const file = fileInput.files[0];
-    
+
     // Validate file size
     if (file.size > 150 * 1024 * 1024) {
-        statusDiv.innerHTML = '<div class="alert alert-danger">File exceeds the file size limit of 150MB.</div>';
+        showToast('File Too Large', ['File exceeds the 150 MB limit. Please reduce the file size and try again.'], 'danger');
         return;
     }
-    
+
     // Validate file type
     const validExtensions = ['.csv', '.xlsx'];
     const fileName = file.name.toLowerCase();
     if (!validExtensions.some(ext => fileName.endsWith(ext))) {
-        statusDiv.innerHTML = '<div class="alert alert-danger">Invalid file type. Only CSV and XLSX allowed.</div>';
+        showToast('Invalid File Type', ['Only CSV and XLSX files are accepted.'], 'danger');
         return;
     }
-    
-    statusDiv.innerHTML = '<div class="alert alert-info"><div class="loading"></div> Uploading and validating data...</div>';
-    
+
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading…';
+    statusDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:.875rem;padding:6px 0;"><div class="loading" style="width:16px;height:16px;border-width:2px;flex-shrink:0;"></div> Uploading and validating — do not close this page.</div>';
+
     const formData = new FormData();
     formData.append('file', file);
-    
+
     fetch('api/upload_data.php', { method: 'POST', body: formData })
         .then(r => {
             if (!r.ok) {
@@ -919,58 +1028,76 @@ document.getElementById('dataUploadForm').addEventListener('submit', function(e)
             return r.json();
         })
         .then(data => {
+            statusDiv.innerHTML = '';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Upload & Validate';
             if (data.success) {
                 const added = Number(data.inserted || 0).toLocaleString();
-                statusDiv.innerHTML = `<div class="alert alert-info"><strong>✓ Upload complete &mdash; ${added} record(s) added.</strong></div>`;
+                const newSp = Number(data.new_species || 0);
+                const lines = [`${added} record(s) successfully ingested into the database.`];
+                if (newSp > 0) lines.push(`${newSp} new species automatically added to the masterlist.`);
+                showToast('Upload Complete', lines, 'success');
                 loadValidationLog();
                 loadSpatialChecks();
                 loadCovariateStatus();
             } else {
-                statusDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Upload failed.'}</div>`;
+                showToast('Upload Failed', [data.error || 'Upload failed. Check the validation log below for details.'], 'danger');
                 loadValidationLog();
                 loadSpatialChecks();
             }
         })
         .catch(err => {
-            statusDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${err.message}</div>`;
+            statusDiv.innerHTML = '';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Upload & Validate';
+            showToast('Upload Failed', [`Network error: ${err.message}`], 'danger');
         });
 });
 
 // Model upload form
-document.getElementById('modelUploadForm').addEventListener('submit', function(e) {
+document.getElementById('modelUploadForm')?.addEventListener('submit', function(e) {
     e.preventDefault();
     const file    = document.getElementById('modelFile').files[0];
     const version = document.getElementById('versionName').value;
     const desc    = document.getElementById('versionDesc').value;
-    const statusEl = document.getElementById('modelStatus');
+    const uploadBtn = this.querySelector('button[type="submit"]');
 
     if (!file) {
-        statusEl.innerHTML = '<div class="alert alert-danger">Please select a model file.</div>';
+        showToast('No File Selected', ['Please select a model file (.zip, .h5, .keras, etc.)'], 'warning');
         return;
     }
     if (!version.trim()) {
-        statusEl.innerHTML = '<div class="alert alert-danger">Version name is required.</div>';
+        showToast('Version Required', ['Enter a version name (e.g. v2.1.0) before uploading.'], 'warning');
         return;
     }
-    statusEl.innerHTML = '<div class="alert alert-info">Uploading model...</div>';
-    
+
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('version', version);
     formData.append('description', desc);
-    
+
     fetch('api/upload_model.php', { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload Model';
             if (!data.success) {
-                statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Model upload failed.'}</div>`;
+                showToast('Model Upload Failed', [data.error || 'Upload failed. Verify the file format and try again.'], 'danger');
                 return;
             }
-            statusEl.innerHTML = `<div class="alert alert-info">${data.message || 'Model upload complete.'}</div>`;
-            setTimeout(() => window.location.reload(), 700);
+            showToast('Model Uploaded', [
+                data.message || `Version ${version} uploaded successfully.`,
+                'Reloading to update the version list…'
+            ], 'success');
+            setTimeout(() => window.location.reload(), 2000);
         })
         .catch(() => {
-            statusEl.innerHTML = '<div class="alert alert-danger">Model upload request failed. Check server connection.</div>';
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload Model';
+            showToast('Upload Failed', ['Request failed. Check server connection and try again.'], 'danger');
         });
 });
 
@@ -1007,100 +1134,113 @@ function describeApiError(data, fallback) {
     }
 }
 
-function fetchCovariate(btn, source, label) {
+async function fetchCovariate(btn, source, label) {
     btn.disabled = true;
     btn.textContent = 'Checking missing periods…';
 
     // Step 1 — dry run: ask backend which (year, month) periods are missing
-    fetch('api/fetch_satellite.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source })
-    })
-    .then(safeJson)
-    .then(data => {
+    let data;
+    try {
+        data = await fetch('api/fetch_satellite.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source })
+        }).then(safeJson);
+    } catch (err) {
         btn.disabled = false;
         btn.textContent = `Fetch ${label} Data`;
+        showToast(`${label} — Check Failed`, [err.message], 'danger');
+        return;
+    }
 
-        if (!data.success) {
-            showToast(`${label} Error`, [describeApiError(data, 'Unexpected error occurred.')], 'danger');
-            return;
-        }
+    btn.disabled = false;
+    btn.textContent = `Fetch ${label} Data`;
 
-        // Nothing missing
-        if (!data.missing || data.missing.length === 0) {
-            showToast(`${label}`, ['Already up to date with all bird observation periods.'], 'success');
-            loadCovariateStatus();
-            return;
-        }
+    if (!data.success) {
+        showToast(`${label} Error`, [describeApiError(data, 'Unexpected error occurred.')], 'danger');
+        return;
+    }
 
-        // Step 2 — show user exactly which periods will be fetched (first batch)
-        const batchSize  = 12;
-        const totalCount = data.missing.length;
-        const thisBatch  = data.missing.slice(0, batchSize);
-        const remaining  = totalCount - thisBatch.length;
+    if (!data.missing || data.missing.length === 0) {
+        showToast(label, ['Already up to date with all bird observation periods.'], 'success');
+        loadCovariateStatus();
+        return;
+    }
 
-        // Group this batch's periods by year for readability
-        const byYear = {};
-        thisBatch.forEach(p => {
-            if (!byYear[p.year]) byYear[p.year] = [];
-            byYear[p.year].push(MONTH_NAMES[p.month - 1]);
-        });
-        const periodList = Object.keys(byYear).sort().map(yr =>
-            `  ${yr}: ${byYear[yr].join(', ')}`
-        ).join('\n');
+    // Step 2 — show confirmation modal with period list
+    const batchSize  = 12;
+    const totalCount = data.missing.length;
+    const thisBatch  = data.missing.slice(0, batchSize);
+    const remaining  = totalCount - thisBatch.length;
 
-        const remainNote = remaining > 0
-            ? `\n\n${remaining} more period(s) will remain — click Fetch again to continue.`
-            : '';
+    const byYear = {};
+    thisBatch.forEach(p => {
+        if (!byYear[p.year]) byYear[p.year] = [];
+        byYear[p.year].push(MONTH_NAMES[p.month - 1]);
+    });
+    const periodRowsHtml = Object.keys(byYear).sort().map(yr =>
+        `<div><strong style="color:var(--text-primary);">${escHtml(yr)}:</strong> ${escHtml(byYear[yr].join(', '))}</div>`
+    ).join('');
 
-        const confirmed = confirm(
-            `${label}\n` +
-            `${'─'.repeat(40)}\n` +
-            `${totalCount} missing period(s) found.\n\n` +
-            `Fetching next ${thisBatch.length}:\n${periodList}` +
-            remainNote + `\n\nProceed? This may take a few minutes.`
-        );
+    const remainNote = remaining > 0
+        ? `<p style="margin:8px 0 0;font-size:.8rem;color:var(--text-muted);">${remaining} more period(s) will remain after this batch — click Fetch again to continue.</p>`
+        : '';
 
-        if (!confirmed) return;
+    const bodyHtml = `
+        <p style="margin:0 0 10px;"><strong>${totalCount}</strong> missing period(s) found.
+        Fetching the next <strong>${thisBatch.length}</strong>:</p>
+        <div style="background:var(--bg-card-alt);border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;font-size:.83rem;max-height:150px;overflow-y:auto;line-height:1.9;">
+            ${periodRowsHtml}
+        </div>
+        ${remainNote}
+        <p style="margin:8px 0 0;font-size:.8rem;color:var(--text-muted);">This may take several minutes. Keep this page open.</p>`;
 
-        // Step 3 — confirmed: trigger actual GEE fetch
-        btn.disabled = true;
-        btn.textContent = `Fetching ${thisBatch.length} of ${totalCount} period(s)…`;
+    const confirmed = await showConfirmModal({
+        title: label,
+        subtitle: 'Confirm satellite data fetch from Google Earth Engine',
+        iconSvg: ICON_CLOUD,
+        iconBg: 'rgba(37,99,235,0.12)',
+        iconColor: '#2563eb',
+        body: bodyHtml,
+        confirmText: `Fetch ${thisBatch.length} Period(s)`,
+        confirmBg: '#2563eb',
+    });
 
-        fetch('api/fetch_satellite.php', {
+    if (!confirmed) return;
+
+    // Step 3 — confirmed: trigger actual GEE fetch
+    btn.disabled = true;
+    btn.textContent = `Fetching ${thisBatch.length} of ${totalCount} period(s)…`;
+
+    let result;
+    try {
+        result = await fetch('api/fetch_satellite.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source, confirmed: true })
-        })
-        .then(safeJson)
-        .then(result => {
-            btn.disabled = false;
-            btn.textContent = `Fetch ${label} Data`;
-            loadCovariateStatus();
-            if (result.success) {
-                const lines = [result.message || 'Batch complete.'];
-                if (result.remaining_count > 0) lines.push(`${result.remaining_count} period(s) still remaining — click Fetch again to continue.`);
-                if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
-                showToast(`${label} Complete`, lines, result.errors?.length ? 'warning' : 'success');
-            } else {
-                const lines = [describeApiError(result, 'Unexpected error.')];
-                if (result.remaining_count > 0) lines.push(`${result.remaining_count} period(s) still remaining — click Fetch again to continue.`);
-                if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
-                showToast(`${label} Fetch Failed`, lines, 'danger');
-            }
-        })
-        .catch(err => {
-            btn.disabled = false;
-            btn.textContent = `Fetch ${label} Data`;
-            showToast(`${label} Fetch Failed`, [err.message], 'danger');
-        });
-    })
-    .catch(err => {
+        }).then(safeJson);
+    } catch (err) {
         btn.disabled = false;
         btn.textContent = `Fetch ${label} Data`;
-        showToast(`${label} Check Failed`, [err.message], 'danger');
-    });
+        showToast(`${label} — Fetch Failed`, [err.message], 'danger');
+        return;
+    }
+
+    btn.disabled = false;
+    btn.textContent = `Fetch ${label} Data`;
+    loadCovariateStatus();
+
+    if (result.success) {
+        const lines = [result.message || 'Batch complete.'];
+        if (result.remaining_count > 0) lines.push(`${result.remaining_count} period(s) still remaining — click Fetch again to continue.`);
+        if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
+        showToast(`${label} Complete`, lines, result.errors?.length ? 'warning' : 'success');
+    } else {
+        const lines = [describeApiError(result, 'Unexpected error.')];
+        if (result.remaining_count > 0) lines.push(`${result.remaining_count} period(s) still remaining — click Fetch again to continue.`);
+        if (result.errors && result.errors.length > 0) result.errors.forEach(e => lines.push(`⚠ ${e}`));
+        showToast(`${label} — Fetch Failed`, lines, 'danger');
+    }
 }
 
 function fetchVIIRS()      { fetchCovariate(this, 'viirs',      'Artificial Light (VIIRS)'); }
@@ -1109,137 +1249,162 @@ function fetchNOAATemp()   { fetchCovariate(this, 'land_temp',  'Land Surface Te
 function fetchNOAAPrecip() { fetchCovariate(this, 'precip',     'Precipitation (CHIRPS)'); }
 function fetchLandCover()  { fetchCovariate(this, 'land_cover', 'Land Cover Type (MODIS)'); }
 
-function buildMasterGrid(btn) {
+async function buildMasterGrid(btn) {
     const statusEl = document.getElementById('masterGridStatus');
     btn.disabled   = true;
     btn.textContent = 'Checking data coverage…';
     statusEl.textContent = '';
 
     // Step 1 — dry run: check which years have complete covariate coverage
-    fetch('api/build_master_grid.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-    })
-    .then(safeJson)
-    .then(data => {
-        btn.disabled    = false;
+    let data;
+    try {
+        data = await fetch('api/build_master_grid.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        }).then(safeJson);
+    } catch (err) {
+        btn.disabled = false;
         btn.textContent = 'Rebuild Analysis Data';
+        showToast('Coverage Check Failed', [err.message], 'danger');
+        return;
+    }
 
-        if (!data.success) {
-            statusEl.innerHTML = `<span style="color:red;">Error: ${data.error}</span>`;
-            return;
+    btn.disabled    = false;
+    btn.textContent = 'Rebuild Analysis Data';
+
+    if (!data.success) {
+        showToast('Coverage Check Failed', [data.error || 'Could not verify data coverage.'], 'danger');
+        return;
+    }
+
+    if (!data.ready_years || data.ready_years.length === 0) {
+        showToast('No Years Ready', [data.message || 'No years have complete covariate coverage yet. Fetch environmental data first.'], 'warning');
+        return;
+    }
+
+    // Step 2 — build modal body with year-detail breakdown
+    const yearRowsHtml = (data.year_detail || []).map(d => {
+        if (!d.ready) {
+            return `<div style="display:flex;align-items:center;gap:8px;padding:2px 0;"><span style="color:#dc2626;font-weight:700;flex-shrink:0;">✗</span><span><strong>${escHtml(String(d.year))}</strong> — Blocked: ${escHtml(String(d.missing[0] || '?'))}</span></div>`;
         }
-
-        if (!data.ready_years || data.ready_years.length === 0) {
-            statusEl.innerHTML = `<span style="color:orange;">${data.message}</span>`;
-            return;
+        const warns = d.warnings || [];
+        if (warns.length === 0) {
+            return `<div style="display:flex;align-items:center;gap:8px;padding:2px 0;"><span style="color:#16a34a;font-weight:700;flex-shrink:0;">✓</span><span><strong>${escHtml(String(d.year))}</strong> — All covariates present</span></div>`;
         }
+        return `<div style="display:flex;align-items:center;gap:8px;padding:2px 0;"><span style="color:#ca8a04;font-weight:700;flex-shrink:0;">⚠</span><span><strong>${escHtml(String(d.year))}</strong> — Gap-fill will cover: ${escHtml(warns.join('; '))}</span></div>`;
+    }).join('');
 
-        // Build a readable summary of ready vs blocked years
-        const detail = (data.year_detail || []).map(d => {
-            if (!d.ready) {
-                return `  ✗ ${d.year} — BLOCKED: ${d.missing[0]}`;
-            }
-            const warns = (d.warnings || []);
-            if (warns.length === 0) return `  ✓ ${d.year} — all covariates present`;
-            return `  ✓ ${d.year} — gap-fill will cover: ${warns.join('; ')}`;
-        }).join('\n');
+    const rawNoteHtml = data.raw_note
+        ? `<p style="margin:8px 0 0;font-size:.8rem;color:var(--text-muted);">⚙ Aggregation: ${escHtml(String(data.raw_note))}</p>`
+        : '';
 
-        const rawNote  = data.raw_note
-            ? `\n⚙  Aggregation step: ${data.raw_note}\n`
-            : '';
+    const bodyHtml = `
+        <p style="margin:0 0 10px;"><strong>${data.ready_years.length}</strong> year(s) ready for rebuild:
+        <strong style="color:var(--text-primary);">${escHtml(data.ready_years.join(', '))}</strong></p>
+        <div style="background:var(--bg-card-alt);border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;font-size:.83rem;max-height:160px;overflow-y:auto;line-height:1.9;">
+            ${yearRowsHtml}
+        </div>
+        ${rawNoteHtml}
+        <p style="margin:8px 0 0;font-size:.8rem;color:var(--text-muted);">
+            Current dataset rows: <strong>${(data.current_rows || 0).toLocaleString()}</strong> — This may take several minutes. Keep this page open.
+        </p>`;
 
-        const confirmed = confirm(
-            `Rebuild Analysis Data\n` +
-            `${'─'.repeat(40)}\n` +
-            `${data.ready_years.length} year(s) ready: ${data.ready_years.join(', ')}\n\n` +
-            `Coverage detail:\n${detail}\n` +
-            rawNote +
-            `\nCurrent rows in final_master_grid: ${(data.current_rows || 0).toLocaleString()}\n\n` +
-            `Proceed? This may take several minutes.`
-        );
+    const confirmed = await showConfirmModal({
+        title: 'Rebuild Analysis Data',
+        subtitle: `${data.ready_years.length} year(s) will be processed`,
+        iconSvg: ICON_REBUILD,
+        iconBg: 'rgba(13,148,136,0.12)',
+        iconColor: '#0d9488',
+        body: bodyHtml,
+        confirmText: 'Rebuild Now',
+        confirmBg: '#0d9488',
+    });
 
-        if (!confirmed) return;
+    if (!confirmed) return;
 
-        // Step 2 — execute
-        btn.disabled    = true;
-        btn.textContent = 'Rebuilding… (do not close this page)';
-        statusEl.innerHTML = '<span style="color:#666;">Step 1: Refreshing bird summaries. Step 2: Rebuilding the analysis dataset. Do not close this page.</span>';
+    // Step 3 — execute
+    btn.disabled    = true;
+    btn.textContent = 'Rebuilding… (do not close this page)';
+    statusEl.innerHTML = '<span style="color:var(--text-secondary);font-size:.875rem;">Step 1: Refreshing bird summaries. Step 2: Rebuilding the analysis dataset. Do not close this page.</span>';
 
-        fetch('api/build_master_grid.php', {
+    let result;
+    try {
+        result = await fetch('api/build_master_grid.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ confirmed: true })
-        })
-        .then(safeJson)
-        .then(result => {
-            btn.disabled    = false;
-            btn.textContent = 'Rebuild Analysis Data';
-
-            // Parse every log line and render as a scrollable pre block
-            const logLines = (result.log || []).map(l => {
-                try {
-                    const p = JSON.parse(l);
-                    return p.msg || l;
-                } catch { return l; }
-            });
-
-            const logHtml = logLines.length
-                ? `<pre style="max-height:200px;overflow-y:auto;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#e2e8f0);padding:8px;font-size:12px;border-radius:4px;margin-top:8px;border:1px solid var(--border-color,#334155);">${logLines.map(l => {
-                    const escaped = l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                    if (/error|fail|✗/i.test(l)) return `<span style="color:#f87171;">${escaped}</span>`;
-                    if (/success|complete|✓/i.test(l)) return `<span style="color:#4ade80;">${escaped}</span>`;
-                    if (/warning|warn/i.test(l)) return `<span style="color:#fbbf24;">${escaped}</span>`;
-                    return `<span style="color:var(--text-secondary,#94a3b8);">${escaped}</span>`;
-                }).join('\n')}</pre>`
-                : '';
-
-            if (result.success) {
-                const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
-                statusEl.innerHTML = `<span style="color:#4ade80;">✓ ${lastMsg}</span>${logHtml}`;
-                loadSpatialChecks();
-            } else {
-                const errMsg = result.error || 'Did not complete successfully.';
-                statusEl.innerHTML = `<span style="color:#f87171;">✗ ${errMsg}</span>${logHtml}`;
-            }
-        })
-        .catch(err => {
-            btn.disabled    = false;
-            btn.textContent = 'Rebuild Analysis Data';
-            statusEl.innerHTML = `<span style="color:red;">Request failed: ${err.message}</span>`;
-        });
-    })
-    .catch(err => {
+        }).then(safeJson);
+    } catch (err) {
         btn.disabled    = false;
         btn.textContent = 'Rebuild Analysis Data';
-        statusEl.innerHTML = `<span style="color:red;">Coverage check failed: ${err.message}</span>`;
+        statusEl.innerHTML = '';
+        showToast('Rebuild Failed', [`Request failed: ${err.message}`], 'danger');
+        return;
+    }
+
+    btn.disabled    = false;
+    btn.textContent = 'Rebuild Analysis Data';
+
+    const logLines = (result.log || []).map(l => {
+        try { const p = JSON.parse(l); return p.msg || l; } catch { return l; }
     });
+
+    const logHtml = logLines.length
+        ? `<pre style="max-height:200px;overflow-y:auto;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#e2e8f0);padding:8px;font-size:12px;border-radius:4px;margin-top:8px;border:1px solid var(--border-color,#334155);">${logLines.map(l => {
+            const esc = l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            if (/error|fail|✗/i.test(l)) return `<span style="color:#f87171;">${esc}</span>`;
+            if (/success|complete|✓/i.test(l)) return `<span style="color:#4ade80;">${esc}</span>`;
+            if (/warning|warn/i.test(l)) return `<span style="color:#fbbf24;">${esc}</span>`;
+            return `<span style="color:var(--text-secondary,#94a3b8);">${esc}</span>`;
+        }).join('\n')}</pre>`
+        : '';
+
+    if (result.success) {
+        const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
+        statusEl.innerHTML = `<span style="color:#4ade80;">✓ ${lastMsg}</span>${logHtml}`;
+        showToast('Analysis Data Rebuilt', ['Dataset rebuilt successfully. Dashboards and Reports will use the updated data on next load.'], 'success');
+        loadSpatialChecks();
+    } else {
+        const errMsg = result.error || 'Did not complete successfully.';
+        statusEl.innerHTML = `<span style="color:#f87171;">✗ ${errMsg}</span>${logHtml}`;
+        showToast('Rebuild Failed', [errMsg], 'danger');
+    }
 }
 
 // Model switching
-function switchModel(version) {
-    const statusEl = document.getElementById('modelStatus');
-    if (confirm(`Switch to model version ${version}? This will affect all predictions.`)) {
-        statusEl.innerHTML = `<div class="alert alert-info">Switching to ${version}...</div>`;
-        fetch('api/switch_model.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ version: version })
+async function switchModel(version) {
+    const confirmed = await showConfirmModal({
+        title: 'Switch Model Version',
+        subtitle: `Activate version: ${version}`,
+        iconSvg: ICON_SWITCH,
+        iconBg: 'rgba(99,102,241,0.12)',
+        iconColor: '#6366f1',
+        body: `<p style="margin:0 0 10px;">Switch all predictions and forecasts to model version <strong style="color:var(--text-primary);">${escHtml(version)}</strong>?</p><p style="margin:0;font-size:.82rem;color:var(--text-muted);">The previous active model will be archived. You can switch back at any time.</p>`,
+        confirmText: 'Switch Model',
+        confirmBg: '#6366f1',
+    });
+    if (!confirmed) return;
+
+    showToast('Switching Model', [`Loading version ${escHtml(version)}…`], 'info');
+    fetch('api/switch_model.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                showToast('Switch Failed', [data.error || 'Model switch failed. Try again.'], 'danger');
+                return;
+            }
+            showToast('Model Activated', [
+                data.message || `Version ${escHtml(version)} is now active.`,
+                'Reloading page…'
+            ], 'success');
+            setTimeout(() => window.location.reload(), 2000);
         })
-            .then(r => r.json())
-            .then(data => {
-                if (!data.success) {
-                    statusEl.innerHTML = `<div class="alert alert-danger">${data.error || 'Model switch failed.'}</div>`;
-                    return;
-                }
-                statusEl.innerHTML = `<div class="alert alert-info">${data.message || `Switched to ${version}.`}</div>`;
-                setTimeout(() => window.location.reload(), 700);
-            })
-            .catch(() => {
-                statusEl.innerHTML = '<div class="alert alert-danger">Request failed. Check server connection.</div>';
-            });
-    }
+        .catch(() => showToast('Request Failed', ['Check server connection and try again.'], 'danger'));
 }
 
 // Save thresholds
@@ -1313,7 +1478,7 @@ function loadUserList() {
                 return;
             }
             tbody.innerHTML = data.users.map(u => {
-                const lastLogin  = u.last_login_at ? u.last_login_at.substring(0, 16) + ' UTC' : 'Never';
+                const lastLogin  = u.last_login_at ? formatUtcToManila(u.last_login_at) : 'Never';
                 const isActive   = u.is_active == 1;
                 const statusBadge = isActive
                     ? `<span class="badge badge-success">Active</span>`

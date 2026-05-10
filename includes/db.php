@@ -350,6 +350,7 @@ function get_mysql_db(): PDO {
     }
 
     $mysql_pdo = new PDO($dsn, $user, $pass, $options);
+    $mysql_pdo->exec("SET time_zone = '+08:00'");
 
     return $mysql_pdo;
 }
