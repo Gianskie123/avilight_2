@@ -357,6 +357,8 @@ function get_mysql_db(): PDO {
 
 /** Ensure MySQL BAU baseline cache table/indexes exist. */
 function ensure_mysql_bau_baseline_cache_table(PDO $pdo): void {
+    static $ensured = false;
+    if ($ensured) return;
     $pdo->exec("CREATE TABLE IF NOT EXISTS analytics_bau_baselines (
         city_key              VARCHAR(150) NOT NULL,
         city_label            VARCHAR(150) NOT NULL,
@@ -377,6 +379,7 @@ function ensure_mysql_bau_baseline_cache_table(PDO $pdo): void {
         PRIMARY KEY (city_key, month),
         KEY idx_abb_refreshed (refreshed_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $ensured = true;
 }
 
 /** Delete all cached BAU baselines. */

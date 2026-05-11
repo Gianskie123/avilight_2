@@ -555,24 +555,6 @@ function polygons_contain_point(array $polygons, float $x, float $y): bool {
 }
 
 function latest_observation_rows(PDO $pdo): array {
-    $driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-
-    $hasObservations = false;
-    if ($driver === 'mysql') {
-        $stmt = $pdo->prepare('SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1');
-        $stmt->execute(['observations']);
-        $hasObservations = (bool)$stmt->fetchColumn();
-    } elseif ($driver === 'sqlite') {
-        $stmt = $pdo->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1");
-        $stmt->execute(['observations']);
-        $hasObservations = (bool)$stmt->fetchColumn();
-    }
-
-    if (!$hasObservations) {
-        $sqlite = get_db();
-        return latest_observation_rows($sqlite);
-    }
-
     $sql = "
         SELECT o1.site_name, o1.latitude, o1.longitude, o1.total_unique,
                o1.total_tolerant, o1.total_sensitive, o1.total_resident, o1.total_migrant
@@ -592,8 +574,7 @@ function latest_observation_rows(PDO $pdo): array {
     return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function build_affected_areas(PDO $pdo, ?array $cityPolygons, float $richnessChangePct): array {
-    $rows = latest_observation_rows($pdo);
+function build_affected_areas_from_rows(array $rows, ?array $cityPolygons, float $richnessChangePct): array {
     $areas = [];
 
     foreach ($rows as $row) {
@@ -624,8 +605,7 @@ function build_affected_areas(PDO $pdo, ?array $cityPolygons, float $richnessCha
     return $areas;
 }
 
-function average_city_baseline_total(PDO $pdo, ?array $cityPolygons): float {
-    $rows = latest_observation_rows($pdo);
+function average_city_baseline_total_from_rows(array $rows, ?array $cityPolygons): float {
     $vals = [];
     foreach ($rows as $row) {
         $lat = (float)$row['latitude'];
@@ -642,8 +622,7 @@ function average_city_baseline_total(PDO $pdo, ?array $cityPolygons): float {
     return array_sum($vals) / count($vals);
 }
 
-function average_city_baseline_outputs(PDO $pdo, ?array $cityPolygons): array {
-    $rows = latest_observation_rows($pdo);
+function average_city_baseline_outputs_from_rows(array $rows, ?array $cityPolygons): array {
     $totals = [
         'tolerant' => [],
         'sensitive' => [],
@@ -935,15 +914,16 @@ try {
 
     // Calculate impact metrics using observation-derived city baseline (not hardcoded).
     $total_richness = $out_total;
-    $baseline_total = average_city_baseline_total($pdo, $city_polygons);
-    $baseline_by_output = average_city_baseline_outputs($pdo, $city_polygons);
+    $obs_rows = latest_observation_rows($pdo);
+    $baseline_total = average_city_baseline_total_from_rows($obs_rows, $city_polygons);
+    $baseline_by_output = average_city_baseline_outputs_from_rows($obs_rows, $city_polygons);
     $richness_change_pct = 0;
     if ($baseline_total > 0) {
         $richness_change_pct = (($total_richness - $baseline_total) / $baseline_total) * 100;
     }
-    
+
     // Build affected areas from live observations.
-    $affected_areas = build_affected_areas($pdo, $city_polygons, $richness_change_pct);
+    $affected_areas = build_affected_areas_from_rows($obs_rows, $city_polygons, $richness_change_pct);
     
     // Build final response
     $response_data = [
