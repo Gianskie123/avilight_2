@@ -302,65 +302,81 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
         throw new Exception('No grid cells available for BAU baseline computation.');
     }
 
-    // Match dashboard historical source: ecological_yearly_summary.
+    // Primary: ecological_monthly_summary — month-specific trend per city.
+    // Fallback: ecological_yearly_summary — annual averages, used when monthly
+    //   data has fewer than 2 years (e.g. table not yet populated).
+    $sourceUsed = 'monthly';
+
     if ($city === '') {
-        $envStmt = $pdo->prepare('SELECT
-                year,
-                AVG(viirs_avg) AS viirs_avg,
-                AVG(ndvi_avg) AS ndvi_avg,
-                AVG(lst_avg) AS lst_avg,
+        $stmt = $pdo->prepare('SELECT year,
+                AVG(ndvi_avg)            AS ndvi_avg,
+                AVG(viirs_avg)           AS viirs_avg,
+                AVG(lst_avg)             AS lst_avg,
                 AVG(precipitation_total) AS precipitation_total
-            FROM ecological_yearly_summary
-            WHERE year BETWEEN 2014 AND 2025
+            FROM ecological_monthly_summary
+            WHERE month = :month AND year BETWEEN 2014 AND 2025
             GROUP BY year
             ORDER BY year ASC');
-        $envStmt->execute();
+        $stmt->execute([':month' => $month]);
     } else {
-        $envStmt = $pdo->prepare('SELECT
-                year,
-                viirs_avg,
-                ndvi_avg,
-                lst_avg,
-                precipitation_total
-            FROM ecological_yearly_summary
-            WHERE area = :area
-              AND year BETWEEN 2014 AND 2025
+        $stmt = $pdo->prepare('SELECT year, ndvi_avg, viirs_avg, lst_avg, precipitation_total
+            FROM ecological_monthly_summary
+            WHERE area = :area AND month = :month AND year BETWEEN 2014 AND 2025
             ORDER BY year ASC');
-        $envStmt->execute([':area' => $city]);
+        $stmt->execute([':area' => $city, ':month' => $month]);
+    }
+    $envRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    if (count($envRows) < 2) {
+        $sourceUsed = 'yearly_fallback';
+        if ($city === '') {
+            $fbStmt = $pdo->prepare('SELECT year,
+                    AVG(ndvi_avg)            AS ndvi_avg,
+                    AVG(viirs_avg)           AS viirs_avg,
+                    AVG(lst_avg)             AS lst_avg,
+                    AVG(precipitation_total) AS precipitation_total
+                FROM ecological_yearly_summary
+                WHERE year BETWEEN 2014 AND 2025
+                GROUP BY year
+                ORDER BY year ASC');
+            $fbStmt->execute();
+        } else {
+            $fbStmt = $pdo->prepare('SELECT year, ndvi_avg, viirs_avg, lst_avg, precipitation_total
+                FROM ecological_yearly_summary
+                WHERE area = :area AND year BETWEEN 2014 AND 2025
+                ORDER BY year ASC');
+            $fbStmt->execute([':area' => $city]);
+        }
+        $envRows = $fbStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
-    $envRows = $envStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
     $series = [
-        'ndvi' => [],
-        'viirs' => [],
-        'lst_day' => [],
+        'ndvi'      => [],
+        'viirs'     => [],
+        'lst_day'   => [],
         'lst_night' => [],
-        'precip' => [],
+        'precip'    => [],
     ];
 
     foreach ($envRows as $row) {
-        $year = (int)($row['year'] ?? 0);
-        if ($year < 2014 || $year > 2025) {
-            continue;
-        }
+        $year  = (int)($row['year'] ?? 0);
+        if ($year < 2014 || $year > 2025) continue;
 
-        $ndvi = isset($row['ndvi_avg']) ? (float)$row['ndvi_avg'] : null;
-        $viirs = isset($row['viirs_avg']) ? (float)$row['viirs_avg'] : null;
-        $lst = isset($row['lst_avg']) ? (float)$row['lst_avg'] : null;
+        $ndvi  = isset($row['ndvi_avg'])            ? (float)$row['ndvi_avg']            : null;
+        $viirs = isset($row['viirs_avg'])            ? (float)$row['viirs_avg']           : null;
+        $lst   = isset($row['lst_avg'])              ? (float)$row['lst_avg']             : null;
         $precip = isset($row['precipitation_total']) ? (float)$row['precipitation_total'] : null;
-        if ($ndvi === null || $viirs === null || $lst === null || $precip === null) {
-            continue;
-        }
 
-        $series['ndvi'][$year] = $ndvi;
-        $series['viirs'][$year] = $viirs;
-        $series['lst_day'][$year] = $lst;
+        if ($ndvi === null || $viirs === null || $lst === null || $precip === null) continue;
+
+        $series['ndvi'][$year]      = $ndvi;
+        $series['viirs'][$year]     = $viirs;
+        $series['lst_day'][$year]   = $lst;  // ecological_monthly_summary stores combined LST
         $series['lst_night'][$year] = $lst;
-        $series['precip'][$year] = $precip;
+        $series['precip'][$year]    = $precip;
     }
 
-    $yearSets = array_map(fn($s) => array_keys($s), $series);
+    $yearSets    = array_map(fn($s) => array_keys($s), $series);
     $commonYears = array_values(array_intersect(
         $yearSets['ndvi'],
         $yearSets['viirs'],
@@ -378,60 +394,64 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
 
     $lstCombined = [];
     foreach ($commonYears as $y) {
-        $d = (float)($series['lst_day'][$y] ?? 0.0);
+        $d = (float)($series['lst_day'][$y]   ?? 0.0);
         $n = (float)($series['lst_night'][$y] ?? $d);
         $lstCombined[$y] = ($d + $n) / 2.0;
     }
 
-    // Baseline rule: most recent aligned year + average trend across aligned years.
-    $ndviStats = baseline_with_trend($series['ndvi'], $commonYears, $latestCommonYear);
-    $viirsStats = baseline_with_trend($series['viirs'], $commonYears, $latestCommonYear);
-    $lstDayStats = baseline_with_trend($series['lst_day'], $commonYears, $latestCommonYear);
+    $ndviStats     = baseline_with_trend($series['ndvi'],      $commonYears, $latestCommonYear);
+    $viirsStats    = baseline_with_trend($series['viirs'],     $commonYears, $latestCommonYear);
+    $lstDayStats   = baseline_with_trend($series['lst_day'],   $commonYears, $latestCommonYear);
     $lstNightStats = baseline_with_trend($series['lst_night'], $commonYears, $latestCommonYear);
-    $lstStats = baseline_with_trend($lstCombined, $commonYears, $latestCommonYear);
-    $precipStats = baseline_with_trend($series['precip'], $commonYears, $latestCommonYear);
+    $lstStats      = baseline_with_trend($lstCombined,         $commonYears, $latestCommonYear);
+    $precipStats   = baseline_with_trend($series['precip'],    $commonYears, $latestCommonYear);
 
     $landCover = dominant_land_cover($pdo, $cell_ids, $latestCommonYear);
 
-    $base_ndvi = max(0.0, min(1.0, $ndviStats['adjusted_baseline']));
-    $base_viirs = max(0.0, $viirsStats['adjusted_baseline']);
-    $base_lst = $lstStats['adjusted_baseline'];
+    $base_ndvi   = max(0.0, min(1.0, $ndviStats['adjusted_baseline']));
+    $base_viirs  = max(0.0, $viirsStats['adjusted_baseline']);
+    $base_lst    = $lstStats['adjusted_baseline'];
     $base_precip = max(0.0, $precipStats['adjusted_baseline']);
-    $lc_dummies = $landCover['dummies'];
+    $lc_dummies  = $landCover['dummies'];
+
+    $formulaSource = $sourceUsed === 'monthly'
+        ? "ecological_monthly_summary (month {$month}-specific)"
+        : 'ecological_yearly_summary (annual fallback — monthly data insufficient)';
 
     $historical_inputs = [
-        'city' => $city === '' ? 'Metro Manila (All Cities)' : $city,
-        'month' => $month,
-        'cell_count' => count($cell_ids),
-        'latest_common_year' => $latestCommonYear,
+        'city'                    => $city === '' ? 'Metro Manila (All Cities)' : $city,
+        'month'                   => $month,
+        'cell_count'              => count($cell_ids),
+        'latest_common_year'      => $latestCommonYear,
         'baseline_reference_year' => $latestCommonYear,
-        'common_years' => $commonYears,
-        'ndvi' => $ndviStats,
-        'viirs' => $viirsStats,
-        'lst_day' => $lstDayStats,
-        'lst_night' => $lstNightStats,
-        'lst_combined' => $lstStats,
-        'precip_mm' => $precipStats,
-        'dominant_land_cover' => $landCover,
-        'model_inputs_used' => [
-            'base_ndvi' => $base_ndvi,
-            'base_viirs' => $base_viirs,
-            'base_lst' => $base_lst,
-            'base_lst_day' => $lstDayStats['adjusted_baseline'],
-            'base_lst_night' => $lstNightStats['adjusted_baseline'],
-            'base_precip' => $base_precip,
-            'land_cover_dummies' => $lc_dummies,
+        'common_years'            => $commonYears,
+        'baseline_source'         => $sourceUsed,
+        'ndvi'                    => $ndviStats,
+        'viirs'                   => $viirsStats,
+        'lst_day'                 => $lstDayStats,
+        'lst_night'               => $lstNightStats,
+        'lst_combined'            => $lstStats,
+        'precip_mm'               => $precipStats,
+        'dominant_land_cover'     => $landCover,
+        'model_inputs_used'       => [
+            'base_ndvi'           => $base_ndvi,
+            'base_viirs'          => $base_viirs,
+            'base_lst'            => $base_lst,
+            'base_lst_day'        => $lstDayStats['adjusted_baseline'],
+            'base_lst_night'      => $lstNightStats['adjusted_baseline'],
+            'base_precip'         => $base_precip,
+            'land_cover_dummies'  => $lc_dummies,
         ],
-        'formula_note' => 'Dashboard-sourced baseline: Baseline = value(latest aligned year) + average(yearly_change across aligned years) from ecological_yearly_summary.',
-        'baseline_scope' => 'dashboard_historical_yearly',
+        'formula_note'   => "Baseline = value(latest aligned year) + avg(yearly change) from {$formulaSource}.",
+        'baseline_scope' => $sourceUsed === 'monthly' ? 'monthly_specific' : 'yearly_fallback',
     ];
 
     return [
-        'base_ndvi' => $base_ndvi,
-        'base_viirs' => $base_viirs,
-        'base_lst' => $base_lst,
-        'base_precip' => $base_precip,
-        'lc_dummies' => $lc_dummies,
+        'base_ndvi'         => $base_ndvi,
+        'base_viirs'        => $base_viirs,
+        'base_lst'          => $base_lst,
+        'base_precip'       => $base_precip,
+        'lc_dummies'        => $lc_dummies,
         'historical_inputs' => $historical_inputs,
     ];
 }
