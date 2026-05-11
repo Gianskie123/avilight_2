@@ -87,15 +87,26 @@ function bau_city_cache_key(string $city): string {
 
 function city_cell_ids(PDO $pdo, ?string $city): array {
     $city = trim((string)$city);
+
     if ($city === '') {
+        // Metro Manila aggregate: all cells assigned to any city polygon.
+        $rows = $pdo->query('SELECT DISTINCT cell_id FROM city_cells')->fetchAll(PDO::FETCH_COLUMN);
+        if (!empty($rows)) return array_values($rows);
+        // Fallback: city_cells not yet populated.
         $rows = $pdo->query('SELECT DISTINCT cell_id FROM final_master_grid')->fetchAll(PDO::FETCH_COLUMN);
         return array_values(array_filter($rows));
     }
 
+    // Fast path: precomputed city→cell mapping.
+    $cityKey = mb_strtolower($city, 'UTF-8');
+    $stmt = $pdo->prepare('SELECT cell_id FROM city_cells WHERE city_key = :k');
+    $stmt->execute([':k' => $cityKey]);
+    $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!empty($rows)) return array_values($rows);
+
+    // Fallback: PHP point-in-polygon (city_cells not yet populated for this city).
     $polygons = city_geometry($city);
-    if (!$polygons) {
-        return [];
-    }
+    if (!$polygons) return [];
 
     $rows = $pdo->query('SELECT cell_id, MAX(lat) AS lat, MAX(lon) AS lon FROM final_master_grid GROUP BY cell_id')->fetchAll(PDO::FETCH_ASSOC);
     $ids = [];
@@ -291,6 +302,78 @@ function dominant_land_cover(PDO $pdo, array $cellIds, int $referenceYear): arra
     ];
 }
 
+/**
+ * Fast land cover lookup using city_land_cover_summary (precomputed proportional shares).
+ * Falls back to dominant_land_cover() with PHP point-in-polygon if the summary table
+ * is not yet populated.
+ */
+function dominant_land_cover_by_city(PDO $pdo, string $city, int $referenceYear): array {
+    $labels = [
+        'urban'      => 'Urban/Built-up',
+        'vegetation' => 'Vegetated',
+        'water'      => 'Water/Wetlands',
+        'cropland'   => 'Cropland/Mosaic',
+        'barren'     => 'Barren/Sparse',
+    ];
+
+    $emptyFallback = function () use ($pdo, $city, $referenceYear): array {
+        return dominant_land_cover($pdo, city_cell_ids($pdo, $city), $referenceYear);
+    };
+
+    if ($city === '') {
+        $stmt = $pdo->prepare('SELECT
+                AVG(urban)      AS urban,
+                AVG(vegetation) AS vegetation,
+                AVG(water)      AS water,
+                AVG(cropland)   AS cropland,
+                AVG(barren)     AS barren,
+                MAX(ref_year)   AS ref_year
+            FROM city_land_cover_summary
+            WHERE ref_year <= :year');
+        $stmt->execute([':year' => $referenceYear]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row || !$row['ref_year']) return $emptyFallback();
+    } else {
+        $cityKey = mb_strtolower($city, 'UTF-8');
+        $stmt = $pdo->prepare('SELECT ref_year, urban, vegetation, water, cropland, barren
+            FROM city_land_cover_summary
+            WHERE city_key = :k AND ref_year <= :year
+            ORDER BY ref_year DESC LIMIT 1');
+        $stmt->execute([':k' => $cityKey, ':year' => $referenceYear]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            $stmt = $pdo->prepare('SELECT ref_year, urban, vegetation, water, cropland, barren
+                FROM city_land_cover_summary
+                WHERE city_key = :k
+                ORDER BY ref_year DESC LIMIT 1');
+            $stmt->execute([':k' => $cityKey]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+
+        if (!$row) return $emptyFallback();
+    }
+
+    $shares = [
+        'urban'      => (float)$row['urban'],
+        'vegetation' => (float)$row['vegetation'],
+        'water'      => (float)$row['water'],
+        'cropland'   => (float)$row['cropland'],
+        'barren'     => (float)$row['barren'],
+    ];
+
+    $dominantGroup = (string)array_search(max($shares), $shares, true);
+
+    return [
+        'year'         => (int)$row['ref_year'],
+        'code'         => null,
+        'label'        => $labels[$dominantGroup] ?? 'Urban/Built-up',
+        'dummies'      => array_values($shares),
+        'group_shares' => $shares,
+    ];
+}
+
 function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month): array {
     $cell_ids = city_cell_ids($pdo, $city);
 
@@ -406,7 +489,7 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
     $lstStats      = baseline_with_trend($lstCombined,         $commonYears, $latestCommonYear);
     $precipStats   = baseline_with_trend($series['precip'],    $commonYears, $latestCommonYear);
 
-    $landCover = dominant_land_cover($pdo, $cell_ids, $latestCommonYear);
+    $landCover = dominant_land_cover_by_city($pdo, $city, $latestCommonYear);
 
     $base_ndvi   = max(0.0, min(1.0, $ndviStats['adjusted_baseline']));
     $base_viirs  = max(0.0, $viirsStats['adjusted_baseline']);
