@@ -350,7 +350,7 @@ function get_mysql_db(): PDO {
     }
 
     $mysql_pdo = new PDO($dsn, $user, $pass, $options);
-    $mysql_pdo->exec("SET time_zone = '+08:00'");
+    $mysql_pdo->exec("SET time_zone = '+00:00'");
 
     return $mysql_pdo;
 }
@@ -521,13 +521,22 @@ function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
                      WHEN ABS(fmg.ndvi) > 1 THEN fmg.ndvi / 10000.0
                      ELSE fmg.ndvi END)                                       AS ndvi_avg,
             AVG(NULLIF(fmg.viirs_avg_rad, 0))                                 AS viirs_avg,
-            AVG(CASE WHEN fmg.lst_day > 100 THEN (fmg.lst_day * 0.02) - 273.15
-                     WHEN fmg.lst_day > 0   THEN fmg.lst_day
-                     ELSE NULL END)                                           AS lst_avg,
+            COALESCE(
+                (AVG(CASE WHEN fmg.lst_day > 100 THEN (fmg.lst_day * 0.02) - 273.15
+                          WHEN fmg.lst_day > 0   THEN fmg.lst_day
+                          ELSE NULL END) +
+                 AVG(CASE WHEN fmg.lst_night > 100 THEN (fmg.lst_night * 0.02) - 273.15
+                          WHEN fmg.lst_night > 0   THEN fmg.lst_night
+                          ELSE NULL END)) / 2.0,
+                AVG(CASE WHEN fmg.lst_day > 100 THEN (fmg.lst_day * 0.02) - 273.15
+                         WHEN fmg.lst_day > 0   THEN fmg.lst_day
+                         ELSE NULL END)
+            )                                                                 AS lst_avg,
             AVG(CASE WHEN fmg.lst_day > 100 THEN (fmg.lst_day * 0.02) - 273.15
                      WHEN fmg.lst_day > 0   THEN fmg.lst_day
                      ELSE NULL END)                                           AS lst_day_avg,
-            AVG(CASE WHEN fmg.lst_night > 0 THEN fmg.lst_night
+            AVG(CASE WHEN fmg.lst_night > 100 THEN (fmg.lst_night * 0.02) - 273.15
+                     WHEN fmg.lst_night > 0   THEN fmg.lst_night
                      ELSE NULL END)                                           AS lst_night_avg,
             AVG(CASE WHEN fmg.monthly_precip_mm < 0 THEN NULL
                      ELSE fmg.monthly_precip_mm END)                          AS precipitation_total,

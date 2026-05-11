@@ -400,7 +400,8 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
         $stmt = $pdo->prepare('SELECT year,
                 AVG(ndvi_avg)            AS ndvi_avg,
                 AVG(viirs_avg)           AS viirs_avg,
-                AVG(lst_avg)             AS lst_avg,
+                AVG(lst_day_avg)         AS lst_day_avg,
+                AVG(lst_night_avg)       AS lst_night_avg,
                 AVG(precipitation_total) AS precipitation_total
             FROM ecological_monthly_summary
             WHERE month = :month AND year BETWEEN 2014 AND 2025
@@ -408,7 +409,7 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
             ORDER BY year ASC');
         $stmt->execute([':month' => $month]);
     } else {
-        $stmt = $pdo->prepare('SELECT year, ndvi_avg, viirs_avg, lst_avg, precipitation_total
+        $stmt = $pdo->prepare('SELECT year, ndvi_avg, viirs_avg, lst_day_avg, lst_night_avg, precipitation_total
             FROM ecological_monthly_summary
             WHERE area = :area AND month = :month AND year BETWEEN 2014 AND 2025
             ORDER BY year ASC');
@@ -453,15 +454,23 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
 
         $ndvi  = isset($row['ndvi_avg'])            ? (float)$row['ndvi_avg']            : null;
         $viirs = isset($row['viirs_avg'])            ? (float)$row['viirs_avg']           : null;
-        $lst   = isset($row['lst_avg'])              ? (float)$row['lst_avg']             : null;
         $precip = isset($row['precipitation_total']) ? (float)$row['precipitation_total'] : null;
 
-        if ($ndvi === null || $viirs === null || $lst === null || $precip === null) continue;
+        // Prefer separate day/night columns (monthly summary); fall back to lst_avg (yearly fallback)
+        $lstDay   = array_key_exists('lst_day_avg', $row) && $row['lst_day_avg'] !== null
+                        ? (float)$row['lst_day_avg'] : null;
+        $lstNight = array_key_exists('lst_night_avg', $row) && $row['lst_night_avg'] !== null
+                        ? (float)$row['lst_night_avg'] : null;
+        if ($lstDay === null && isset($row['lst_avg']) && $row['lst_avg'] !== null) {
+            $lstDay = (float)$row['lst_avg'];
+        }
+
+        if ($ndvi === null || $viirs === null || $lstDay === null || $precip === null) continue;
 
         $series['ndvi'][$year]      = $ndvi;
         $series['viirs'][$year]     = $viirs;
-        $series['lst_day'][$year]   = $lst;  // ecological_monthly_summary stores combined LST
-        $series['lst_night'][$year] = $lst;
+        $series['lst_day'][$year]   = $lstDay;
+        $series['lst_night'][$year] = $lstNight ?? $lstDay; // night falls back to day when unavailable
         $series['precip'][$year]    = $precip;
     }
 
@@ -514,6 +523,7 @@ function compute_bau_baseline_from_live_data(PDO $pdo, string $city, int $month)
         'latest_common_year'      => $latestCommonYear,
         'baseline_reference_year' => $latestCommonYear,
         'common_years'            => $commonYears,
+        'year_span'               => count($commonYears) >= 2 ? [min($commonYears), max($commonYears)] : null,
         'baseline_source'         => $sourceUsed,
         'ndvi'                    => $ndviStats,
         'viirs'                   => $viirsStats,

@@ -403,12 +403,16 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
                 SELECT
                     cells.area,
                     g.year,
-                    MAX(
-                        CASE
-                            WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
-                            WHEN g.lst_day > 0 THEN g.lst_day
-                            ELSE NULL
-                        END
+                    COALESCE(
+                        (AVG(CASE WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                                  WHEN g.lst_day > 0   THEN g.lst_day
+                                  ELSE NULL END) +
+                         AVG(CASE WHEN g.lst_night > 100 THEN (g.lst_night * 0.02) - 273.15
+                                  WHEN g.lst_night > 0   THEN g.lst_night
+                                  ELSE NULL END)) / 2.0,
+                        AVG(CASE WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                                 WHEN g.lst_day > 0   THEN g.lst_day
+                                 ELSE NULL END)
                     ) AS lst_avg
                 FROM final_master_grid g
                 JOIN city_grid_map cells

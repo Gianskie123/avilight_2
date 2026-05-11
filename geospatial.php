@@ -1973,11 +1973,12 @@ async function getBaselineForCity(cityName, month) {
         lstDayStats: hist ? hist.lst_day : null,
         lstNightStats: hist ? hist.lst_night : null,
         precipStats: hist ? hist.precip_mm : null,
+        yearSpan: hist ? (hist.year_span || null) : null,
         response: response
     };
 }
 
-function formatTrendNote(stats, unit, multiplier, decimals) {
+function formatTrendNote(stats, unit, multiplier, decimals, yearSpan) {
     if (!stats) return 'No aligned historical record found.';
     var m = Number(multiplier || 1);
     var d = Number(decimals || 1);
@@ -1985,7 +1986,11 @@ function formatTrendNote(stats, unit, multiplier, decimals) {
     var baseRaw = Number(stats.base_raw || 0) * m;
     var trend = Number(stats.avg_yearly_change || 0) * m;
     var sign = trend >= 0 ? '+' : '';
-    return baseYear + ' baseline: ' + baseRaw.toFixed(d) + ' ' + unit + ' · ' + sign + trend.toFixed(d) + ' ' + unit + '/yr';
+    var spanLabel = (Array.isArray(yearSpan) && yearSpan.length === 2)
+        ? ' (' + yearSpan[0] + '–' + yearSpan[1] + ')'
+        : '';
+    return baseYear + ' baseline: ' + baseRaw.toFixed(d) + ' ' + unit +
+           ' · avg Δ ' + sign + trend.toFixed(d) + ' ' + unit + '/yr' + spanLabel;
 }
 
 function updateBauInputsPanel(base) {
@@ -1998,13 +2003,13 @@ function updateBauInputsPanel(base) {
     document.getElementById('bauNdviVal').textContent = Math.round(baseNdviRatio * 100) + '%';
     document.getElementById('bauTempVal').textContent = base.temp.toFixed(1) + '°C';
     document.getElementById('bauPrecipVal').textContent = Math.round(base.precip) + ' mm';
-    document.getElementById('bauAlanNote').textContent = formatTrendNote(base.viirsStats, 'nW', 1, 2);
-    document.getElementById('bauNdviNote').textContent = formatTrendNote(base.ndviStats, '%', 100, 2);
-    var lstCombinedNote = formatTrendNote(base.lstStats, '°C', 1, 2);
+    document.getElementById('bauAlanNote').textContent = formatTrendNote(base.viirsStats, 'nW', 1, 2, base.yearSpan);
+    document.getElementById('bauNdviNote').textContent = formatTrendNote(base.ndviStats, '%', 100, 2, base.yearSpan);
+    var lstCombinedNote = formatTrendNote(base.lstStats, '°C', 1, 2, base.yearSpan);
     var lstDayNote = base.lstDayStats ? ('Day: ' + Number(base.lstDayStats.adjusted_baseline || 0).toFixed(2) + '°C') : '';
     var lstNightNote = base.lstNightStats ? ('Night: ' + Number(base.lstNightStats.adjusted_baseline || 0).toFixed(2) + '°C') : '';
     document.getElementById('bauTempNote').textContent = lstCombinedNote + (lstDayNote && lstNightNote ? (' · ' + lstDayNote + ' · ' + lstNightNote) : '');
-    document.getElementById('bauPrecipNote').textContent = formatTrendNote(base.precipStats, 'mm', 1, 2);
+    document.getElementById('bauPrecipNote').textContent = formatTrendNote(base.precipStats, 'mm', 1, 2, base.yearSpan);
     document.getElementById('mitAlanBaseline').textContent = 'Baseline: ' + Math.round(base.alan) + ' nW';
     document.getElementById('mitNdviBaseline').textContent = 'Baseline: ' + Math.round(baseNdviRatio * 100) + '%';
     document.getElementById('mitTempBaseline').textContent = 'Baseline: ' + base.temp.toFixed(1) + '°C';
