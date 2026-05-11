@@ -11,6 +11,14 @@ import os
 from pathlib import Path
 from typing import Optional, Any, Dict, List
 
+# Prevent TensorFlow from pre-allocating all available RAM and growing
+# unboundedly across requests — critical on memory-constrained hosts like Railway.
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')  # suppress verbose TF logs
+for _gpu in tf.config.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(_gpu, True)
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(2)
+
 # =====================================================================
 # 1. API INITIALIZATION & CORS SETUP
 # =====================================================================

@@ -73,19 +73,26 @@ echo "[PYTHON] Starting FastAPI on port 8000..."
 cd /var/www/html
 
 if [ -f "python/main.py" ]; then
-    python3 -m uvicorn python.main:app \
-        --host 127.0.0.1 \
-        --port 8000 \
-        --workers 1 \
-        --log-level info &
+    UVICORN_APP="python.main:app"
 elif [ -f "model.py" ]; then
-    python3 -m uvicorn model:app \
-        --host 127.0.0.1 \
-        --port 8000 \
-        --workers 1 \
-        --log-level info &
+    UVICORN_APP="model:app"
 else
     echo "[PYTHON] WARNING: No FastAPI entry point found."
+    UVICORN_APP=""
+fi
+
+if [ -n "$UVICORN_APP" ]; then
+    # Restart loop: if uvicorn is OOM-killed or crashes, bring it back automatically.
+    (while true; do
+        echo "[PYTHON] Starting uvicorn ($UVICORN_APP) on port 8000..."
+        python3 -m uvicorn "$UVICORN_APP" \
+            --host 127.0.0.1 \
+            --port 8000 \
+            --workers 1 \
+            --log-level info
+        echo "[PYTHON] uvicorn exited (OOM or crash) — restarting in 10s..."
+        sleep 10
+    done) &
 fi
 
 # TensorFlow cold-start on Railway typically takes 20-40s; wait long enough
