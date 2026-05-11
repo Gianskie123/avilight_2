@@ -18,9 +18,13 @@
 declare(strict_types=1);
 
 if (PHP_SAPI !== 'cli') {
-    fwrite(STDERR, "This script must be run via CLI.\n");
-    exit(1);
+    http_response_code(403);
+    exit("This script must be run via CLI.\n");
 }
+
+// php-cgi / some minimal builds omit these stream constants even in CLI mode.
+if (!defined('STDOUT')) define('STDOUT', fopen('php://stdout', 'w'));
+if (!defined('STDERR')) define('STDERR', fopen('php://stderr', 'w'));
 
 require_once __DIR__ . '/../includes/db.php';
 
