@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
 import importlib.util
 import xgboost as xgb
 import tensorflow as tf
@@ -23,6 +24,10 @@ tf.config.threading.set_intra_op_parallelism_threads(2)
 # 1. API INITIALIZATION & CORS SETUP
 # =====================================================================
 app = FastAPI(title="Avian Biodiversity Scenario ML Engine")
+
+# Serialize /predict calls so a second request waits rather than spawning
+# a second TF inference session in parallel (which doubles RAM and risks OOM).
+predict_semaphore = asyncio.Semaphore(1)
 
 # Allow your PHP frontend to communicate with this Python backend
 app.add_middleware(
@@ -265,6 +270,7 @@ async def diagnostics_report(data: DiagnosticsRequest):
 # =====================================================================
 @app.post("/predict")
 async def predict_scenario(data: ScenarioRequest):
+    await predict_semaphore.acquire()
     try:
         # --- A. Establish the Baseline Environment ---
         # Use provided baselines or fall back to defaults
@@ -661,6 +667,8 @@ async def predict_scenario(data: ScenarioRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        predict_semaphore.release()
 
 # =====================================================================
 # 5. HEALTH CHECK ENDPOINT

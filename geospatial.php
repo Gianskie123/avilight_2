@@ -522,6 +522,7 @@ let cityPredictionValues = {};
 let cityPredictionDetails = {};
 let stackedBauPredictions = {};
 let baselineRequestVersion = 0;
+let bauAutoBaselineInFlight = false;
 let lastGoalPlan = null;
 let monthlyHeatmapCache = {};
 let monthlyHeatmapInFlight = {};
@@ -1495,6 +1496,18 @@ function setBauBaselineLoading(cityName, month) {
     document.getElementById('bauPrecipNote').textContent = 'Loading month-specific baseline...';
 }
 
+function updateRunBauBtnState() {
+    var btn = document.getElementById('runBauBtn');
+    if (!btn) return;
+    if (bauAutoBaselineInFlight) {
+        btn.disabled = true;
+        btn.textContent = 'Loading covariates...';
+    } else if (!btn.disabled || btn.textContent === 'Loading covariates...') {
+        btn.disabled = false;
+        btn.textContent = 'Run BAU Prediction';
+    }
+}
+
 function getAvpBarAnimation(stepMs) {
     var step = stepMs || 80;
     return {
@@ -2280,6 +2293,17 @@ async function runBauPrediction() {
     var month = parseInt(document.getElementById('bauMonthSlider').value, 10) || 1;
     if (!cityName) return;
 
+    if (bauAutoBaselineInFlight) {
+        var bauResultEmpty = document.getElementById('bauResultEmpty');
+        var bauResultContent = document.getElementById('bauResultContent');
+        if (bauResultContent) bauResultContent.style.display = 'none';
+        if (bauResultEmpty) {
+            bauResultEmpty.style.display = 'block';
+            bauResultEmpty.innerHTML = 'Please wait — covariate values are still loading.';
+        }
+        return;
+    }
+
     var runBtn = document.getElementById('runBauBtn');
     if (runBtn) {
         runBtn.disabled = true;
@@ -2666,6 +2690,8 @@ function initAnalyticsScenarioUI() {
     citySelect.addEventListener('change', async function() {
         resetBauScenarioState();
         focusMapOnCity(this.value);
+        bauAutoBaselineInFlight = true;
+        updateRunBauBtnState();
         try {
             var month = bauMonthSlider ? (parseInt(bauMonthSlider.value, 10) || 1) : 1;
             setBauBaselineLoading(this.value, month);
@@ -2674,6 +2700,9 @@ function initAnalyticsScenarioUI() {
             updateBauInputsPanel(base);
         } catch (err) {
             console.error('Failed to refresh city baseline:', err);
+        } finally {
+            bauAutoBaselineInFlight = false;
+            updateRunBauBtnState();
         }
     });
 
@@ -2687,6 +2716,8 @@ function initAnalyticsScenarioUI() {
             var month = parseInt(this.value, 10) || 1;
             if (bauMonthBadge) bauMonthBadge.textContent = MONTH_NAMES[month - 1];
             resetBauScenarioState();
+            bauAutoBaselineInFlight = true;
+            updateRunBauBtnState();
             try {
                 setBauBaselineLoading(citySelect.value, month);
                 var base = await getBaselineForCity(citySelect.value, month);
@@ -2694,6 +2725,9 @@ function initAnalyticsScenarioUI() {
                 updateBauInputsPanel(base);
             } catch (err) {
                 console.error('Failed to refresh month baseline:', err);
+            } finally {
+                bauAutoBaselineInFlight = false;
+                updateRunBauBtnState();
             }
         });
     }
@@ -2727,9 +2761,12 @@ function initAnalyticsScenarioUI() {
         var firstMonth = bauMonthSlider ? (parseInt(bauMonthSlider.value, 10) || 1) : 1;
         if (bauMonthBadge) bauMonthBadge.textContent = MONTH_NAMES[firstMonth - 1];
         setBauBaselineLoading(names[0], firstMonth);
+        bauAutoBaselineInFlight = true;
+        updateRunBauBtnState();
         getBaselineForCity(names[0], firstMonth)
             .then(function(base) { if (base) updateBauInputsPanel(base); })
-            .catch(function(err) { console.error('Initial baseline load failed:', err); });
+            .catch(function(err) { console.error('Initial baseline load failed:', err); })
+            .finally(function() { bauAutoBaselineInFlight = false; updateRunBauBtnState(); });
         highlightSelectedCityBoundary(names[0]);
         focusMapOnCity(names[0]);
     }
