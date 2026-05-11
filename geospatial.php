@@ -1943,7 +1943,8 @@ async function getBaselineForCity(cityName, month) {
         ndvi_increase: 0,
         temp_change: 0,
         precip_change: 0,
-        attribution_mode: 'sensitivity'
+        attribution_mode: 'sensitivity',
+        prewarm_only: true
     });
 
     if (requestVersion !== baselineRequestVersion) {
