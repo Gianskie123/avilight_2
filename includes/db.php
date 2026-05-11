@@ -498,3 +498,90 @@ function upsert_mysql_bau_baseline_cache(PDO $pdo, array $payload): void {
         ':historical_inputs_json' => $payload['historical_inputs_json'] ?? null,
     ]);
 }
+
+/**
+ * Refresh ecological_monthly_summary for the given years using city_cells.
+ * Called automatically after build_master_grid succeeds.
+ * Returns the number of rows upserted.
+ */
+function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
+    if (empty($years)) return 0;
+    $in = implode(',', array_map('intval', $years));
+    return (int)$pdo->exec("
+        INSERT INTO ecological_monthly_summary
+            (area, year, month, ndvi_avg, viirs_avg, lst_avg, precipitation_total, cell_count)
+        SELECT
+            cc.city_key                                                       AS area,
+            fmg.year,
+            fmg.month,
+            AVG(fmg.ndvi)                                                     AS ndvi_avg,
+            AVG(fmg.viirs_avg_rad)                                            AS viirs_avg,
+            AVG((fmg.lst_day + COALESCE(fmg.lst_night, fmg.lst_day)) / 2.0) AS lst_avg,
+            AVG(fmg.monthly_precip_mm)                                        AS precipitation_total,
+            COUNT(DISTINCT fmg.cell_id)                                       AS cell_count
+        FROM final_master_grid fmg
+        JOIN city_cells cc ON fmg.cell_id = cc.cell_id
+        WHERE fmg.year IN ({$in})
+          AND fmg.ndvi              IS NOT NULL
+          AND fmg.viirs_avg_rad     IS NOT NULL
+          AND fmg.lst_day           IS NOT NULL
+          AND fmg.monthly_precip_mm IS NOT NULL
+        GROUP BY cc.city_key, fmg.year, fmg.month
+        ON DUPLICATE KEY UPDATE
+            ndvi_avg            = VALUES(ndvi_avg),
+            viirs_avg           = VALUES(viirs_avg),
+            lst_avg             = VALUES(lst_avg),
+            precipitation_total = VALUES(precipitation_total),
+            cell_count          = VALUES(cell_count),
+            refreshed_at        = CURRENT_TIMESTAMP
+    ");
+}
+
+/**
+ * Refresh city_land_cover_summary for the given years using city_cells.
+ * Called automatically after fetch_satellite land_cover ingestion succeeds.
+ * Returns the number of rows upserted.
+ */
+function refresh_city_land_cover_summary(PDO $pdo, array $years): int {
+    if (empty($years)) return 0;
+    $in = implode(',', array_map('intval', $years));
+    return (int)$pdo->exec("
+        INSERT INTO city_land_cover_summary
+            (city_key, ref_year, urban, vegetation, water, cropland, barren, cell_count)
+        SELECT
+            city_key,
+            ref_year,
+            cnt_urban      / total_cnt AS urban,
+            cnt_vegetation / total_cnt AS vegetation,
+            cnt_water      / total_cnt AS water,
+            cnt_cropland   / total_cnt AS cropland,
+            cnt_barren     / total_cnt AS barren,
+            total_cnt                  AS cell_count
+        FROM (
+            SELECT
+                cc.city_key,
+                lc.year AS ref_year,
+                SUM(CASE WHEN lc.land_cover IN (1,2,3,4,5,8,9,10) THEN 1 ELSE 0 END)     AS cnt_vegetation,
+                SUM(CASE WHEN lc.land_cover IN (0,11,17)           THEN 1 ELSE 0 END)     AS cnt_water,
+                SUM(CASE WHEN lc.land_cover IN (12,14)             THEN 1 ELSE 0 END)     AS cnt_cropland,
+                SUM(CASE WHEN lc.land_cover IN (15,16)             THEN 1 ELSE 0 END)     AS cnt_barren,
+                SUM(CASE WHEN lc.land_cover IS NULL
+                           OR lc.land_cover NOT IN (0,1,2,3,4,5,8,9,10,11,12,14,15,16,17)
+                         THEN 1 ELSE 0 END)                                                AS cnt_urban,
+                COUNT(*) AS total_cnt
+            FROM land_cover lc
+            JOIN city_cells cc ON lc.cell_id = cc.cell_id
+            WHERE lc.year IN ({$in})
+            GROUP BY cc.city_key, lc.year
+        ) counts
+        WHERE total_cnt > 0
+        ON DUPLICATE KEY UPDATE
+            urban        = VALUES(urban),
+            vegetation   = VALUES(vegetation),
+            water        = VALUES(water),
+            cropland     = VALUES(cropland),
+            barren       = VALUES(barren),
+            cell_count   = VALUES(cell_count),
+            refreshed_at = CURRENT_TIMESTAMP
+    ");
+}

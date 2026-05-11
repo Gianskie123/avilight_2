@@ -359,6 +359,16 @@ foreach ($missing as $period) {
     }
 }
 
+if ($source === 'land_cover' && $total_inserted > 0) {
+    $ingested_years = array_unique(array_column($missing, 'year'));
+    try {
+        refresh_city_land_cover_summary($pdo, $ingested_years);
+        clear_mysql_bau_baseline_cache($pdo);
+    } catch (Throwable $e) {
+        $errors[] = 'city_land_cover_summary refresh failed (non-fatal): ' . $e->getMessage();
+    }
+}
+
 $batch_count = count($missing);
 ob_end_clean();
 echo json_encode([

@@ -276,6 +276,20 @@ require_once 'includes/header.php';
         </button>
         <div id="masterGridStatus" style="margin-top: 10px;"></div>
 
+        <hr style="margin: 24px 0;">
+
+        <!-- BAU Cache Reset -->
+        <h4>BAU Prediction Cache</h4>
+        <p style="margin: 0 0 10px; color: var(--text-secondary, #94a3b8); font-size: 13px;">
+            Clears all precomputed Business-As-Usual baseline values. Use after manually loading
+            <code>city_cells_data.sql</code> or running the monthly summary population scripts,
+            to force a fresh recompute on the next forecast request.
+        </p>
+        <button class="btn btn-warning" id="clearBauCacheBtn" onclick="clearBauCache.call(this, this)">
+            Reset BAU Cache
+        </button>
+        <div id="bauCacheStatus" style="margin-top: 10px;"></div>
+
     </div>
 </div>
 
@@ -1380,6 +1394,53 @@ async function buildMasterGrid(btn) {
     } else {
         const errMsg = result.error || 'Did not complete successfully.';
         showToast('Rebuild Failed', [errMsg], 'danger');
+    }
+}
+
+// ── BAU cache reset ──────────────────────────────────────────────────────────
+
+async function clearBauCache(btn) {
+    const statusEl = document.getElementById('bauCacheStatus');
+
+    const confirmed = await showConfirmModal({
+        title: 'Reset BAU Cache',
+        subtitle: 'All cached baseline values will be deleted',
+        iconSvg: ICON_REBUILD,
+        iconBg: 'rgba(245,158,11,0.12)',
+        iconColor: '#d97706',
+        body: '<p style="margin:0;font-size:.875rem;">This deletes all rows in <code>analytics_bau_baselines</code>. The cache rebuilds automatically on the next forecast request for each city/month combination.</p>',
+        confirmText: 'Clear Cache',
+        confirmBg: '#d97706',
+    });
+    if (!confirmed) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Clearing…';
+    statusEl.textContent = '';
+
+    let data;
+    try {
+        data = await fetch('api/clear_bau_cache.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        }).then(safeJson);
+    } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Reset BAU Cache';
+        showToast('Cache Reset Failed', [err.message], 'danger');
+        return;
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Reset BAU Cache';
+
+    if (data.success) {
+        showToast('BAU Cache Cleared', [
+            `${data.deleted_rows ?? 0} cached row(s) removed.`,
+            'Cache will rebuild on the next forecast request.',
+        ], 'success');
+    } else {
+        showToast('Cache Reset Failed', [data.error || 'Unknown error.'], 'danger');
     }
 }
 

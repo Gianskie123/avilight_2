@@ -320,6 +320,17 @@ while (!feof($handle)) {
 }
 pclose($handle);
 
+if ($success) {
+    try {
+        $refreshed = refresh_ecological_monthly_summary($pdo, $ready_years);
+        $log_lines[] = json_encode(['level' => 'info', 'msg' => "ecological_monthly_summary refreshed ({$refreshed} rows upserted)."]);
+        clear_mysql_bau_baseline_cache($pdo);
+        $log_lines[] = json_encode(['level' => 'info', 'msg' => 'BAU baseline cache cleared — will rebuild on next request or prewarm.']);
+    } catch (Throwable $e) {
+        $log_lines[] = json_encode(['level' => 'warning', 'msg' => 'Aggregate refresh failed (non-fatal): ' . $e->getMessage()]);
+    }
+}
+
 ob_end_clean();
 echo json_encode([
     'success'   => $success,
