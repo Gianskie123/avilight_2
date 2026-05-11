@@ -860,28 +860,38 @@ try {
         'lc_dummy_5' => $lc_dummies[4],
     ];
     
-    // Call Python FastAPI backend
+    // Call Python FastAPI backend (retry up to 3x on empty-reply — handles
+    // Railway cold-start where TensorFlow takes longer than the sleep in start.sh)
     $python_url = PYTHON_BACKEND_URL . '/predict';
-    
-    $ch = curl_init($python_url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'Accept: application/json'
-        ],
-        CURLOPT_POSTFIELDS => json_encode($python_payload)
-    ]);
-    
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_error = curl_error($ch);
-    curl_close($ch);
-    
+    $python_payload_json = json_encode($python_payload);
+
+    $response   = false;
+    $http_code  = 0;
+    $curl_error = '';
+    $max_attempts = 3;
+
+    for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
+        $ch = curl_init($python_url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 45,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+            CURLOPT_POSTFIELDS     => $python_payload_json,
+        ]);
+        $response  = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
+        curl_close($ch);
+
+        // Only retry on transient empty-reply (CURLE_GOT_NOTHING); bail immediately on real errors
+        if (!$curl_error || $attempt === $max_attempts) break;
+        if (strpos($curl_error, 'Empty reply') === false && strpos($curl_error, 'recv failure') === false) break;
+        sleep($attempt * 3); // 3s, 6s back-off between retries
+    }
+
     // Handle connection errors
     if ($curl_error) {
-        throw new Exception("Failed to connect to Python backend: " . $curl_error . 
+        throw new Exception("Failed to connect to Python backend: " . $curl_error .
                           "\nMake sure the FastAPI server is running on " . PYTHON_BACKEND_URL);
     }
     

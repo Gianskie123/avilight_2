@@ -76,20 +76,22 @@ if [ -f "python/main.py" ]; then
     python3 -m uvicorn python.main:app \
         --host 127.0.0.1 \
         --port 8000 \
-        --workers 2 \
+        --workers 1 \
         --log-level info &
 elif [ -f "model.py" ]; then
     python3 -m uvicorn model:app \
         --host 127.0.0.1 \
         --port 8000 \
-        --workers 2 \
+        --workers 1 \
         --log-level info &
 else
     echo "[PYTHON] WARNING: No FastAPI entry point found."
 fi
 
-echo "[PYTHON] Waiting 5s for FastAPI to initialize..."
-sleep 5
+# TensorFlow cold-start on Railway typically takes 20-40s; wait long enough
+# before Apache starts accepting requests that proxy to the Python backend.
+echo "[PYTHON] Waiting 30s for FastAPI + TensorFlow to initialize..."
+sleep 30
 
 # ─────────────────────────────────────────────
 # 6. Start Apache on Railway's $PORT (foreground)

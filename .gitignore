@@ -47,6 +47,8 @@ config.local.php
 *.h5
 *.pth
 *.joblib
+# Keep the trained meta-learner in version control so Railway gets it
+!api_models/meta_learner.joblib
 
 # Database files
 *.sqlite
