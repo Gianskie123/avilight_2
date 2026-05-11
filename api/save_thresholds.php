@@ -83,12 +83,13 @@ try {
         updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    $json = json_encode($normalized);
     $stmt = $db->prepare(
         "INSERT INTO system_settings (setting_key, setting_value)
-         VALUES ('thresholds', :val)
-         ON DUPLICATE KEY UPDATE setting_value = :val, updated_at = NOW()"
+         VALUES ('thresholds', :val_insert)
+         ON DUPLICATE KEY UPDATE setting_value = :val_update, updated_at = NOW()"
     );
-    $stmt->execute([':val' => json_encode($normalized)]);
+    $stmt->execute([':val_insert' => $json, ':val_update' => $json]);
 
     // Best-effort: touch audit table so Home tab reflects the config change.
     try {
