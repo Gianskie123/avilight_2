@@ -512,15 +512,25 @@ function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
     $in = implode(',', array_map('intval', $years));
     return (int)$pdo->exec("
         INSERT INTO ecological_monthly_summary
-            (area, year, month, ndvi_avg, viirs_avg, lst_avg, precipitation_total, cell_count)
+            (area, year, month, ndvi_avg, viirs_avg, lst_avg, lst_day_avg, lst_night_avg, precipitation_total, cell_count)
         SELECT
             cc.city_key                                                       AS area,
             fmg.year,
             fmg.month,
-            AVG(fmg.ndvi)                                                     AS ndvi_avg,
-            AVG(fmg.viirs_avg_rad)                                            AS viirs_avg,
-            AVG((fmg.lst_day + COALESCE(fmg.lst_night, fmg.lst_day)) / 2.0) AS lst_avg,
-            AVG(fmg.monthly_precip_mm)                                        AS precipitation_total,
+            AVG(CASE WHEN fmg.ndvi = 0 THEN NULL
+                     WHEN ABS(fmg.ndvi) > 1 THEN fmg.ndvi / 10000.0
+                     ELSE fmg.ndvi END)                                       AS ndvi_avg,
+            AVG(NULLIF(fmg.viirs_avg_rad, 0))                                 AS viirs_avg,
+            AVG(CASE WHEN fmg.lst_day > 100 THEN (fmg.lst_day * 0.02) - 273.15
+                     WHEN fmg.lst_day > 0   THEN fmg.lst_day
+                     ELSE NULL END)                                           AS lst_avg,
+            AVG(CASE WHEN fmg.lst_day > 100 THEN (fmg.lst_day * 0.02) - 273.15
+                     WHEN fmg.lst_day > 0   THEN fmg.lst_day
+                     ELSE NULL END)                                           AS lst_day_avg,
+            AVG(CASE WHEN fmg.lst_night > 0 THEN fmg.lst_night
+                     ELSE NULL END)                                           AS lst_night_avg,
+            AVG(CASE WHEN fmg.monthly_precip_mm < 0 THEN NULL
+                     ELSE fmg.monthly_precip_mm END)                          AS precipitation_total,
             COUNT(DISTINCT fmg.cell_id)                                       AS cell_count
         FROM final_master_grid fmg
         JOIN city_cells cc ON fmg.cell_id = cc.cell_id
@@ -529,11 +539,15 @@ function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
           AND fmg.viirs_avg_rad     IS NOT NULL
           AND fmg.lst_day           IS NOT NULL
           AND fmg.monthly_precip_mm IS NOT NULL
+          AND fmg.lst_day           > 0
+          AND fmg.viirs_avg_rad     >= 0
         GROUP BY cc.city_key, fmg.year, fmg.month
         ON DUPLICATE KEY UPDATE
             ndvi_avg            = VALUES(ndvi_avg),
             viirs_avg           = VALUES(viirs_avg),
             lst_avg             = VALUES(lst_avg),
+            lst_day_avg         = VALUES(lst_day_avg),
+            lst_night_avg       = VALUES(lst_night_avg),
             precipitation_total = VALUES(precipitation_total),
             cell_count          = VALUES(cell_count),
             refreshed_at        = CURRENT_TIMESTAMP

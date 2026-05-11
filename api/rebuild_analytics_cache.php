@@ -33,7 +33,26 @@ try {
     $baseDir = preg_replace('#/api$#', '', $scriptDir);
     $runScenarioUrl = $scheme . '://' . $host . $baseDir . '/api/run_scenario.php';
 
-    $targetCities = ['']; // Metro Manila aggregate only
+    $targetCities = [
+        '',             // Metro Manila aggregate
+        'Caloocan',
+        'Las Piñas',
+        'Makati',
+        'Malabon',
+        'Mandaluyong',
+        'Manila',
+        'Marikina',
+        'Muntinlupa',
+        'Navotas',
+        'Parañaque',
+        'Pasay',
+        'Pasig',
+        'Pateros',
+        'Quezon City',
+        'San Juan',
+        'Taguig',
+        'Valenzuela',
+    ];
 
     $bauPrewarmOk = 0;
     $bauPrewarmFailed = 0;
@@ -85,7 +104,7 @@ try {
         'row_count' => $rowCount,
         'refreshed_at' => $refreshedAt,
         'bau_cache' => [
-            'scope' => 'metro',
+            'scope' => 'all_cities',
             'target_cities' => count($targetCities),
             'rows' => $bauRows,
             'refreshed_at' => $bauRefreshed,

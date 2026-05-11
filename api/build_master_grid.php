@@ -324,6 +324,8 @@ if ($success) {
     try {
         $refreshed = refresh_ecological_monthly_summary($pdo, $ready_years);
         $log_lines[] = json_encode(['level' => 'info', 'msg' => "ecological_monthly_summary refreshed ({$refreshed} rows upserted)."]);
+        $lcRefreshed = refresh_city_land_cover_summary($pdo, $ready_years);
+        $log_lines[] = json_encode(['level' => 'info', 'msg' => "city_land_cover_summary refreshed ({$lcRefreshed} rows upserted)."]);
         clear_mysql_bau_baseline_cache($pdo);
         $log_lines[] = json_encode(['level' => 'info', 'msg' => 'BAU baseline cache cleared — prewarming all cities now.']);
 
