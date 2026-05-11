@@ -538,6 +538,17 @@ function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
 }
 
 /**
+ * Returns every city_key that has cell assignments, plus '' for the Metro Manila
+ * aggregate. Used to build the prewarm list for analytics_bau_baselines.
+ */
+function get_bau_prewarm_city_keys(PDO $pdo): array {
+    $keys = $pdo->query('SELECT DISTINCT city_key FROM city_cells ORDER BY city_key')
+                ->fetchAll(PDO::FETCH_COLUMN);
+    array_unshift($keys, ''); // '' = Metro Manila aggregate
+    return $keys;
+}
+
+/**
  * Refresh city_land_cover_summary for the given years using city_cells.
  * Called automatically after fetch_satellite land_cover ingestion succeeds.
  * Returns the number of rows upserted.

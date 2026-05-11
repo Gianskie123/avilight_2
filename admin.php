@@ -285,9 +285,14 @@ require_once 'includes/header.php';
             <code>city_cells_data.sql</code> or running the monthly summary population scripts,
             to force a fresh recompute on the next forecast request.
         </p>
-        <button class="btn btn-warning" id="clearBauCacheBtn" onclick="clearBauCache.call(this, this)">
-            Reset BAU Cache
-        </button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-warning" id="clearBauCacheBtn" onclick="clearBauCache.call(this, false)">
+                Reset BAU Cache
+            </button>
+            <button class="btn btn-success" id="clearBauCachePrewarmBtn" onclick="clearBauCache.call(this, true)">
+                Reset &amp; Prewarm All Cities
+            </button>
+        </div>
         <div id="bauCacheStatus" style="margin-top: 10px;"></div>
 
     </div>
@@ -1399,23 +1404,30 @@ async function buildMasterGrid(btn) {
 
 // ── BAU cache reset ──────────────────────────────────────────────────────────
 
-async function clearBauCache(btn) {
-    const statusEl = document.getElementById('bauCacheStatus');
+async function clearBauCache(btn, prewarm = false) {
+    const statusEl  = document.getElementById('bauCacheStatus');
+    const otherBtn  = prewarm
+        ? document.getElementById('clearBauCacheBtn')
+        : document.getElementById('clearBauCachePrewarmBtn');
 
     const confirmed = await showConfirmModal({
-        title: 'Reset BAU Cache',
-        subtitle: 'All cached baseline values will be deleted',
+        title: prewarm ? 'Reset & Prewarm BAU Cache' : 'Reset BAU Cache',
+        subtitle: prewarm ? 'Cache will be cleared then rebuilt for all cities' : 'All cached baseline values will be deleted',
         iconSvg: ICON_REBUILD,
         iconBg: 'rgba(245,158,11,0.12)',
         iconColor: '#d97706',
-        body: '<p style="margin:0;font-size:.875rem;">This deletes all rows in <code>analytics_bau_baselines</code>. The cache rebuilds automatically on the next forecast request for each city/month combination.</p>',
-        confirmText: 'Clear Cache',
+        body: prewarm
+            ? '<p style="margin:0;font-size:.875rem;">Clears <code>analytics_bau_baselines</code> then immediately precomputes baselines for every city × month combination. The Analytics tab will be instant for all cities after this completes. This may take 1–2 minutes.</p>'
+            : '<p style="margin:0;font-size:.875rem;">Deletes all rows in <code>analytics_bau_baselines</code>. The cache rebuilds automatically on the next forecast request for each city/month combination.</p>',
+        confirmText: prewarm ? 'Reset & Prewarm' : 'Clear Cache',
         confirmBg: '#d97706',
     });
     if (!confirmed) return;
 
+    const originalText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Clearing…';
+    if (otherBtn) otherBtn.disabled = true;
+    btn.textContent = prewarm ? 'Clearing & prewarming… (may take 1–2 min)' : 'Clearing…';
     statusEl.textContent = '';
 
     let data;
@@ -1423,22 +1435,29 @@ async function clearBauCache(btn) {
         data = await fetch('api/clear_bau_cache.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prewarm }),
         }).then(safeJson);
     } catch (err) {
         btn.disabled = false;
-        btn.textContent = 'Reset BAU Cache';
+        if (otherBtn) otherBtn.disabled = false;
+        btn.textContent = originalText;
         showToast('Cache Reset Failed', [err.message], 'danger');
         return;
     }
 
     btn.disabled = false;
-    btn.textContent = 'Reset BAU Cache';
+    if (otherBtn) otherBtn.disabled = false;
+    btn.textContent = originalText;
 
     if (data.success) {
-        showToast('BAU Cache Cleared', [
-            `${data.deleted_rows ?? 0} cached row(s) removed.`,
-            'Cache will rebuild on the next forecast request.',
-        ], 'success');
+        const msgs = [`${data.deleted_rows ?? 0} cached row(s) removed.`];
+        if (data.prewarmed) {
+            msgs.push(`Prewarmed ${data.prewarm_ok ?? 0} city-month combinations.`);
+            if (data.prewarm_fail > 0) msgs.push(`${data.prewarm_fail} failed — check server logs.`);
+        } else {
+            msgs.push('Cache will rebuild on the next forecast request.');
+        }
+        showToast(prewarm ? 'BAU Cache Reset & Prewarmed' : 'BAU Cache Cleared', msgs, 'success');
     } else {
         showToast('Cache Reset Failed', [data.error || 'Unknown error.'], 'danger');
     }

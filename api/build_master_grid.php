@@ -325,9 +325,49 @@ if ($success) {
         $refreshed = refresh_ecological_monthly_summary($pdo, $ready_years);
         $log_lines[] = json_encode(['level' => 'info', 'msg' => "ecological_monthly_summary refreshed ({$refreshed} rows upserted)."]);
         clear_mysql_bau_baseline_cache($pdo);
-        $log_lines[] = json_encode(['level' => 'info', 'msg' => 'BAU baseline cache cleared — will rebuild on next request or prewarm.']);
+        $log_lines[] = json_encode(['level' => 'info', 'msg' => 'BAU baseline cache cleared — prewarming all cities now.']);
+
+        // Prewarm analytics_bau_baselines for every city × every month so the
+        // Analytics tab is always a cache hit after a rebuild.
+        $cityKeys   = get_bau_prewarm_city_keys($pdo);
+        $scheme     = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host       = $_SERVER['HTTP_HOST'] ?? '127.0.0.1';
+        $baseDir    = preg_replace('#/api$#', '', rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/'));
+        $scenarioUrl = $scheme . '://' . $host . $baseDir . '/api/run_scenario.php';
+
+        $prewarmOk = 0;
+        $prewarmFail = 0;
+        foreach ($cityKeys as $cityKey) {
+            for ($m = 1; $m <= 12; $m++) {
+                $ch = curl_init($scenarioUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT        => 30,
+                    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                    CURLOPT_POST           => true,
+                    CURLOPT_POSTFIELDS     => json_encode([
+                        'city'         => $cityKey,
+                        'month'        => $m,
+                        'manual_mode'  => false,
+                        'prewarm_only' => true,
+                    ]),
+                ]);
+                $resp = curl_exec($ch);
+                $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                $decoded = json_decode((string)$resp, true);
+                if ($http === 200 && is_array($decoded) && !empty($decoded['success'])) {
+                    $prewarmOk++;
+                } else {
+                    $prewarmFail++;
+                }
+            }
+        }
+
+        $log_lines[] = json_encode(['level' => 'info', 'msg' => "BAU prewarm complete — {$prewarmOk} city-month combinations cached, {$prewarmFail} failed."]);
     } catch (Throwable $e) {
-        $log_lines[] = json_encode(['level' => 'warning', 'msg' => 'Aggregate refresh failed (non-fatal): ' . $e->getMessage()]);
+        $log_lines[] = json_encode(['level' => 'warning', 'msg' => 'Post-rebuild hooks failed (non-fatal): ' . $e->getMessage()]);
     }
 }
 

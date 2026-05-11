@@ -286,11 +286,11 @@ function dominant_land_cover(PDO $pdo, array $cellIds, int $referenceYear): arra
     }
 
     $dummies = [
-        $shares['urban'],
-        $shares['vegetation'],
-        $shares['water'],
-        $shares['cropland'],
-        $shares['barren'],
+        $dominantGroup === 'urban'      ? 1.0 : 0.0,
+        $dominantGroup === 'vegetation' ? 1.0 : 0.0,
+        $dominantGroup === 'water'      ? 1.0 : 0.0,
+        $dominantGroup === 'cropland'   ? 1.0 : 0.0,
+        $dominantGroup === 'barren'     ? 1.0 : 0.0,
     ];
 
     return [
@@ -369,7 +369,13 @@ function dominant_land_cover_by_city(PDO $pdo, string $city, int $referenceYear)
         'year'         => (int)$row['ref_year'],
         'code'         => null,
         'label'        => $labels[$dominantGroup] ?? 'Urban/Built-up',
-        'dummies'      => array_values($shares),
+        'dummies'      => [
+            $dominantGroup === 'urban'      ? 1.0 : 0.0,
+            $dominantGroup === 'vegetation' ? 1.0 : 0.0,
+            $dominantGroup === 'water'      ? 1.0 : 0.0,
+            $dominantGroup === 'cropland'   ? 1.0 : 0.0,
+            $dominantGroup === 'barren'     ? 1.0 : 0.0,
+        ],
         'group_shares' => $shares,
     ];
 }
