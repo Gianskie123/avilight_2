@@ -565,20 +565,26 @@ function polygons_contain_point(array $polygons, float $x, float $y): bool {
 }
 
 function latest_observation_rows(PDO $pdo): array {
+    // Production table is aggregated_bird_observation (MariaDB).
+    // Column mapping from legacy SQLite 'observations':
+    //   total_unique  → unique_species_count
+    //   total_migrant → total_migratory
     $sql = "
-        SELECT o1.site_name, o1.latitude, o1.longitude, o1.total_unique,
-               o1.total_tolerant, o1.total_sensitive, o1.total_resident, o1.total_migrant
-        FROM observations o1
+        SELECT o1.site_name, o1.latitude, o1.longitude,
+               o1.unique_species_count AS total_unique,
+               o1.total_tolerant, o1.total_sensitive,
+               o1.total_resident, o1.total_migratory AS total_migrant
+        FROM aggregated_bird_observation o1
         INNER JOIN (
             SELECT site_name, MAX(year * 100 + month) AS max_ym
-            FROM observations
+            FROM aggregated_bird_observation
             WHERE site_name != '' AND latitude != 0 AND longitude != 0
             GROUP BY site_name
         ) latest
             ON o1.site_name = latest.site_name
            AND (o1.year * 100 + o1.month) = latest.max_ym
         WHERE o1.site_name != '' AND o1.latitude != 0 AND o1.longitude != 0
-        ORDER BY o1.total_unique DESC
+        ORDER BY o1.unique_species_count DESC
         LIMIT 250
     ";
     return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
