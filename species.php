@@ -231,12 +231,42 @@ $filtered_species = apply_image_cache_bust($filtered_species);
 </div>
 
 <!-- Statistics Summary -->
-<div class="species-summary" aria-label="Catalog summary">
-    <div class="species-summary-item"><span>Total</span><strong><?php echo number_format($total_species); ?></strong></div>
-    <div class="species-summary-item"><span>Sensitive</span><strong><?php echo number_format($sensitive_count); ?></strong></div>
-    <div class="species-summary-item"><span>Tolerant</span><strong><?php echo number_format($tolerant_count); ?></strong></div>
-    <div class="species-summary-item"><span>Migratory</span><strong><?php echo number_format($migratory_count); ?></strong></div>
-    <div class="species-summary-item"><span>Resident</span><strong><?php echo number_format($resident_count); ?></strong></div>
+<div style="display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;">
+    <div class="stat-card" style="flex:1;min-width:120px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div class="stat-label" style="margin:0;">Total Species</div>
+        </div>
+        <div class="stat-value"><?php echo number_format($total_species); ?></div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:120px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <div class="stat-label" style="margin:0;">Sensitive</div>
+        </div>
+        <div class="stat-value"><?php echo number_format($sensitive_count); ?></div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:120px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <div class="stat-label" style="margin:0;">Tolerant</div>
+        </div>
+        <div class="stat-value"><?php echo number_format($tolerant_count); ?></div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:120px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--info-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>
+            <div class="stat-label" style="margin:0;">Migratory</div>
+        </div>
+        <div class="stat-value"><?php echo number_format($migratory_count); ?></div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:120px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <div class="stat-label" style="margin:0;">Resident</div>
+        </div>
+        <div class="stat-value"><?php echo number_format($resident_count); ?></div>
+    </div>
 </div>
 
 <?php
@@ -289,7 +319,7 @@ $edit_total = $no_category_count;
                 </select>
             </div>
 
-            <button type="button" id="catalog-clear" class="catalog-clear" style="display:none;">Clear filters</button>
+            <a href="species.php" class="btn btn-secondary">Clear</a>
         </div>
     </form>
 </div>
@@ -313,8 +343,8 @@ $edit_total = $no_category_count;
     <?php
     $tol_val = strtolower($species['light_tolerance']);
     $mig_val = strtolower($species['migration_status']);
-    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-tolerant' : 'badge-sensitive';
-    $migration_class = $mig_val === 'resident'  ? 'badge-resident' : 'badge-migratory';
+    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-success' : 'badge-warning';
+    $migration_class = $mig_val === 'resident'  ? 'badge-success' : 'badge-info';
     $tol_label = ucfirst($tol_val);
     $mig_label = ucfirst($mig_val);
 
@@ -331,8 +361,8 @@ $edit_total = $no_category_count;
         }
     }
     ?>
-     <a class="species-card" href="species.php?species_id=<?php echo (int)$species['id']; ?>"
-         onclick="event.preventDefault();showSpeciesDetails(<?php echo (int)$species['id']; ?>)">
+        <div class="species-card" style="background:var(--bg-card);"
+            onclick="showSpeciesDetails(<?php echo (int)$species['id']; ?>)">
         <div class="species-image<?php echo $has_img ? ' has-photo' : ''; ?>"
              <?php if ($has_img): ?>style="--card-img-url:url('<?php echo $img_src; ?>')"<?php endif; ?>>
             <?php if ($has_img): ?>
@@ -367,9 +397,13 @@ $edit_total = $no_category_count;
                 <?php endif; ?>
             </div>
 
-            <div class="species-card-cta">View details →</div>
+            <div style="flex:1;min-height:12px;"></div>
+            <button class="btn btn-primary" style="width:100%;font-size:.9rem;"
+                    onclick="event.stopPropagation();showSpeciesDetails(<?php echo (int)$species['id']; ?>)">
+                View Details
+            </button>
         </div>
-    </a>
+    </div>
     <?php endforeach; ?>
 </div>
 
@@ -666,8 +700,6 @@ async function fetchCatalog(page) {
     var tol    = document.getElementById('catalog-tolerance') ? document.getElementById('catalog-tolerance').value : 'all';
     var mig    = document.getElementById('catalog-migration') ? document.getElementById('catalog-migration').value : 'all';
 
-    updateCatalogClearVisibility();
-
     var params = new URLSearchParams({ search: search, tolerance: tol, migration: mig, page: String(_catalogPage) });
 
     var grid    = document.getElementById('catalog-grid');
@@ -730,8 +762,8 @@ function renderSpeciesCard(sp) {
     var mig      = (sp.migration_status || '').toLowerCase();
     var tolLabel = tol ? tol.charAt(0).toUpperCase() + tol.slice(1) : '';
     var migLabel = mig ? mig.charAt(0).toUpperCase() + mig.slice(1) : '';
-    var tolClass = tol === 'tolerant' ? 'badge-tolerant' : (tol ? 'badge-sensitive' : '');
-    var migClass = mig === 'resident' ? 'badge-resident' : (mig ? 'badge-migratory' : '');
+    var tolClass = tol === 'tolerant' ? 'badge-success' : (tol ? 'badge-warning' : '');
+    var migClass = mig === 'resident' ? 'badge-success' : (mig ? 'badge-info'    : '');
     var imgSrc   = escapeHtml(sp.image_path  || '');
     var webpSrc  = escapeHtml(sp.webp_path   || '');
     var altText  = escapeHtml(sp.common_name || '');
@@ -759,14 +791,15 @@ function renderSpeciesCard(sp) {
                + (migLabel ? '<span class="badge ' + migClass + '">' + migLabel + '</span>' : '');
     }
 
-    return '<a class="species-card" href="species.php?species_id=' + id + '"'
-        + ' onclick="event.preventDefault();showSpeciesDetails(' + id + ')">'
+    return '<div class="species-card" style="background:var(--bg-card);" onclick="showSpeciesDetails(' + id + ')">'
         + imgHtml
         + '<div class="species-info" style="background:var(--bg-card);">'
         + '<div class="species-name">' + escapeHtml(sp.common_name) + '</div>'
         + '<div class="species-tags">' + badges + '</div>'
-        + '<div class="species-card-cta">View details →</div>'
-        + '</div></a>';
+        + '<div style="flex:1;min-height:12px;"></div>'
+        + '<button class="btn btn-primary" style="width:100%;font-size:.9rem;"'
+        + ' onclick="event.stopPropagation();showSpeciesDetails(' + id + ')">View Details</button>'
+        + '</div></div>';
 }
 
 function renderCatalogPagination(page, totalPages) {
@@ -802,29 +835,9 @@ document.getElementById('catalog-pagination')?.addEventListener('click', e => {
 document.getElementById('catalog-search')?.addEventListener('input', () => {
     clearTimeout(_catalogSearchTimer);
     _catalogSearchTimer = setTimeout(() => fetchCatalog(1), 350);
-    updateCatalogClearVisibility();
 });
-document.getElementById('catalog-tolerance')?.addEventListener('change', () => {
-    updateCatalogClearVisibility();
-    fetchCatalog(1);
-});
-document.getElementById('catalog-migration')?.addEventListener('change', () => {
-    updateCatalogClearVisibility();
-    fetchCatalog(1);
-});
-
-document.getElementById('catalog-clear')?.addEventListener('click', () => {
-    var searchEl = document.getElementById('catalog-search');
-    var tolEl = document.getElementById('catalog-tolerance');
-    var migEl = document.getElementById('catalog-migration');
-    if (searchEl) searchEl.value = '';
-    if (tolEl) tolEl.value = 'all';
-    if (migEl) migEl.value = 'all';
-    updateCatalogClearVisibility();
-    fetchCatalog(1);
-});
-
-updateCatalogClearVisibility();
+document.getElementById('catalog-tolerance')?.addEventListener('change', () => fetchCatalog(1));
+document.getElementById('catalog-migration')?.addEventListener('change', () => fetchCatalog(1));
 
 function showSpeciesDetails(speciesId) {
     const species = pageSpecies.find(s => parseInt(s.id) === speciesId);
@@ -836,8 +849,8 @@ function showSpeciesDetails(speciesId) {
     const mig      = (species.migration_status || '').toLowerCase();
     const tolLabel = tol.charAt(0).toUpperCase() + tol.slice(1);
     const migLabel = mig.charAt(0).toUpperCase() + mig.slice(1);
-    const tolClass = tol === 'tolerant'  ? 'badge-tolerant' : 'badge-sensitive';
-    const migClass = mig === 'resident'  ? 'badge-resident' : 'badge-migratory';
+    const tolClass = tol === 'tolerant'  ? 'badge-success' : 'badge-warning';
+    const migClass = mig === 'resident'  ? 'badge-success' : 'badge-info';
 
     const description = (species.description && species.description.trim())
         ? species.description.trim()

@@ -17,164 +17,163 @@ function loadDashboardThresholdConfig(): array {
         $row = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")
                   ->fetch(PDO::FETCH_ASSOC);
         if ($row && isset($row['setting_value'])) {
-            $decoded = json_decode((string) $row['setting_value'], true);
-            if (is_array($decoded)) {
-                foreach ($defaults as $key => $value) {
-                    if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
-                        $defaults[$key] = (float) $decoded[$key];
-                    }
-                }
-                return $defaults;
-            }
-        }
-    } catch (Throwable $_) {}
+            <!-- Map filter control bar -->
+            <div id="dashMapControls" class="dashboard-map-controls">
+                <div class="map-control-row">
+                    <div class="map-control-title">Map View</div>
+                    <div class="map-view-toggle" role="group" aria-label="Map view">
+                        <button class="map-view-btn is-active" id="btnRiskZones" onclick="setMapView('risk')" aria-pressed="true">⚠️ Risk Zones</button>
+                        <button class="map-view-btn" id="btnHistorical" onclick="setMapView('historical')" aria-pressed="false">📊 Historical Data</button>
+                    </div>
+                    <span class="map-view-info" title="Historical view shows species richness and overlays." aria-label="Historical view info">i</span>
+                </div>
+            </div>
 
-    // Fallback: JSON cache file (local dev convenience).
-    $path = __DIR__ . '/data/cache/thresholds.json';
-    if (is_readable($path)) {
-        $decoded = json_decode((string) file_get_contents($path), true);
-        if (is_array($decoded)) {
-            foreach ($defaults as $key => $value) {
-                if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
-                    $defaults[$key] = (float) $decoded[$key];
-                }
-            }
-        }
-    }
+            <div class="dash-map-body">
+                <aside id="historicalSidebar" class="map-filter-sidebar" style="display:none;">
+                    <div class="filter-block">
+                        <div class="filter-block-title">Temporal Filter</div>
+                        <div class="filter-row">
+                            <label class="filter-label">Year</label>
+                            <select id="histYearSelect" class="map-control-input" onchange="loadHistoricalData()">
+                                <?php for ($y = 2014; $y <= 2025; $y++): ?>
+                                <option value="<?= $y ?>"><?= $y ?></option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
+                        <div class="filter-row">
+                            <label class="filter-label">Month</label>
+                            <select id="histMonthSelect" class="map-control-input" onchange="loadHistoricalData()">
+                                <option value="0">All</option>
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3">March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                                <option value="6">June</option>
+                                <option value="7">July</option>
+                                <option value="8">August</option>
+                                <option value="9">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                    </div>
 
-    return $defaults;
-}
+                    <div class="filter-block">
+                        <div class="filter-block-title">Overlays</div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="obsToggle" checked onchange="loadHistoricalData()">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Show Raw Observations</span>
+                        </label>
+                        <label class="filter-label">Environmental Heatmap</label>
+                        <select id="envDataSelect" class="map-control-input" onchange="onEnvDataTypeChange()">
+                            <option value="">None</option>
+                            <option value="land_cover">Land Cover</option>
+                            <option value="ndvi">NDVI</option>
+                            <option value="viirs">VIIRS</option>
+                            <option value="precip">Precip</option>
+                            <option value="land_temp">Land Temp</option>
+                        </select>
+                        <select id="landTempPeriod" class="map-control-input" style="display:none;" onchange="loadHistoricalData()">
+                            <option value="day">Land Temp: Day</option>
+                            <option value="night">Land Temp: Night</option>
+                        </select>
+                        <div id="landCoverChecklist" class="map-control-checklist" style="margin-top:6px;">
+                            <span class="map-control-checklist-label">Land Cover</span>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Urban &amp; Built-up" checked onchange="loadHistoricalData()">Urban &amp; Built-up</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Water Bodies" checked onchange="loadHistoricalData()">Water Bodies</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Forest" checked onchange="loadHistoricalData()">Forest</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Croplands" checked onchange="loadHistoricalData()">Croplands</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Grasslands" checked onchange="loadHistoricalData()">Grasslands</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Wetlands" checked onchange="loadHistoricalData()">Wetlands</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Woody Savannas" checked onchange="loadHistoricalData()">Woody Savannas</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Cropland Mosaics" checked onchange="loadHistoricalData()">Cropland Mosaics</label>
+                            <label><input type="checkbox" class="land-cover-toggle" value="Barren" checked onchange="loadHistoricalData()">Barren</label>
+                        </div>
+                    </div>
 
-$dashboard_thresholds = loadDashboardThresholdConfig();
-$kba_data = [];
-$historical_env_yearly = [];
-$risk_site_yearly = [];
-$risk_snapshot_year = 2025;
-$risk_city_map = [
-    'Las Piñas-Parañaque Wetland Park' => 'Las Piñas',
-    'Ninoy Aquino Parks and Wildlife Center' => 'Quezon City',
-    'Manila Bay' => 'Manila',
-    'Manila Bay Beach Resort' => 'Parañaque',
-    'Luneta National Park' => 'Manila',
-];
-$risk_land_cover_map = [
-    'Las Piñas-Parañaque Wetland Park' => 11,
-    'Ninoy Aquino Parks and Wildlife Center' => 1,
-    'Manila Bay' => 17,
-    'Manila Bay Beach Resort' => 13,
-    'Luneta National Park' => 1,
-];
-$kba_coords = [
-    'Las Piñas-Parañaque Wetland Park'    => ['lat' => 14.4500, 'lng' => 120.9833],
-    'Ninoy Aquino Parks and Wildlife Center' => ['lat' => 14.6537, 'lng' => 121.0499],
-    'Manila Bay'                          => ['lat' => 14.5700, 'lng' => 120.9800],
-    'Manila Bay Beach Resort'             => ['lat' => 14.5200, 'lng' => 120.9700],
-    'Luneta National Park'                => ['lat' => 14.5826, 'lng' => 120.9790],
-];
+                    <div class="filter-block">
+                        <div class="filter-block-title">Bird Filtering</div>
+                        <div class="filter-row">
+                            <span class="filter-icon">&#128269;</span>
+                            <input id="birdFilterInput" class="map-control-input" type="search" list="birdFilterOptions" placeholder="Search species" onchange="loadHistoricalData()">
+                            <datalist id="birdFilterOptions"></datalist>
+                        </div>
+                        <div class="filter-row">
+                            <label class="filter-label">Migration</label>
+                            <select id="migrationFilterSelect" class="map-control-input" onchange="loadHistoricalData()">
+                                <option value="">All</option>
+                                <option value="Resident">Resident</option>
+                                <option value="Migratory">Migratory</option>
+                            </select>
+                        </div>
+                        <div class="filter-row">
+                            <label class="filter-label">Light Tolerance</label>
+                            <select id="lightFilterSelect" class="map-control-input" onchange="loadHistoricalData()">
+                                <option value="">All</option>
+                                <option value="Tolerant">Light-tolerant</option>
+                                <option value="Sensitive">Light-sensitive</option>
+                            </select>
+                        </div>
+                    </div>
+                </aside>
 
-$risk_city_map_json = json_encode($risk_city_map, JSON_UNESCAPED_UNICODE);
-try {
-    $mysql = get_mysql_db();
-    // grid_cells_json excluded — coordinate data now lives in kba_pa_locations.
-    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month FROM kba_pa_audit_live ORDER BY area_name ASC");
-    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+                <div class="dash-map-canvas">
+                    <div class="risk-site-panel" id="riskSitePanel" aria-label="Risk zone list" style="display:flex;">
+                        <h4>Places</h4>
+                        <div class="risk-site-summary">Click a site to show/hide it, or use the target icon to focus the map.</div>
+                        <div class="risk-threshold-note" id="riskThresholdNote"></div>
+                        <div class="risk-site-list" id="riskSiteList"></div>
+                    </div>
 
-    foreach ($rows as $row) {
-        $name = (string) ($row['area_name'] ?? '');
-        if ($name === '' || !isset($kba_coords[$name])) {
-            continue;
-        }
-        $coords = $kba_coords[$name];
-        $kba_data[] = [
-            'name'           => $name,
-            'type'           => (string) ($row['area_type'] ?? ''),
-            'latitude'       => (float) $coords['lat'],
-            'longitude'      => (float) $coords['lng'],
-            'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : 0.0,
-            'status'         => (string) ($row['status'] ?? ''),
-            'snapshot_year'  => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
-            'snapshot_month' => isset($row['snapshot_month']) ? (int) $row['snapshot_month'] : null,
-            'land_cover'     => (int) ($risk_land_cover_map[$name] ?? 11),
-        ];
+                    <div class="map-shell">
+                        <div id="map"></div>
 
-        if (isset($row['snapshot_year']) && is_numeric($row['snapshot_year'])) {
-            $risk_snapshot_year = max($risk_snapshot_year, (int) $row['snapshot_year']);
-        }
-    }
+                        <!-- Risk Zones legend -->
+                        <div class="map-legend" id="legendRiskZones">
+                            <h4>Risk Zones</h4>
+                            <div class="map-legend-item">
+                                <span class="map-legend-dot" style="background: #22c55e;"></span>
+                                <span>Low Risk</span>
+                            </div>
+                            <div class="map-legend-item">
+                                <span class="map-legend-dot" style="background: #eab308;"></span>
+                                <span>Medium Risk</span>
+                            </div>
+                            <div class="map-legend-item">
+                                <span class="map-legend-dot" style="background: #ef4444;"></span>
+                                <span>High Risk</span>
+                            </div>
+                            <div class="map-legend-meta">Based on VIIRS night-light radiance thresholds.</div>
+                        </div>
 
-    // ecological_yearly_summary — Metro Manila aggregate for the information cards.
-    $histStmt = $mysql->query("SELECT area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total
-        FROM ecological_yearly_summary
-        WHERE year BETWEEN 2014 AND 2025
-          AND area IS NOT NULL
-        ORDER BY year ASC, area ASC");
-    $histRows = $histStmt ? ($histStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    foreach ($histRows as $histRow) {
-        $year = (int) ($histRow['year'] ?? 0);
-        $area = trim((string) ($histRow['area'] ?? ''));
-        if ($year < 2014 || $year > 2025 || $area === '') {
-            continue;
-        }
-        if (!isset($historical_env_yearly[$year])) {
-            $historical_env_yearly[$year] = [];
-        }
-        $historical_env_yearly[$year][$area] = [
-            'viirs' => isset($histRow['viirs_avg']) ? (float) $histRow['viirs_avg'] : null,
-            'ndvi' => isset($histRow['ndvi_avg']) ? (float) $histRow['ndvi_avg'] : null,
-            'lst' => isset($histRow['lst_avg']) ? (float) $histRow['lst_avg'] : null,
-            'precipitation' => isset($histRow['precipitation_total']) ? (float) $histRow['precipitation_total'] : null,
-        ];
-    }
-
-    // Cross-reference accented/unaccented city name variants so the JS computeZoneLight
-    // fallback finds entries regardless of how the DB stored city names.
-    $accent_map = ['ñ'=>'n','Ñ'=>'n','á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','Á'=>'a','É'=>'e','Í'=>'i','Ó'=>'o','Ú'=>'u'];
-    $city_canonical = [];
-    foreach ($risk_city_map as $city) {
-        $city_canonical[strtolower(strtr($city, $accent_map))] = $city;
-    }
-    foreach ($historical_env_yearly as $yr => $areas) {
-        foreach ($areas as $areaKey => $data) {
-            $normKey = strtolower(strtr($areaKey, $accent_map));
-            if (isset($city_canonical[$normKey]) && $city_canonical[$normKey] !== $areaKey) {
-                $canonical = $city_canonical[$normKey];
-                if (!isset($historical_env_yearly[$yr][$canonical])) {
-                    $historical_env_yearly[$yr][$canonical] = $data;
-                }
-            }
-        }
-    }
-} catch (Throwable $e) {
-    $kba_data = json_decode((string) file_get_contents('data/sample_kba.json'), true) ?: [];
-}
-?>
-
-<div class="alert alert-info" role="status">
-    📅 <strong>Dataset Period: 2014 – 2025</strong> | <strong>Monitoring Status: 2014 – 2025</strong> —
-    All metrics, readings, and site analyses are loaded from the database for the selected period.
-</div>
-
-<div class="dashboard-layout">
-    <!-- Left column: Map -->
-    <div class="dashboard-map-col">
-        <div style="position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
-            <style>
-                .risk-site-panel {
-                    display: flex;
-                    flex-wrap: wrap;
-                    align-items: flex-start;
-                    gap: 8px 10px;
-                    padding: 8px 12px;
-                    border-bottom: 1px solid var(--border-color);
-                    background: var(--bg-card-alt);
-                    color: var(--text-primary);
-                }
-                .risk-site-panel h4 {
-                    margin: 0;
-                    font-size: 0.74rem;
-                    letter-spacing: 0.03em;
-                    text-transform: uppercase;
-                    color: var(--text-muted);
+                        <!-- Historical data legend (hidden by default) -->
+                        <div class="map-legend" id="legendHistorical" style="display:none;">
+                            <h4>Species Richness</h4>
+                            <div style="display:flex; align-items:center; gap:4px; margin-top:6px;">
+                                <span style="font-size:0.72rem; color:var(--text-muted);">Low</span>
+                                <div style="flex:1; height:12px; border-radius:3px; background:linear-gradient(to right,#313695,#4575b4,#74add1,#fee090,#f46d43,#a50026);"></div>
+                                <span style="font-size:0.72rem; color:var(--text-muted);">High</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-top:2px;">
+                                <span style="font-size:0.7rem; color:var(--text-muted);">0</span>
+                                <span style="font-size:0.7rem; color:var(--text-muted);">10</span>
+                                <span style="font-size:0.7rem; color:var(--text-muted);">20</span>
+                                <span style="font-size:0.7rem; color:var(--text-muted);">30+</span>
+                            </div>
+                            <div class="map-legend-meta">Scale uses the selected year, month, and filters.</div>
+                            <div id="legendEnvOverlay" style="display:none; margin-top:10px; border-top:1px solid var(--border-color); padding-top:8px;">
+                                <h4 style="margin:0 0 6px 0;">Environmental Overlay</h4>
+                                <div id="legendEnvContent"></div>
+                            </div>
+                            <div id="histLoadingMsg" style="margin-top:6px; font-size:0.75rem; color:var(--text-muted); display:none;">Loading…</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
                 }
                 .risk-site-panel .risk-site-summary {
                     font-size: 0.7rem;
@@ -2697,7 +2696,7 @@ function loadHistoricalData() {
 
 function onEnvDataTypeChange() {
     var envType = document.getElementById('envDataSelect').value;
-    document.getElementById('landCoverChecklist').style.display = envType === 'land_cover' ? 'inline-flex' : 'none';
+    document.getElementById('landCoverChecklist').style.display = envType === 'land_cover' ? 'flex' : 'none';
     document.getElementById('landTempPeriod').style.display = envType === 'land_temp' ? 'inline-flex' : 'none';
     envRowsExpanded = false;
     loadHistoricalData();
@@ -2722,10 +2721,9 @@ function setMapView(view) {
         histBtn.setAttribute('aria-pressed', isHist ? 'true' : 'false');
     }
 
-    // Show/hide filter controls
-    var filters = document.getElementById('historicalFilters');
-    filters.style.display = isHist ? 'flex' : 'none';
-    document.getElementById('historicalOverlayControls').style.display = isHist ? 'flex' : 'none';
+    // Show/hide filter sidebar
+    var histSidebar = document.getElementById('historicalSidebar');
+    if (histSidebar) histSidebar.style.display = isHist ? 'flex' : 'none';
 
     document.getElementById('riskSidebarPanels').style.display = isHist ? 'none' : 'block';
     document.getElementById('historicalSidebarPanels').style.display = isHist ? 'block' : 'none';
@@ -2765,13 +2763,6 @@ function setMapView(view) {
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
     } else {
-        // Collapse filter sub-row when leaving historical view
-        histFiltersVisible = false;
-        var filterRow = document.getElementById('histAdvancedFilters');
-        var filterBtn = document.getElementById('histFiltersToggle');
-        if (filterRow) filterRow.style.display = 'none';
-        if (filterBtn) filterBtn.textContent = '+ Show advanced bird filters';
-
         resetHistoricalSiteDetailPanel();
         clearHistoricalTypingTimers();
         clearHistoricalAutoSequenceTimers();

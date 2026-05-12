@@ -860,9 +860,6 @@ tr:hover {
     overflow: hidden;
     transition: transform 0.3s;
     border: 1px solid var(--border-color);
-    text-decoration: none;
-    color: inherit;
-    display: block;
 }
 
 .species-card:hover {
@@ -870,9 +867,6 @@ tr:hover {
     box-shadow: var(--shadow-lg);
 }
 
-.species-card:hover .species-photo {
-    transform: scale(1.04);
-}
 
 .species-image {
     width: 100%;
@@ -917,7 +911,6 @@ tr:hover {
     display: block;
     position: relative;
     z-index: 1;
-    transition: transform 0.3s ease;
 }
 
 /* Skeleton shimmer while image loads */
@@ -940,24 +933,19 @@ tr:hover {
     cursor: pointer;
 }
 
-.species-card .badge-tolerant {
-    background: #dcfce7;
-    color: #15803d;
+.species-card .badge-success {
+    background: rgba(34, 197, 94, 0.12);
+    color: #3f7f55;
 }
 
-.species-card .badge-sensitive {
-    background: #ffedd5;
-    color: #c2410c;
+.species-card .badge-warning {
+    background: rgba(202, 138, 4, 0.13);
+    color: #92620e;
 }
 
-.species-card .badge-migratory {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.species-card .badge-resident {
-    background: #f3e8ff;
-    color: #6b21a8;
+.species-card .badge-info {
+    background: rgba(8, 145, 178, 0.12);
+    color: #0c6d89;
 }
 
 .species-detail-image-shell {
@@ -970,24 +958,19 @@ tr:hover {
     background: var(--bg-card-alt);
 }
 
-[data-theme="dark"] .species-card .badge-tolerant {
-    background: rgba(22, 163, 74, 0.28);
-    color: #bbf7d0;
+[data-theme="dark"] .species-card .badge-success {
+    background: rgba(34, 197, 94, 0.18);
+    color: #9be7b6;
 }
 
-[data-theme="dark"] .species-card .badge-sensitive {
-    background: rgba(194, 65, 12, 0.28);
-    color: #fed7aa;
+[data-theme="dark"] .species-card .badge-warning {
+    background: rgba(234, 179, 8, 0.18);
+    color: #fde68a;
 }
 
-[data-theme="dark"] .species-card .badge-migratory {
-    background: rgba(29, 78, 216, 0.28);
-    color: #bfdbfe;
-}
-
-[data-theme="dark"] .species-card .badge-resident {
-    background: rgba(107, 33, 168, 0.28);
-    color: #e9d5ff;
+[data-theme="dark"] .species-card .badge-info {
+    background: rgba(34, 211, 238, 0.18);
+    color: #a5f3fc;
 }
 
 [data-theme="dark"] .species-image {
@@ -1070,8 +1053,6 @@ tr:hover {
 .species-info {
     padding: 15px;
     background: var(--bg-card);
-    display: flex;
-    flex-direction: column;
 }
 
 [data-theme="dark"] .species-info {
@@ -1098,60 +1079,6 @@ tr:hover {
     flex-wrap: wrap;
 }
 
-.species-card-cta {
-    margin-top: auto;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    text-align: right;
-    opacity: 0.15;
-    transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
-    transform: translateY(0);
-}
-
-.species-card:hover .species-card-cta {
-    opacity: 1;
-    color: var(--accent-blue);
-}
-
-.species-summary {
-    display: flex;
-    gap: 18px;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    margin-bottom: 20px;
-    padding: 12px 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--bg-card);
-}
-
-.species-summary-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 110px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-}
-
-.species-summary-item strong {
-    color: var(--text-primary);
-    font-size: 1.4rem;
-    letter-spacing: 0;
-    text-transform: none;
-}
-
-.catalog-clear {
-    background: none;
-    border: 0;
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    text-decoration: underline;
-    cursor: pointer;
-    padding: 0 4px;
-}
 
 /* Filters */
 .filter-container {
@@ -1265,6 +1192,126 @@ tr:hover {
     background: var(--bg-card-alt);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+}
+
+.dash-map-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-dark);
+}
+
+.map-filter-sidebar {
+    width: 320px;
+    max-width: 320px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+}
+
+.dash-map-canvas {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.map-shell {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 10px;
+}
+
+.map-shell #map {
+    height: 100%;
+    min-height: 0;
+}
+
+.filter-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-block-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+}
+
+.filter-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-icon {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+
+.toggle-switch input {
+    position: absolute;
+    opacity: 0;
+}
+
+.toggle-slider {
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    position: relative;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: rgba(37, 99, 235, 0.25);
+    border-color: rgba(37, 99, 235, 0.5);
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+    transform: translateX(16px);
+}
+
+.toggle-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
 }
 
 .map-control-row {
