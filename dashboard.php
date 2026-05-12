@@ -585,8 +585,6 @@ if ($kba_data) {
             $risk = 'low';
         }
         $risk_zones[] = [
-            'lat' => $area['latitude'],
-            'lng' => $area['longitude'],
             'name' => $area['name'],
             'risk' => $risk,
             'light_exposure' => (float) $light,
