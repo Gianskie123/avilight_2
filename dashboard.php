@@ -64,14 +64,6 @@ $risk_land_cover_map = [
     'Manila Bay Beach Resort' => 13,
     'Luneta National Park' => 1,
 ];
-$kba_coords = [
-    'Las Piñas-Parañaque Wetland Park' => ['lat' => 14.4500, 'lng' => 120.9833],
-    'Ninoy Aquino Parks and Wildlife Center' => ['lat' => 14.6537, 'lng' => 121.0499],
-    'Manila Bay' => ['lat' => 14.5700, 'lng' => 120.9800],
-    'Manila Bay Beach Resort' => ['lat' => 14.5200, 'lng' => 120.9700],
-    'Luneta National Park' => ['lat' => 14.5826, 'lng' => 120.9790],
-];
-
 $risk_city_map_json = json_encode($risk_city_map, JSON_UNESCAPED_UNICODE);
 try {
     $mysql = get_mysql_db();
@@ -81,15 +73,12 @@ try {
 
     foreach ($rows as $row) {
         $name = (string) ($row['area_name'] ?? '');
-        if ($name === '' || !isset($kba_coords[$name])) {
+        if ($name === '') {
             continue;
         }
-        $coords = $kba_coords[$name];
         $kba_data[] = [
             'name' => $name,
             'type' => (string) ($row['area_type'] ?? ''),
-            'latitude' => (float) $coords['lat'],
-            'longitude' => (float) $coords['lng'],
             'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : 0.0,
             'status' => (string) ($row['status'] ?? ''),
             'snapshot_year' => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
@@ -674,7 +663,7 @@ var riskColors = {
     high:   {color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.25, weight: 1.5}
 };
 
-var riskZoneVisibility = [];
+var riskZoneVisibility = new Array(riskZones.length).fill(true);
 var riskSiteListEl = null;
 var selectedRiskZoneIndex = 0;
 
@@ -732,17 +721,14 @@ function setRiskZoneVisible(index, visible) {
 }
 
 function focusRiskZone(index) {
-    var circle = riskZoneLayers[index];
-    if (!circle) return;
+    var layer = riskZoneLayers[index];
+    if (!layer) return;
     selectedRiskZoneIndex = index;
     updateRiskSiteListHighlight();
-    map.flyTo(circle.getLatLng(), Math.max(map.getZoom(), 11), { duration: 0.7 });
-    if (map.hasLayer(circle)) {
-        circle.openPopup();
-    } else {
-        circle.addTo(map);
-        circle.openPopup();
-    }
+    var bounds = layer.getBounds();
+    map.flyToBounds(bounds, { padding: [30, 30], maxZoom: 14, duration: 0.7 });
+    if (!map.hasLayer(layer)) layer.addTo(map);
+    layer.openPopup(bounds.getCenter());
 }
 
 function renderRiskSiteList() {
@@ -854,8 +840,8 @@ function summarizeRiskYear(year) {
     };
 }
 
-// Track risk zone circles so they can be toggled
-var riskZoneLayers = [];
+// Track risk zone polygon layers so they can be toggled
+var riskZoneLayers = new Array(riskZones.length).fill(null);
 var riskAnimationTimers = [];
 var riskAnimationToken = 0;
 
@@ -867,26 +853,39 @@ function clearRiskAnimationTimers() {
 
 function clearRiskZonesFromMap() {
     riskZoneLayers.forEach(function(layer) {
-        map.removeLayer(layer);
+        if (layer && map.hasLayer(layer)) map.removeLayer(layer);
     });
 }
 
-// Add risk zone circles
-riskZones.forEach(function(zone, index) {
-    var style = riskColors.low;
-    var circle = L.circle([zone.lat, zone.lng], {
-        radius: 8000,
-        color: style.color,
-        fillColor: style.fillColor,
-        fillOpacity: style.fillOpacity,
-        weight: style.weight
-    }).bindPopup(
-        '<strong>' + zone.name + '</strong><br>Risk: Low<br>Avg VIIRS: 0.0 nW/cm²/sr'
-    );
-    circle._zoneIndex = index;
-    riskZoneLayers.push(circle);
-    riskZoneVisibility.push(true);
-});
+// Load risk zone polygons from shapefile-derived GeoJSON
+var riskZoneNameToIndex = {};
+riskZones.forEach(function(zone, i) { riskZoneNameToIndex[zone.name] = i; });
+
+function initRiskZonePolygons(geojson) {
+    var summary = summarizeRiskYear(selectedRiskYear);
+    (geojson.features || []).forEach(function(feature) {
+        var name = (feature.properties && feature.properties.name) ? feature.properties.name : '';
+        var idx  = riskZoneNameToIndex[name];
+        if (idx === undefined) return;
+        var zoneData = summary.zones[idx] || { risk: 'low', light: 0 };
+        var style = getRiskZoneStyle(zoneData.risk);
+        L.geoJSON(feature, {
+            style: { color: style.color, fillColor: style.fillColor, fillOpacity: 0.3, weight: 2 },
+            onEachFeature: function(f, layer) {
+                layer.bindPopup('<strong>' + name + '</strong><br>Risk: Low<br>Avg VIIRS: 0.0 nW/cm²/sr');
+                layer.addTo(map);
+                riskZoneLayers[idx] = layer;
+            }
+        });
+    });
+    applyRiskZonesForYear(selectedRiskYear);
+    renderRiskSiteList();
+}
+
+fetch('data/kba_pa_boundaries.geojson')
+    .then(function(r) { return r.json(); })
+    .then(initRiskZonePolygons)
+    .catch(function() { renderRiskSiteList(); });
 
 renderRiskSiteList();
 
@@ -894,26 +893,24 @@ function applyRiskZonesForYear(year) {
     selectedRiskYear = year;
     var summary = summarizeRiskYear(year);
 
-    riskZoneLayers.forEach(function(circle, index) {
+    riskZoneLayers.forEach(function(layer, index) {
+        if (!layer) return;
         var zoneData = summary.zones[index];
         var style = getRiskZoneStyle(zoneData.risk);
-        var radius = 6200;
-        circle.setStyle({
+        layer.setStyle({
             color: style.color,
             fillColor: style.fillColor,
-            fillOpacity: style.fillOpacity,
-            weight: style.weight
+            fillOpacity: 0.3,
+            weight: 2
         });
-        circle.setRadius(radius);
         var popupHtml =
             '<strong>' + zoneData.name + '</strong>' +
             '<br>Year: ' + year +
             '<br>Risk: ' + zoneData.risk.charAt(0).toUpperCase() + zoneData.risk.slice(1) +
             '<br>Avg VIIRS: ' + zoneData.light.toFixed(1) + ' nW/cm²/sr';
-        circle.bindPopup(popupHtml);
-        // If the popup is currently open, update its visible content immediately
-        if (circle.isPopupOpen()) {
-            circle.setPopupContent(popupHtml);
+        layer.bindPopup(popupHtml);
+        if (layer.isPopupOpen()) {
+            layer.setPopupContent(popupHtml);
         }
     });
 
@@ -1051,11 +1048,11 @@ function playRiskViewAnimation() {
 
     var reveal = function() {
         if (token !== riskAnimationToken || currentMapView !== 'risk') return;
-        riskZoneLayers.forEach(function(circle, index) {
+        riskZoneLayers.forEach(function(layer, index) {
             var timer = setTimeout(function() {
                 if (token !== riskAnimationToken || currentMapView !== 'risk') return;
-                if (riskZoneVisibility[index] !== false) {
-                    circle.addTo(map);
+                if (layer && riskZoneVisibility[index] !== false) {
+                    layer.addTo(map);
                 }
             }, 120 * index);
             riskAnimationTimers.push(timer);
