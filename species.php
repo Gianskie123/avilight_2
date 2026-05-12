@@ -397,6 +397,12 @@ $edit_total = $no_category_count;
                 <span style="font-size:.78rem;color:var(--text-muted);">Not yet classified</span>
                 <?php endif; ?>
             </div>
+
+            <div style="flex:1;min-height:12px;"></div>
+            <button class="btn btn-primary" style="width:100%;font-size:.9rem;"
+                    onclick="event.stopPropagation();showSpeciesDetails(<?php echo (int)$species['id']; ?>)">
+                View Details
+            </button>
         </div>
     </div>
     <?php endforeach; ?>
@@ -686,24 +692,24 @@ const pageSpecies = {$page_species_js};
 let _locSpeciesId = null;
 
 // ── Catalog AJAX (live search + pagination) ──────────────────────────────────
-let _catalogPage = <?php echo (int)$page; ?>;
+let _catalogPage = {$page};
 let _catalogSearchTimer = null;
 
 async function fetchCatalog(page) {
     _catalogPage = page || 1;
-    const search = document.getElementById('catalog-search')?.value  ?? '';
-    const tol    = document.getElementById('catalog-tolerance')?.value ?? 'all';
-    const mig    = document.getElementById('catalog-migration')?.value ?? 'all';
+    var search = document.getElementById('catalog-search') ? document.getElementById('catalog-search').value : '';
+    var tol    = document.getElementById('catalog-tolerance') ? document.getElementById('catalog-tolerance').value : 'all';
+    var mig    = document.getElementById('catalog-migration') ? document.getElementById('catalog-migration').value : 'all';
 
-    const params = new URLSearchParams({ search, tolerance: tol, migration: mig, page: String(_catalogPage) });
+    var params = new URLSearchParams({ search: search, tolerance: tol, migration: mig, page: String(_catalogPage) });
 
-    const grid    = document.getElementById('catalog-grid');
-    const countEl = document.getElementById('catalog-results-count');
+    var grid    = document.getElementById('catalog-grid');
+    var countEl = document.getElementById('catalog-results-count');
     if (grid) grid.style.opacity = '0.45';
 
     try {
-        const res  = await fetch('api/get_catalog.php?' + params);
-        const data = await res.json();
+        var res  = await fetch('api/get_catalog.php?' + params);
+        var data = await res.json();
         if (!data.success) throw new Error(data.error || 'fetch failed');
 
         pageSpecies = data.rows;
@@ -717,17 +723,18 @@ async function fetchCatalog(page) {
 }
 
 function renderCatalogGrid(data) {
-    const grid    = document.getElementById('catalog-grid');
-    const countEl = document.getElementById('catalog-results-count');
-    const pagEl   = document.getElementById('catalog-pagination');
+    var grid    = document.getElementById('catalog-grid');
+    var countEl = document.getElementById('catalog-results-count');
+    var pagEl   = document.getElementById('catalog-pagination');
     if (!grid) return;
 
-    const offset = (data.page - 1) * data.per_page;
+    var offset = (data.page - 1) * data.per_page;
     if (countEl) {
         if (data.total_filtered > 0) {
-            const from = (offset + 1).toLocaleString();
-            const to   = Math.min(offset + data.per_page, data.total_filtered).toLocaleString();
-            countEl.innerHTML = `Showing <strong>${from}–${to}</strong> of <strong>${data.total_filtered.toLocaleString()}</strong> species`;
+            var from = (offset + 1).toLocaleString();
+            var to   = Math.min(offset + data.per_page, data.total_filtered).toLocaleString();
+            countEl.innerHTML = 'Showing <strong>' + from + '–' + to + '</strong>'
+                + ' of <strong>' + data.total_filtered.toLocaleString() + '</strong> species';
         } else {
             countEl.textContent = 'No species found matching your search criteria.';
         }
@@ -735,70 +742,75 @@ function renderCatalogGrid(data) {
 
     grid.innerHTML = data.rows.length
         ? data.rows.map(renderSpeciesCard).join('')
-        : '<div class="alert alert-info">No species found matching your search criteria. Try adjusting your filters.</div>';
+        : '<div class="alert alert-info">No species found. Try adjusting your filters.</div>';
 
     if (pagEl) renderCatalogPagination(data.page, data.total_pages);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderSpeciesCard(sp) {
-    const tol      = (sp.light_tolerance  || '').toLowerCase();
-    const mig      = (sp.migration_status || '').toLowerCase();
-    const tolLabel = tol ? tol.charAt(0).toUpperCase() + tol.slice(1) : '';
-    const migLabel = mig ? mig.charAt(0).toUpperCase() + mig.slice(1) : '';
-    const tolClass = tol === 'tolerant' ? 'badge-success' : (tol ? 'badge-warning' : '');
-    const migClass = mig === 'resident' ? 'badge-success' : (mig ? 'badge-info'    : '');
-    const imgSrc   = escapeHtml(sp.image_path  || '');
-    const webpSrc  = escapeHtml(sp.webp_path   || '');
-    const altText  = escapeHtml(sp.common_name || '');
-    const id       = Number(sp.id);
+    var tol      = (sp.light_tolerance  || '').toLowerCase();
+    var mig      = (sp.migration_status || '').toLowerCase();
+    var tolLabel = tol ? tol.charAt(0).toUpperCase() + tol.slice(1) : '';
+    var migLabel = mig ? mig.charAt(0).toUpperCase() + mig.slice(1) : '';
+    var tolClass = tol === 'tolerant' ? 'badge-success' : (tol ? 'badge-warning' : '');
+    var migClass = mig === 'resident' ? 'badge-success' : (mig ? 'badge-info'    : '');
+    var imgSrc   = escapeHtml(sp.image_path  || '');
+    var webpSrc  = escapeHtml(sp.webp_path   || '');
+    var altText  = escapeHtml(sp.common_name || '');
+    var id       = Number(sp.id);
 
-    let imgHtml;
+    var imgHtml;
     if (imgSrc) {
-        const src = webpSrc ? `<source srcset="${webpSrc}" type="image/webp">` : '';
-        imgHtml = `<div class="species-image has-photo" style="--card-img-url:url('${imgSrc}')">
-            <picture>${src}<img class="species-photo" src="${imgSrc}" alt="${altText}"
-                loading="lazy" decoding="async" width="320" height="240"
-                onload="this.closest('.species-image')?.classList.add('img-loaded')"
-                onerror="handleImgError(this)"></picture></div>`;
+        var src = webpSrc ? '<source srcset="' + webpSrc + '" type="image/webp">' : '';
+        imgHtml = '<div class="species-image has-photo" style="--card-img-url:url(\'' + imgSrc + '\')">'
+            + '<picture>' + src
+            + '<img class="species-photo" src="' + imgSrc + '" alt="' + altText + '"'
+            + ' loading="lazy" decoding="async" width="320" height="240"'
+            + ' onload="this.closest(\'.species-image\')?.classList.add(\'img-loaded\')"'
+            + ' onerror="handleImgError(this)"></picture></div>';
     } else {
-        imgHtml = `<div class="species-image"><div style="font-size:3rem;">🦜</div>
-            <small style="color:var(--text-muted);">Photo not available</small></div>`;
+        imgHtml = '<div class="species-image"><div style="font-size:3rem;">🦜</div>'
+            + '<small style="color:var(--text-muted);">Photo not available</small></div>';
     }
 
-    let badges;
+    var badges;
     if (!tolLabel && !migLabel) {
         badges = '<span style="font-size:.78rem;color:var(--text-muted);">Not yet classified</span>';
     } else {
-        badges = (tolLabel ? `<span class="badge ${tolClass}">${tolLabel}</span>` : '')
-               + (migLabel ? `<span class="badge ${migClass}">${migLabel}</span>` : '');
+        badges = (tolLabel ? '<span class="badge ' + tolClass + '">' + tolLabel + '</span>' : '')
+               + (migLabel ? '<span class="badge ' + migClass + '">' + migLabel + '</span>' : '');
     }
 
-    return `<div class="species-card" style="background:var(--bg-card);" onclick="showSpeciesDetails(${id})">
-        ${imgHtml}
-        <div class="species-info" style="background:var(--bg-card);">
-            <div class="species-name">${escapeHtml(sp.common_name)}</div>
-            <div class="species-tags">${badges}</div>
-        </div></div>`;
+    return '<div class="species-card" style="background:var(--bg-card);" onclick="showSpeciesDetails(' + id + ')">'
+        + imgHtml
+        + '<div class="species-info" style="background:var(--bg-card);">'
+        + '<div class="species-name">' + escapeHtml(sp.common_name) + '</div>'
+        + '<div class="species-tags">' + badges + '</div>'
+        + '<div style="flex:1;min-height:12px;"></div>'
+        + '<button class="btn btn-primary" style="width:100%;font-size:.9rem;"'
+        + ' onclick="event.stopPropagation();showSpeciesDetails(' + id + ')">View Details</button>'
+        + '</div></div>';
 }
 
 function renderCatalogPagination(page, totalPages) {
-    const pagEl = document.getElementById('catalog-pagination');
+    var pagEl = document.getElementById('catalog-pagination');
     if (!pagEl) return;
     if (totalPages <= 1) { pagEl.innerHTML = ''; return; }
 
-    const btn = (label, p, active) =>
-        `<button class="btn ${active ? 'btn-primary' : 'btn-secondary'}"
-                 onclick="fetchCatalog(${p})"${active ? ' disabled' : ''}>${label}</button>`;
+    function mkBtn(label, p, active) {
+        return '<button class="btn ' + (active ? 'btn-primary' : 'btn-secondary') + '"'
+            + ' onclick="fetchCatalog(' + p + ')"' + (active ? ' disabled' : '') + '>' + label + '</button>';
+    }
 
-    const start = Math.max(1, page - 3);
-    const end   = Math.min(totalPages, page + 3);
-    let html = '';
-    if (page > 1) html += btn('‹ Prev', page - 1, false);
-    if (start > 1) { html += btn('1', 1, false); if (start > 2) html += '<span style="align-self:center">…</span>'; }
-    for (let p = start; p <= end; p++) html += btn(String(p), p, p === page);
-    if (end < totalPages) { if (end < totalPages - 1) html += '<span style="align-self:center">…</span>'; html += btn(String(totalPages), totalPages, false); }
-    if (page < totalPages) html += btn('Next ›', page + 1, false);
+    var start = Math.max(1, page - 3);
+    var end   = Math.min(totalPages, page + 3);
+    var html  = '';
+    if (page > 1) html += mkBtn('‹ Prev', page - 1, false);
+    if (start > 1) { html += mkBtn('1', 1, false); if (start > 2) html += '<span style="align-self:center">…</span>'; }
+    for (var p = start; p <= end; p++) html += mkBtn(String(p), p, p === page);
+    if (end < totalPages) { if (end < totalPages - 1) html += '<span style="align-self:center">…</span>'; html += mkBtn(String(totalPages), totalPages, false); }
+    if (page < totalPages) html += mkBtn('Next ›', page + 1, false);
     pagEl.innerHTML = html;
 }
 

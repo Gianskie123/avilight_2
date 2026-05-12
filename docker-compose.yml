@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avilight7-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      DB_HOST:   ${DB_HOST:-mysql}
+      DB_PORT:   ${DB_PORT:-3306}
+      DB_NAME:   ${DB_NAME:-avilight}
+      DB_USER:   ${DB_USER:-avilight}
+      DB_PASS:   ${DB_PASS:-avilight_password}
+    volumes:
+      # Named volume keeps uploaded species images across rebuilds and restarts.
+      # Docker initialises it from the image content on first run, so existing
+      # assets/species_images files are automatically available after first deploy.
+      - species_images:/var/www/html/assets/species_images
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    container_name: avilight7-mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE:      ${DB_NAME:-avilight}
+      MYSQL_USER:          ${DB_USER:-avilight}
+      MYSQL_PASSWORD:      ${DB_PASS:-avilight_password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS:-change_me_in_prod}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASS:-change_me_in_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  species_images:   # persists uploaded bird images
+  mysql_data:       # persists database across container restarts

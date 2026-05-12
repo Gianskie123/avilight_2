@@ -61,10 +61,12 @@ COPY . /var/www/html/
 RUN mkdir -p /var/www/html/api_models && \
     mkdir -p /var/www/html/data && \
     mkdir -p /var/www/html/secrets && \
+    mkdir -p /var/www/html/assets/species_images && \
     chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
     chmod -R 775 /var/www/html/api_models && \
-    chmod -R 775 /var/www/html/data
+    chmod -R 775 /var/www/html/data && \
+    chmod -R 775 /var/www/html/assets/species_images
 
 # ─────────────────────────────────────────────
 # 7. Apache virtual host config
