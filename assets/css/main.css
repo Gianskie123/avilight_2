@@ -1095,27 +1095,55 @@ tr:hover {
     white-space: nowrap;
 }
 
+.map-view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 2px;
+}
+
+.map-view-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.map-view-btn.is-active {
+    background: var(--accent-blue);
+    color: #ffffff;
+}
+
+.map-view-btn:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.4);
+    outline-offset: 2px;
+}
+
+.map-view-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    margin-left: 6px;
+}
+
 .map-control-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-}
-
-.map-control-context {
-    flex-basis: 100%;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-}
-
-.map-control-hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.map-control-hint.is-hidden {
-    display: none;
 }
 
 .map-control-section {
@@ -1143,6 +1171,15 @@ tr:hover {
 .map-control-input {
     padding: 3px 6px;
     cursor: pointer;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+}
+
+.map-control-input[type="search"] {
+    cursor: text;
 }
 
 .map-control-toggle {
@@ -1150,7 +1187,7 @@ tr:hover {
     align-items: center;
     gap: 5px;
     font-size: 0.78rem;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     white-space: nowrap;
 }
 
@@ -1162,16 +1199,24 @@ tr:hover {
     flex: 1;
 }
 
-.map-control-button {
+.map-control-advanced-toggle {
+    width: 100%;
+    text-align: left;
     font-size: 0.78rem;
     color: var(--text-secondary);
-    background: var(--bg-input);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 3px 10px;
+    background: transparent;
+    border: 0;
+    padding: 6px 0 2px;
     cursor: pointer;
-    white-space: nowrap;
-    line-height: 1.5;
+    line-height: 1.4;
+}
+
+.map-control-advanced {
+    display: none;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-card-alt);
+    padding: 8px;
 }
 
 .map-control-checklist {

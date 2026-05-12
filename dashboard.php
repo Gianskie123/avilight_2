@@ -280,29 +280,26 @@ try {
             <div id="dashMapControls" class="dashboard-map-controls">
                 <div class="map-control-row">
                     <div class="map-control-title">Map View</div>
-                    <div class="map-control-actions">
-                        <button class="btn btn-primary btn-sm" id="btnRiskZones" onclick="setMapView('risk')">⚠️ Risk Zones</button>
-                        <button class="btn btn-secondary btn-sm" id="btnHistorical" onclick="setMapView('historical')">📊 Historical Data</button>
+                    <div class="map-view-toggle" role="group" aria-label="Map view">
+                        <button class="map-view-btn is-active" id="btnRiskZones" onclick="setMapView('risk')" aria-pressed="true">⚠️ Risk Zones</button>
+                        <button class="map-view-btn" id="btnHistorical" onclick="setMapView('historical')" aria-pressed="false">📊 Historical Data</button>
                     </div>
-                    <div class="map-control-context">
-                        <span id="riskViewHint" class="map-control-hint">Risk zones highlight VIIRS night-light disturbance.</span>
-                        <span id="histViewHint" class="map-control-hint is-hidden">Historical view shows species richness and overlays.</span>
-                    </div>
+                    <span class="map-view-info" title="Historical view shows species richness and overlays." aria-label="Historical view info">i</span>
                 </div>
 
                 <!-- Historical data filters (hidden by default) -->
                 <div id="historicalFilters" class="map-control-row" style="display:none;">
-                    <span class="map-control-label">Time:</span>
+                    <span class="map-control-label">Time</span>
                     <div class="map-control-divider"></div>
-                    <label class="map-control-label">Year:</label>
-                    <select id="histYearSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
+                    <label class="map-control-label">Year</label>
+                    <select id="histYearSelect" class="map-control-input" onchange="loadHistoricalData()">
                         <?php for ($y = 2014; $y <= 2025; $y++): ?>
                         <option value="<?= $y ?>"><?= $y ?></option>
                         <?php endfor; ?>
                     </select>
                     <div class="map-control-divider"></div>
-                    <label class="map-control-label">Month:</label>
-                    <select id="histMonthSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
+                    <label class="map-control-label">Month</label>
+                    <select id="histMonthSelect" class="map-control-input" onchange="loadHistoricalData()">
                         <option value="0">All</option>
                         <option value="1">January</option>
                         <option value="2">February</option>
@@ -329,8 +326,8 @@ try {
                             Observations
                         </label>
                         <div class="map-control-divider"></div>
-                        <span class="map-control-label">Overlay:</span>
-                        <select id="envDataSelect" class="btn btn-secondary btn-sm map-control-input" onchange="onEnvDataTypeChange()">
+                        <span class="map-control-label">Overlay</span>
+                        <select id="envDataSelect" class="map-control-input" onchange="onEnvDataTypeChange()">
                             <option value="">Environmental Data (None)</option>
                             <option value="land_cover">Land Cover</option>
                             <option value="ndvi">NDVI</option>
@@ -338,19 +335,16 @@ try {
                             <option value="precip">Precip</option>
                             <option value="land_temp">Land Temp</option>
                         </select>
-                        <select id="landTempPeriod" class="btn btn-secondary btn-sm map-control-input" style="display:none;" onchange="loadHistoricalData()">
+                        <select id="landTempPeriod" class="map-control-input" style="display:none;" onchange="loadHistoricalData()">
                             <option value="day">Land Temp: Day</option>
                             <option value="night">Land Temp: Night</option>
                         </select>
                         <div class="map-control-spacer"></div>
-                        <button type="button" id="histFiltersToggle" class="map-control-button" onclick="toggleHistFilters()">
-                            &#9881; Filters &#9660;
-                        </button>
                     </div>
 
                     <!-- Land-cover checklist (shown when overlay = land_cover) -->
                     <div id="landCoverChecklist" class="map-control-checklist">
-                        <span class="map-control-checklist-label">Land Cover:</span>
+                        <span class="map-control-checklist-label">Land Cover</span>
                         <label><input type="checkbox" class="land-cover-toggle" value="Urban &amp; Built-up" checked onchange="loadHistoricalData()">Urban &amp; Built-up</label>
                         <label><input type="checkbox" class="land-cover-toggle" value="Water Bodies" checked onchange="loadHistoricalData()">Water Bodies</label>
                         <label><input type="checkbox" class="land-cover-toggle" value="Forest" checked onchange="loadHistoricalData()">Forest</label>
@@ -363,24 +357,29 @@ try {
                     </div>
 
                     <!-- Sub-row B: Bird / Migration / Light filters (collapsible) -->
-                    <div id="histFilterRow" class="map-control-row" style="display:none; padding-top:8px; border-top:1px solid var(--border-color); margin-top:8px;">
-                        <span class="map-control-label">Bird:</span>
-                        <input id="birdFilterInput" class="btn btn-secondary btn-sm map-control-input" type="search" list="birdFilterOptions" placeholder="All birds" style="width:160px;" onchange="loadHistoricalData()">
-                        <datalist id="birdFilterOptions"></datalist>
-                        <div class="map-control-divider"></div>
-                        <span class="map-control-label">Migration:</span>
-                        <select id="migrationFilterSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
-                            <option value="">All</option>
-                            <option value="Resident">Resident</option>
-                            <option value="Migratory">Migratory</option>
-                        </select>
-                        <div class="map-control-divider"></div>
-                        <span class="map-control-label">Light:</span>
-                        <select id="lightFilterSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
-                            <option value="">All</option>
-                            <option value="Tolerant">Light-tolerant</option>
-                            <option value="Sensitive">Light-sensitive</option>
-                        </select>
+                    <button type="button" id="histFiltersToggle" class="map-control-advanced-toggle" onclick="toggleHistFilters()">
+                        + Show advanced bird filters
+                    </button>
+                    <div id="histAdvancedFilters" class="map-control-advanced">
+                        <div id="histFilterRow" class="map-control-row">
+                            <span class="map-control-label">Bird</span>
+                            <input id="birdFilterInput" class="map-control-input" type="search" list="birdFilterOptions" placeholder="All birds" style="width:160px;" onchange="loadHistoricalData()">
+                            <datalist id="birdFilterOptions"></datalist>
+                            <div class="map-control-divider"></div>
+                            <span class="map-control-label">Migration</span>
+                            <select id="migrationFilterSelect" class="map-control-input" onchange="loadHistoricalData()">
+                                <option value="">All</option>
+                                <option value="Resident">Resident</option>
+                                <option value="Migratory">Migratory</option>
+                            </select>
+                            <div class="map-control-divider"></div>
+                            <span class="map-control-label">Light</span>
+                            <select id="lightFilterSelect" class="map-control-input" onchange="loadHistoricalData()">
+                                <option value="">All</option>
+                                <option value="Tolerant">Light-tolerant</option>
+                                <option value="Sensitive">Light-sensitive</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -2712,13 +2711,16 @@ function setMapView(view) {
     var isHist = (view === 'historical');
 
     // Toggle button styles
-    document.getElementById('btnRiskZones').className  = isHist ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm';
-    document.getElementById('btnHistorical').className = isHist ? 'btn btn-primary btn-sm'   : 'btn btn-secondary btn-sm';
-
-    var riskHint = document.getElementById('riskViewHint');
-    var histHint = document.getElementById('histViewHint');
-    if (riskHint) riskHint.className = isHist ? 'map-control-hint is-hidden' : 'map-control-hint';
-    if (histHint) histHint.className = isHist ? 'map-control-hint' : 'map-control-hint is-hidden';
+    var riskBtn = document.getElementById('btnRiskZones');
+    var histBtn = document.getElementById('btnHistorical');
+    if (riskBtn) {
+        riskBtn.className = isHist ? 'map-view-btn' : 'map-view-btn is-active';
+        riskBtn.setAttribute('aria-pressed', isHist ? 'false' : 'true');
+    }
+    if (histBtn) {
+        histBtn.className = isHist ? 'map-view-btn is-active' : 'map-view-btn';
+        histBtn.setAttribute('aria-pressed', isHist ? 'true' : 'false');
+    }
 
     // Show/hide filter controls
     var filters = document.getElementById('historicalFilters');
@@ -2765,10 +2767,10 @@ function setMapView(view) {
     } else {
         // Collapse filter sub-row when leaving historical view
         histFiltersVisible = false;
-        var filterRow = document.getElementById('histFilterRow');
+        var filterRow = document.getElementById('histAdvancedFilters');
         var filterBtn = document.getElementById('histFiltersToggle');
         if (filterRow) filterRow.style.display = 'none';
-        if (filterBtn) filterBtn.innerHTML = '&#9881; Filters &#9660;';
+        if (filterBtn) filterBtn.textContent = '+ Show advanced bird filters';
 
         resetHistoricalSiteDetailPanel();
         clearHistoricalTypingTimers();
@@ -2787,10 +2789,10 @@ function setMapView(view) {
 var histFiltersVisible = false;
 function toggleHistFilters() {
     histFiltersVisible = !histFiltersVisible;
-    var row = document.getElementById('histFilterRow');
+    var row = document.getElementById('histAdvancedFilters');
     var btn = document.getElementById('histFiltersToggle');
-    if (row) row.style.display = histFiltersVisible ? 'flex' : 'none';
-    if (btn) btn.innerHTML = histFiltersVisible ? '&#9881; Filters &#9650;' : '&#9881; Filters &#9660;';
+    if (row) row.style.display = histFiltersVisible ? 'block' : 'none';
+    if (btn) btn.textContent = histFiltersVisible ? '- Hide advanced bird filters' : '+ Show advanced bird filters';
 }
 
 var histEnvToggleEl = document.getElementById('histEnvToggle');
