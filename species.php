@@ -328,11 +328,34 @@ $edit_total = $no_category_count;
     $migration_class = $mig_val === 'migratory' ? 'badge-danger' : 'badge-success';
     $tol_label = ucfirst($tol_val);
     $mig_label = ucfirst($mig_val);
+
+    // Derive WebP sibling for <picture> element
+    $has_img  = !empty($species['image_path']);
+    $img_src  = $has_img ? htmlspecialchars($species['image_path']) : '';
+    $webp_src = '';
+    if ($has_img) {
+        $img_clean  = strtok($species['image_path'], '?');
+        $webp_clean = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $img_clean);
+        $webp_abs   = __DIR__ . '/' . ltrim($webp_clean, '/');
+        if (is_file($webp_abs)) {
+            $webp_src = htmlspecialchars($webp_clean . '?v=' . filemtime($webp_abs));
+        }
+    }
     ?>
     <div class="species-card" style="background:var(--bg-card);">
-        <div class="species-image<?php echo !empty($species['image_path']) ? ' has-photo' : ''; ?>">
-            <?php if (!empty($species['image_path'])): ?>
-                <img class="species-photo" src="<?php echo htmlspecialchars($species['image_path']); ?>" alt="<?php echo htmlspecialchars($species['common_name']); ?>" loading="lazy" decoding="async">
+        <div class="species-image<?php echo $has_img ? ' has-photo' : ''; ?>">
+            <?php if ($has_img): ?>
+                <picture>
+                    <?php if ($webp_src): ?>
+                    <source srcset="<?php echo $webp_src; ?>" type="image/webp">
+                    <?php endif; ?>
+                    <img class="species-photo"
+                         src="<?php echo $img_src; ?>"
+                         alt="<?php echo htmlspecialchars($species['common_name']); ?>"
+                         loading="lazy" decoding="async" width="320" height="240"
+                         onload="this.closest('.species-image')?.classList.add('img-loaded')"
+                         onerror="handleImgError(this)">
+                </picture>
             <?php else: ?>
                 <div style="font-size: 3rem;">🦜</div>
                 <small style="color: var(--text-muted);">Photo not available</small>
@@ -342,12 +365,15 @@ $edit_total = $no_category_count;
             <div class="species-name"><?php echo htmlspecialchars($species['common_name']); ?></div>
 
             <div class="species-tags">
-                <span class="badge <?php echo $tolerance_class; ?>">
-                    <?php echo htmlspecialchars($tol_label); ?>
-                </span>
-                <span class="badge <?php echo $migration_class; ?>">
-                    <?php echo htmlspecialchars($mig_label); ?>
-                </span>
+                <?php if ($tol_label): ?>
+                <span class="badge <?php echo $tolerance_class; ?>"><?php echo htmlspecialchars($tol_label); ?></span>
+                <?php endif; ?>
+                <?php if ($mig_label): ?>
+                <span class="badge <?php echo $migration_class; ?>"><?php echo htmlspecialchars($mig_label); ?></span>
+                <?php endif; ?>
+                <?php if (!$tol_label && !$mig_label): ?>
+                <span style="font-size:.78rem;color:var(--text-muted);">Not yet classified</span>
+                <?php endif; ?>
             </div>
 
             <div style="flex: 1; min-height: 12px;"></div>
@@ -1340,6 +1366,39 @@ async function executeDelete(id, name, rowBtn) {
     }
 }
 
+function handleImgError(img) {
+    img.onerror = null;
+    const wrapper = img.closest('.species-image');
+    if (!wrapper) return;
+    wrapper.classList.remove('has-photo', 'img-loaded');
+    wrapper.classList.add('img-error');
+    img.style.display = 'none';
+    if (!wrapper.querySelector('.img-fallback')) {
+        const fb = document.createElement('div');
+        fb.className = 'img-fallback';
+        fb.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;';
+        fb.innerHTML = '<div style="font-size:3rem;">🦜</div>'
+                     + '<small style="color:var(--text-muted);">Photo not available</small>';
+        wrapper.appendChild(fb);
+    }
+}
+
+function showToast(message, type) {
+    const existing = document.getElementById('species-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'species-toast';
+    const color = (type === 'error') ? 'var(--danger-color,#dc2626)' : 'var(--accent-green,#16a34a)';
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;'
+        + 'padding:12px 20px;border-radius:8px;background:var(--bg-card);'
+        + 'border:1px solid ' + color + ';color:var(--text-primary);'
+        + 'font-size:.9rem;font-weight:500;box-shadow:var(--shadow-lg);'
+        + 'transition:opacity .4s ease;opacity:1;max-width:320px;pointer-events:none;';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2800);
+}
+
 async function saveSpecies(e) {
     e.preventDefault();
     const msg = document.getElementById('editSaveMsg');
@@ -1354,9 +1413,16 @@ async function saveSpecies(e) {
         const res  = await fetch('api/update_species.php', { method: 'POST', body });
         const data = await res.json();
         if (data.success) {
-            msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--accent-green,#16a34a);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
-            msg.textContent = 'Saved! Refreshing list…';
-            setTimeout(() => location.reload(), 1000);
+            closeEditModal();
+            showToast('Changes saved');
+            // Refresh only the visible edit sub-tab in place — no page reload
+            const activePanel = Array.from(document.querySelectorAll('.edit-tab-panel'))
+                .find(p => p.style.display !== 'none');
+            const activeTab = activePanel ? activePanel.dataset.etab : null;
+            if (activeTab && editTableState[activeTab]) {
+                editTableState[activeTab].loaded = false;
+                fetchEditTable(activeTab, editTableState[activeTab].page);
+            }
         } else {
             msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
             msg.textContent = data.error || 'Save failed.';
