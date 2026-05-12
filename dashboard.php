@@ -466,23 +466,23 @@ try {
             <!-- Stat cards -->
             <div class="dash-stats">
                 <div class="dash-stat-card" id="riskAtRiskCard">
-                    <div class="dash-stat-label">At Risk Zones</div>
+                    <div class="dash-stat-label">At Risk Zones <span id="atRiskZonesYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
                     <div>
                         <span class="dash-stat-value" id="atRiskZonesValue">0</span>
                         <span class="dash-stat-trend" id="atRiskZonesTrend">↔ 0%</span>
                     </div>
-                    <div class="dash-stat-desc">
-                        Areas classified as <strong>Medium</strong> or <strong>High</strong> risk based on VIIRS night-light radiance (&gt;30 nW/cm²/sr). Shown on the map as <span class="risk-medium-indicator">yellow</span> and <span class="risk-high-indicator">red</span> circles.
+                    <div class="dash-stat-desc" id="atRiskZonesDesc">
+                        Areas classified as <strong>Medium</strong> or <strong>High</strong> risk based on VIIRS night-light radiance. Shown on the map as <span class="risk-medium-indicator">yellow</span> and <span class="risk-high-indicator">red</span> circles.
                     </div>
                 </div>
                 <div class="dash-stat-card" id="riskLightIntensityCard">
-                    <div class="dash-stat-label">Light Intensity</div>
+                    <div class="dash-stat-label">Light Intensity <span id="lightIntensityYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
                     <div>
                         <span class="dash-stat-value" id="lightIntensityValue">0.0 nW</span>
                         <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0 nW</span>
                     </div>
                     <div class="dash-stat-desc">
-                        Average VIIRS night-light radiance across monitored sites for the selected year. Higher intensity correlates with larger, brighter circles on the map and increased disturbance risk to bird species.
+                        Metro Manila avg. VIIRS night-light radiance for the selected year. Higher intensity correlates with larger, brighter circles on the map and increased disturbance risk to bird species.
                     </div>
                 </div>
             </div>
@@ -910,12 +910,16 @@ function applyRiskZonesForYear(year) {
             weight: style.weight
         });
         circle.setRadius(radius);
-        circle.bindPopup(
+        var popupHtml =
             '<strong>' + zoneData.name + '</strong>' +
             '<br>Year: ' + year +
             '<br>Risk: ' + zoneData.risk.charAt(0).toUpperCase() + zoneData.risk.slice(1) +
-            '<br>Avg VIIRS: ' + zoneData.light.toFixed(1) + ' nW/cm²/sr'
-        );
+            '<br>Avg VIIRS: ' + zoneData.light.toFixed(1) + ' nW/cm²/sr';
+        circle.bindPopup(popupHtml);
+        // If the popup is currently open, update its visible content immediately
+        if (circle.isPopupOpen()) {
+            circle.setPopupContent(popupHtml);
+        }
     });
 
     renderRiskSiteList();
@@ -3028,17 +3032,72 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsDelta) {
     }
 }
 
+// Resolve Metro Manila avg VIIRS for a year from ecological_yearly_summary data.
+// Prefers the 'All Areas' aggregate row (same source as Home tab) then falls back
+// to the mean of all per-city entries, then to the KBA/PA site footprint average.
+function getMetroViirsForYear(year, kbaFallback) {
+    var bucket = historicalEnvYearly && historicalEnvYearly[String(year)] ? historicalEnvYearly[String(year)] : null;
+    if (bucket) {
+        // Prefer the pre-aggregated 'All Areas' row (matches home tab exactly)
+        var allAreas = bucket['All Areas'];
+        if (allAreas && allAreas.viirs !== null && allAreas.viirs !== undefined) {
+            return Math.max(0, Number(allAreas.viirs));
+        }
+        // Fall back to average of all per-city rows
+        var cityKeys = Object.keys(bucket).filter(function(k) { return k !== 'All Areas'; });
+        if (cityKeys.length) {
+            var sum = 0, cnt = 0;
+            cityKeys.forEach(function(k) {
+                var v = bucket[k] && bucket[k].viirs !== null && bucket[k].viirs !== undefined ? Number(bucket[k].viirs) : null;
+                if (v !== null && !isNaN(v)) { sum += v; cnt++; }
+            });
+            if (cnt > 0) return Math.max(0, sum / cnt);
+        }
+    }
+    // Last resort: KBA/PA site footprint average (original behaviour)
+    return Math.max(0, kbaFallback);
+}
+
+function updateAtRiskCardDescription() {
+    var descEl = document.getElementById('atRiskZonesDesc');
+    if (!descEl) return;
+    var modRisk  = Number(dashboardThresholds.mod_risk  || 40);
+    var highRisk = Number(dashboardThresholds.high_risk || 60);
+    descEl.innerHTML =
+        'Areas classified as <strong>Medium</strong> (&ge;' + modRisk.toFixed(0) + '&nbsp;nW) or ' +
+        '<strong>High</strong> (&ge;' + highRisk.toFixed(0) + '&nbsp;nW) risk based on VIIRS ' +
+        'night-light radiance. Shown on the map as <span class="risk-medium-indicator">yellow</span> ' +
+        'and <span class="risk-high-indicator">red</span> circles.';
+}
+
 function updateYearDrivenUpdatesOnly(currentYear) {
     var previousYear = currentYear - 1;
     var currentRiskSummary = summarizeRiskYear(currentYear);
     var previousRiskSummary = (previousYear >= DASHBOARD_MIN_YEAR) ? summarizeRiskYear(previousYear) : null;
 
-    document.getElementById('atRiskZonesValue').textContent = currentRiskSummary.atRiskZones;
-    document.getElementById('lightIntensityValue').textContent = currentRiskSummary.avgViirs.toFixed(1) + ' nW';
+    // Resolve light intensity from Metro Manila aggregate (matches home tab)
+    var currentViirs  = getMetroViirsForYear(currentYear,  currentRiskSummary.avgViirs);
+    var previousViirs = previousRiskSummary
+        ? getMetroViirsForYear(previousYear, previousRiskSummary.avgViirs)
+        : null;
 
-    if (previousRiskSummary) {
+    // Update stat card values
+    document.getElementById('atRiskZonesValue').textContent  = currentRiskSummary.atRiskZones;
+    document.getElementById('lightIntensityValue').textContent = currentViirs.toFixed(1) + ' nW';
+
+    // Year badges on both cards
+    var yearLabel = '(' + currentYear + ')';
+    var atRiskYearEl = document.getElementById('atRiskZonesYear');
+    var lightYearEl  = document.getElementById('lightIntensityYear');
+    if (atRiskYearEl) atRiskYearEl.textContent = yearLabel;
+    if (lightYearEl)  lightYearEl.textContent  = yearLabel;
+
+    // Dynamic threshold description
+    updateAtRiskCardDescription();
+
+    if (previousRiskSummary && previousViirs !== null) {
         var zonesPctDelta = getPctDelta(currentRiskSummary.atRiskZones, previousRiskSummary.atRiskZones);
-        var viirsDelta = currentRiskSummary.avgViirs - previousRiskSummary.avgViirs;
+        var viirsDelta = currentViirs - previousViirs;
         updateTrendBadge('atRiskZonesTrend', zonesPctDelta, '%', 1);
         updateTrendBadge('lightIntensityTrend', viirsDelta, ' nW', 1);
 
