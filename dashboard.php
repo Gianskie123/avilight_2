@@ -677,6 +677,54 @@ window.addEventListener('resize', function () {
     }
 }());
 
+var dashboardMapSyncMq = window.matchMedia('(min-width: 1025px)');
+
+function syncDashboardMapHeight() {
+    var mapCol = document.querySelector('.dashboard-map-col');
+    var sidebar = document.querySelector('.dashboard-sidebar');
+    if (!mapCol || !sidebar) return;
+
+    if (dashboardMapSyncMq && !dashboardMapSyncMq.matches) {
+        mapCol.style.height = '';
+        map.invalidateSize({ animate: false });
+        return;
+    }
+
+    mapCol.style.height = '';
+    var baseHeight = Math.round(mapCol.getBoundingClientRect().height || 0);
+    if (!baseHeight) return;
+
+    var sidebarHeight = Math.round(sidebar.scrollHeight || 0);
+    var allowance = 160;
+    var targetHeight = baseHeight;
+
+    if (sidebarHeight > baseHeight) {
+        var delta = sidebarHeight - baseHeight;
+        targetHeight = (delta <= allowance) ? (baseHeight + delta) : sidebarHeight;
+    }
+
+    mapCol.style.height = targetHeight + 'px';
+    map.invalidateSize({ animate: false });
+}
+
+window.addEventListener('resize', syncDashboardMapHeight);
+if (dashboardMapSyncMq && dashboardMapSyncMq.addEventListener) {
+    dashboardMapSyncMq.addEventListener('change', syncDashboardMapHeight);
+} else if (dashboardMapSyncMq && dashboardMapSyncMq.addListener) {
+    dashboardMapSyncMq.addListener(syncDashboardMapHeight);
+}
+
+(function () {
+    var sidebar = document.querySelector('.dashboard-sidebar');
+    if (sidebar && typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(function () {
+            syncDashboardMapHeight();
+        }).observe(sidebar);
+    }
+}());
+
+setTimeout(syncDashboardMapHeight, 0);
+
 // Risk zone colors
 var riskColors = {
     low:    {color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.25, weight: 1.5},

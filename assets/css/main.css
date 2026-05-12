@@ -1018,6 +1018,7 @@ tr:hover {
     grid-template-columns: 3fr 2fr;
     gap: 24px;
     height: calc(100vh - var(--navbar-height) - 40px);
+    align-items: start;
 }
 
 .dashboard-map-col {
