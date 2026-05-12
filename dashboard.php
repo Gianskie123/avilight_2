@@ -75,10 +75,9 @@ $kba_coords = [
 $risk_city_map_json = json_encode($risk_city_map, JSON_UNESCAPED_UNICODE);
 try {
     $mysql = get_mysql_db();
-    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month, grid_cells_json FROM kba_pa_audit_live ORDER BY area_name ASC");
+    // grid_cells_json excluded — coordinate data now lives in kba_pa_locations.
+    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month FROM kba_pa_audit_live ORDER BY area_name ASC");
     $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-
-    $risk_cells_by_area = [];
 
     foreach ($rows as $row) {
         $name = (string) ($row['area_name'] ?? '');
@@ -95,87 +94,15 @@ try {
             'status' => (string) ($row['status'] ?? ''),
             'snapshot_year' => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
             'snapshot_month' => isset($row['snapshot_month']) ? (int) $row['snapshot_month'] : null,
-            'grid_cells_json' => (string) ($row['grid_cells_json'] ?? '[]'),
             'land_cover' => (int) ($risk_land_cover_map[$name] ?? 11),
         ];
 
         if (isset($row['snapshot_year']) && is_numeric($row['snapshot_year'])) {
             $risk_snapshot_year = max($risk_snapshot_year, (int) $row['snapshot_year']);
         }
-
-        $cells = json_decode((string) ($row['grid_cells_json'] ?? '[]'), true);
-        if (is_array($cells)) {
-            foreach ($cells as $cell) {
-                if (!is_array($cell) || !isset($cell['lat'], $cell['lon'])) {
-                    continue;
-                }
-                $lat = round((float) $cell['lat'], 8);
-                $lon = round((float) $cell['lon'], 8);
-                $key = $lat . '|' . $lon;
-                if (!isset($risk_cells_by_area[$name])) {
-                    $risk_cells_by_area[$name] = [];
-                }
-                $risk_cells_by_area[$name][$key] = ['lat' => $lat, 'lon' => $lon];
-            }
-        }
     }
 
-    // Wrap viirs coordinate JOIN in its own inner try so schema mismatches
-    // don't abort the ecological_yearly_summary query that always follows.
-    if (!empty($risk_cells_by_area)) {
-        try {
-            $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
-            $mysql->exec("CREATE TEMPORARY TABLE tmp_dashboard_risk_cells (
-                area_name VARCHAR(180) NOT NULL,
-                lat DECIMAL(10,8) NOT NULL,
-                lon DECIMAL(11,8) NOT NULL,
-                PRIMARY KEY (area_name, lat, lon)
-            ) ENGINE=MEMORY");
-
-            $insertCell = $mysql->prepare("INSERT IGNORE INTO tmp_dashboard_risk_cells (area_name, lat, lon) VALUES (:area_name, :lat, :lon)");
-            foreach ($risk_cells_by_area as $areaName => $cellsByKey) {
-                foreach ($cellsByKey as $cell) {
-                    $insertCell->execute([
-                        ':area_name' => $areaName,
-                        ':lat' => $cell['lat'],
-                        ':lon' => $cell['lon'],
-                    ]);
-                }
-            }
-
-            $siteYearStmt = $mysql->query("SELECT
-                    c.area_name,
-                    v.year,
-                    AVG(NULLIF(v.viirs_avg_rad, 0)) AS site_viirs_year
-                FROM tmp_dashboard_risk_cells c
-                JOIN viirs v
-                    ON ABS(v.latitude  - c.lat) < 0.00005
-                   AND ABS(v.longitude - c.lon) < 0.00005
-                WHERE v.year BETWEEN 2014 AND 2025
-                GROUP BY c.area_name, v.year
-                ORDER BY c.area_name ASC, v.year ASC");
-            $siteYearRows = $siteYearStmt ? ($siteYearStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-            foreach ($siteYearRows as $siteYearRow) {
-                $areaName = (string) ($siteYearRow['area_name'] ?? '');
-                $year = (int) ($siteYearRow['year'] ?? 0);
-                $viirs = isset($siteYearRow['site_viirs_year']) ? (float) $siteYearRow['site_viirs_year'] : null;
-                if ($areaName === '' || $year < 2014 || $year > 2025 || $viirs === null) {
-                    continue;
-                }
-                if (!isset($risk_site_yearly[$areaName])) {
-                    $risk_site_yearly[$areaName] = [];
-                }
-                $risk_site_yearly[$areaName][$year] = $viirs;
-            }
-
-            $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
-        } catch (Throwable $_) {
-            // viirs table unavailable or schema mismatch — city fill-in below will cover gaps.
-            try { $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells"); } catch (Throwable $_) {}
-        }
-    }
-
-    // ecological_yearly_summary always runs regardless of viirs JOIN outcome above.
+    // ecological_yearly_summary — Metro Manila aggregate for the information cards.
     $histStmt = $mysql->query("SELECT area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total
         FROM ecological_yearly_summary
         WHERE year BETWEEN 2014 AND 2025
@@ -199,46 +126,12 @@ try {
         ];
     }
 
-    // Build accent-insensitive normalized lookup to handle 'Las Piñas' ↔ 'Las Pinas', 'Parañaque' ↔ 'Paranaque', etc.
+    // Cross-reference accented/unaccented city name variants so the JS computeZoneLight
+    // fallback finds entries regardless of how the DB stored city names.
     $accent_map = ['ñ'=>'n','Ñ'=>'n','á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','Á'=>'a','É'=>'e','Í'=>'i','Ó'=>'o','Ú'=>'u'];
-    $hist_env_norm = [];
-    foreach ($historical_env_yearly as $yr => $areas) {
-        foreach ($areas as $areaKey => $data) {
-            $normKey = strtolower(strtr($areaKey, $accent_map));
-            if (!isset($hist_env_norm[$yr])) {
-                $hist_env_norm[$yr] = [];
-            }
-            $hist_env_norm[$yr][$normKey] = $data;
-        }
-    }
-
-    // Fill any KBA/PA site+year gaps from city-level ecological_yearly_summary.
-    foreach (array_keys($kba_coords) as $siteName) {
-        $city = $risk_city_map[$siteName] ?? null;
-        if (!$city) {
-            continue;
-        }
-        $normCity = strtolower(strtr($city, $accent_map));
-        for ($yr = 2014; $yr <= 2025; $yr++) {
-            if (isset($risk_site_yearly[$siteName][$yr])) {
-                continue;
-            }
-            $cityViirs = $hist_env_norm[$yr][$normCity]['viirs'] ?? null;
-            if ($cityViirs !== null) {
-                if (!isset($risk_site_yearly[$siteName])) {
-                    $risk_site_yearly[$siteName] = [];
-                }
-                $risk_site_yearly[$siteName][$yr] = (float) $cityViirs;
-            }
-        }
-    }
-
-    // Add cross-reference keys in historical_env_yearly so the JS computeZoneLight
-    // fallback can find entries by either the accented or unaccented city name form.
     $city_canonical = [];
     foreach ($risk_city_map as $city) {
-        $normCity = strtolower(strtr($city, $accent_map));
-        $city_canonical[$normCity] = $city;
+        $city_canonical[strtolower(strtr($city, $accent_map))] = $city;
     }
     foreach ($historical_env_yearly as $yr => $areas) {
         foreach ($areas as $areaKey => $data) {
@@ -1004,7 +897,7 @@ function applyRiskZonesForYear(year) {
     riskZoneLayers.forEach(function(circle, index) {
         var zoneData = summary.zones[index];
         var style = getRiskZoneStyle(zoneData.risk);
-        var radius = 6200 + Math.round(zoneData.light * 90);
+        var radius = 6200;
         circle.setStyle({
             color: style.color,
             fillColor: style.fillColor,

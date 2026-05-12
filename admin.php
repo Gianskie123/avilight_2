@@ -1362,7 +1362,7 @@ async function buildMasterGrid(btn) {
 
     if (!confirmed) return;
 
-    // Step 3 — execute
+    // Step 3 — execute main rebuild
     btn.disabled    = true;
     btn.textContent = 'Rebuilding… (do not close this page)';
     statusEl.innerHTML = '<span style="color:var(--text-secondary);font-size:.875rem;">Step 1: Refreshing bird summaries. Step 2: Rebuilding the analysis dataset. Do not close this page.</span>';
@@ -1382,24 +1382,28 @@ async function buildMasterGrid(btn) {
         return;
     }
 
+    if (!result.success) {
+        btn.disabled    = false;
+        btn.textContent = 'Rebuild Analysis Data';
+        statusEl.innerHTML = '';
+        showToast('Rebuild Failed', [result.error || 'Did not complete successfully.'], 'danger');
+        return;
+    }
+
     btn.disabled    = false;
     btn.textContent = 'Rebuild Analysis Data';
     statusEl.innerHTML = '';
 
-    if (result.success) {
-        const logLines = (result.log || []).map(l => {
-            try { const p = JSON.parse(l); return p.msg || l; } catch { return l; }
-        });
-        const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
-        showToast('Analysis Data Rebuilt', [
-            'Dataset rebuilt successfully.',
-            lastMsg
-        ], 'success');
-        loadSpatialChecks();
-    } else {
-        const errMsg = result.error || 'Did not complete successfully.';
-        showToast('Rebuild Failed', [errMsg], 'danger');
-    }
+    const logLines = (result.log || []).map(l => {
+        try { const p = JSON.parse(l); return p.msg || l; } catch { return l; }
+    });
+    const lastMsg = logLines[logLines.length - 1] || 'Build complete.';
+
+    showToast('Analysis Data Rebuilt', [
+        'Dataset rebuilt successfully.',
+        lastMsg,
+    ], 'success');
+    loadSpatialChecks();
 }
 
 // ── BAU cache reset ──────────────────────────────────────────────────────────
