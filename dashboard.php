@@ -277,23 +277,32 @@ try {
                 }
             </style>
             <!-- Map filter control bar -->
-            <div id="dashMapControls" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-card-alt); border-bottom:1px solid var(--border-color); flex-shrink:0;">
-                <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">View:</span>
-                <button class="btn btn-primary btn-sm" id="btnRiskZones" onclick="setMapView('risk')">⚠️ Risk Zones</button>
-                <button class="btn btn-secondary btn-sm" id="btnHistorical" onclick="setMapView('historical')">📊 Historical Data</button>
+            <div id="dashMapControls" class="dashboard-map-controls">
+                <div class="map-control-row">
+                    <div class="map-control-title">Map View</div>
+                    <div class="map-control-actions">
+                        <button class="btn btn-primary btn-sm" id="btnRiskZones" onclick="setMapView('risk')">⚠️ Risk Zones</button>
+                        <button class="btn btn-secondary btn-sm" id="btnHistorical" onclick="setMapView('historical')">📊 Historical Data</button>
+                    </div>
+                    <div class="map-control-context">
+                        <span id="riskViewHint" class="map-control-hint">Risk zones highlight VIIRS night-light disturbance.</span>
+                        <span id="histViewHint" class="map-control-hint is-hidden">Historical view shows species richness and overlays.</span>
+                    </div>
+                </div>
 
                 <!-- Historical data filters (hidden by default) -->
-                <div id="historicalFilters" style="display:none; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <div style="width:1px; height:24px; background:var(--border-color);"></div>
-                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Year:</label>
-                    <select id="histYearSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                <div id="historicalFilters" class="map-control-row" style="display:none;">
+                    <span class="map-control-label">Time:</span>
+                    <div class="map-control-divider"></div>
+                    <label class="map-control-label">Year:</label>
+                    <select id="histYearSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
                         <?php for ($y = 2014; $y <= 2025; $y++): ?>
                         <option value="<?= $y ?>"><?= $y ?></option>
                         <?php endfor; ?>
                     </select>
-                    <div style="width:1px; height:24px; background:var(--border-color);"></div>
-                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Month:</label>
-                    <select id="histMonthSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                    <div class="map-control-divider"></div>
+                    <label class="map-control-label">Month:</label>
+                    <select id="histMonthSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
                         <option value="0">All</option>
                         <option value="1">January</option>
                         <option value="2">February</option>
@@ -311,17 +320,17 @@ try {
                 </div>
 
                 <!-- ── Historical overlay controls: two sub-rows ── -->
-                <div id="historicalOverlayControls" style="display:none; width:100%; flex-direction:column; gap:0; padding-top:8px; border-top:1px solid var(--border-color);">
+                <div id="historicalOverlayControls" class="map-control-section">
 
                     <!-- Sub-row A: Observation toggle · Map Overlay · Filters toggle -->
-                    <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <label style="display:flex; align-items:center; gap:5px; font-size:0.78rem; color:var(--text-secondary); white-space:nowrap;">
+                    <div class="map-control-row">
+                        <label class="map-control-toggle">
                             <input type="checkbox" id="obsToggle" checked onchange="loadHistoricalData()">
                             Observations
                         </label>
-                        <div style="width:1px; height:20px; background:var(--border-color); flex-shrink:0;"></div>
-                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Overlay:</span>
-                        <select id="envDataSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="onEnvDataTypeChange()">
+                        <div class="map-control-divider"></div>
+                        <span class="map-control-label">Overlay:</span>
+                        <select id="envDataSelect" class="btn btn-secondary btn-sm map-control-input" onchange="onEnvDataTypeChange()">
                             <option value="">Environmental Data (None)</option>
                             <option value="land_cover">Land Cover</option>
                             <option value="ndvi">NDVI</option>
@@ -329,46 +338,45 @@ try {
                             <option value="precip">Precip</option>
                             <option value="land_temp">Land Temp</option>
                         </select>
-                        <select id="landTempPeriod" class="btn btn-secondary btn-sm" style="display:none; padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                        <select id="landTempPeriod" class="btn btn-secondary btn-sm map-control-input" style="display:none;" onchange="loadHistoricalData()">
                             <option value="day">Land Temp: Day</option>
                             <option value="night">Land Temp: Night</option>
                         </select>
-                        <div style="flex:1;"></div>
-                        <button type="button" id="histFiltersToggle" onclick="toggleHistFilters()"
-                            style="font-size:0.78rem; color:var(--text-secondary); background:var(--bg-input); border:1px solid var(--border-color); border-radius:6px; padding:3px 10px; cursor:pointer; white-space:nowrap; line-height:1.5;">
+                        <div class="map-control-spacer"></div>
+                        <button type="button" id="histFiltersToggle" class="map-control-button" onclick="toggleHistFilters()">
                             &#9881; Filters &#9660;
                         </button>
                     </div>
 
                     <!-- Land-cover checklist (shown when overlay = land_cover) -->
-                    <div id="landCoverChecklist" style="display:none; align-items:center; gap:6px; flex-wrap:wrap; border:1px solid var(--border-color); border-radius:8px; padding:5px 8px; margin-top:6px; background:var(--bg-card-alt);">
-                        <span style="font-size:0.74rem; color:var(--text-muted); margin-right:4px;">Land Cover:</span>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Urban &amp; Built-up" checked onchange="loadHistoricalData()">Urban &amp; Built-up</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Water Bodies" checked onchange="loadHistoricalData()">Water Bodies</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Forest" checked onchange="loadHistoricalData()">Forest</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Croplands" checked onchange="loadHistoricalData()">Croplands</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Grasslands" checked onchange="loadHistoricalData()">Grasslands</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Wetlands" checked onchange="loadHistoricalData()">Wetlands</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Woody Savannas" checked onchange="loadHistoricalData()">Woody Savannas</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Cropland Mosaics" checked onchange="loadHistoricalData()">Cropland Mosaics</label>
-                        <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Barren" checked onchange="loadHistoricalData()">Barren</label>
+                    <div id="landCoverChecklist" class="map-control-checklist">
+                        <span class="map-control-checklist-label">Land Cover:</span>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Urban &amp; Built-up" checked onchange="loadHistoricalData()">Urban &amp; Built-up</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Water Bodies" checked onchange="loadHistoricalData()">Water Bodies</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Forest" checked onchange="loadHistoricalData()">Forest</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Croplands" checked onchange="loadHistoricalData()">Croplands</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Grasslands" checked onchange="loadHistoricalData()">Grasslands</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Wetlands" checked onchange="loadHistoricalData()">Wetlands</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Woody Savannas" checked onchange="loadHistoricalData()">Woody Savannas</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Cropland Mosaics" checked onchange="loadHistoricalData()">Cropland Mosaics</label>
+                        <label><input type="checkbox" class="land-cover-toggle" value="Barren" checked onchange="loadHistoricalData()">Barren</label>
                     </div>
 
                     <!-- Sub-row B: Bird / Migration / Light filters (collapsible) -->
-                    <div id="histFilterRow" style="display:none; align-items:center; flex-wrap:wrap; gap:8px; padding-top:8px; border-top:1px solid var(--border-color); margin-top:8px;">
-                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Bird:</span>
-                        <input id="birdFilterInput" class="btn btn-secondary btn-sm" type="search" list="birdFilterOptions" placeholder="All birds" style="padding:3px 6px; width:160px;" onchange="loadHistoricalData()">
+                    <div id="histFilterRow" class="map-control-row" style="display:none; padding-top:8px; border-top:1px solid var(--border-color); margin-top:8px;">
+                        <span class="map-control-label">Bird:</span>
+                        <input id="birdFilterInput" class="btn btn-secondary btn-sm map-control-input" type="search" list="birdFilterOptions" placeholder="All birds" style="width:160px;" onchange="loadHistoricalData()">
                         <datalist id="birdFilterOptions"></datalist>
-                        <div style="width:1px; height:20px; background:var(--border-color); flex-shrink:0;"></div>
-                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Migration:</span>
-                        <select id="migrationFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                        <div class="map-control-divider"></div>
+                        <span class="map-control-label">Migration:</span>
+                        <select id="migrationFilterSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
                             <option value="">All</option>
                             <option value="Resident">Resident</option>
                             <option value="Migratory">Migratory</option>
                         </select>
-                        <div style="width:1px; height:20px; background:var(--border-color); flex-shrink:0;"></div>
-                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Light:</span>
-                        <select id="lightFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                        <div class="map-control-divider"></div>
+                        <span class="map-control-label">Light:</span>
+                        <select id="lightFilterSelect" class="btn btn-secondary btn-sm map-control-input" onchange="loadHistoricalData()">
                             <option value="">All</option>
                             <option value="Tolerant">Light-tolerant</option>
                             <option value="Sensitive">Light-sensitive</option>
@@ -380,7 +388,7 @@ try {
 
             <div class="risk-site-panel" id="riskSitePanel" aria-label="Risk zone list" style="display:flex;">
                 <h4>Places</h4>
-                <div class="risk-site-summary">Toggle site visibility or focus a place.</div>
+                <div class="risk-site-summary">Click a site to show/hide it, or use the target icon to focus the map.</div>
                 <div class="risk-threshold-note" id="riskThresholdNote"></div>
                 <div class="risk-site-list" id="riskSiteList"></div>
             </div>
@@ -403,6 +411,7 @@ try {
                     <span class="map-legend-dot" style="background: #ef4444;"></span>
                     <span>High Risk</span>
                 </div>
+                <div class="map-legend-meta">Based on VIIRS night-light radiance thresholds.</div>
             </div>
 
             <!-- Historical data legend (hidden by default) -->
@@ -419,6 +428,7 @@ try {
                     <span style="font-size:0.7rem; color:var(--text-muted);">20</span>
                     <span style="font-size:0.7rem; color:var(--text-muted);">30+</span>
                 </div>
+                <div class="map-legend-meta">Scale uses the selected year, month, and filters.</div>
                 <div id="legendEnvOverlay" style="display:none; margin-top:10px; border-top:1px solid var(--border-color); padding-top:8px;">
                     <h4 style="margin:0 0 6px 0;">Environmental Overlay</h4>
                     <div id="legendEnvContent"></div>
@@ -2656,6 +2666,11 @@ function setMapView(view) {
     // Toggle button styles
     document.getElementById('btnRiskZones').className  = isHist ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm';
     document.getElementById('btnHistorical').className = isHist ? 'btn btn-primary btn-sm'   : 'btn btn-secondary btn-sm';
+
+    var riskHint = document.getElementById('riskViewHint');
+    var histHint = document.getElementById('histViewHint');
+    if (riskHint) riskHint.className = isHist ? 'map-control-hint is-hidden' : 'map-control-hint';
+    if (histHint) histHint.className = isHist ? 'map-control-hint' : 'map-control-hint is-hidden';
 
     // Show/hide filter controls
     var filters = document.getElementById('historicalFilters');
