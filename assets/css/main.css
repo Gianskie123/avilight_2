@@ -860,11 +860,18 @@ tr:hover {
     overflow: hidden;
     transition: transform 0.3s;
     border: 1px solid var(--border-color);
+    text-decoration: none;
+    color: inherit;
+    display: block;
 }
 
 .species-card:hover {
     transform: translateY(-5px);
     box-shadow: var(--shadow-lg);
+}
+
+.species-card:hover .species-photo {
+    transform: scale(1.04);
 }
 
 .species-image {
@@ -910,6 +917,7 @@ tr:hover {
     display: block;
     position: relative;
     z-index: 1;
+    transition: transform 0.3s ease;
 }
 
 /* Skeleton shimmer while image loads */
@@ -933,18 +941,18 @@ tr:hover {
 }
 
 .species-card .badge-success {
-    background: rgba(34, 197, 94, 0.12);
-    color: #3f7f55;
+    background: #22c55e;
+    color: #0b3d1f;
 }
 
 .species-card .badge-warning {
-    background: rgba(202, 138, 4, 0.13);
-    color: #92620e;
+    background: #f59e0b;
+    color: #2b1f00;
 }
 
 .species-card .badge-info {
-    background: rgba(8, 145, 178, 0.12);
-    color: #0c6d89;
+    background: #0ea5e9;
+    color: #032a3b;
 }
 
 .species-detail-image-shell {
@@ -958,18 +966,18 @@ tr:hover {
 }
 
 [data-theme="dark"] .species-card .badge-success {
-    background: rgba(34, 197, 94, 0.18);
-    color: #9be7b6;
+    background: #16a34a;
+    color: #f0fdf4;
 }
 
 [data-theme="dark"] .species-card .badge-warning {
-    background: rgba(234, 179, 8, 0.18);
-    color: #fde68a;
+    background: #d97706;
+    color: #fffbeb;
 }
 
 [data-theme="dark"] .species-card .badge-info {
-    background: rgba(34, 211, 238, 0.18);
-    color: #a5f3fc;
+    background: #0284c7;
+    color: #e0f2fe;
 }
 
 [data-theme="dark"] .species-image {
@@ -1076,6 +1084,55 @@ tr:hover {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.species-card-cta {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: right;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    transform: translateY(2px);
+}
+
+.species-card:hover .species-card-cta {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.species-summary {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-card);
+}
+
+.species-summary-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.species-summary-item strong {
+    color: var(--text-primary);
+    font-size: 1.05rem;
+}
+
+.catalog-clear {
+    background: none;
+    border: 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0 4px;
 }
 
 /* Filters */
