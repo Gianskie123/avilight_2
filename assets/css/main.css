@@ -1273,17 +1273,22 @@ tr:hover {
     background: var(--bg-card) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border-color) !important;
-    border-radius: 6px !important;
-    box-shadow: var(--shadow) !important;
-    padding: 6px 10px !important;
+    border-radius: 9px !important;
+    box-shadow: var(--shadow-lg) !important;
+    padding: 0 !important;
     font-size: 0.85rem !important;
+    overflow: hidden !important;
     z-index: 651 !important;
     pointer-events: none !important;
 }
 
 .map-tooltip::before {
-    border-top-color: var(--bg-card) !important;
+    border-top-color: var(--border-color) !important;
 }
+.map-tooltip.leaflet-tooltip-top::before    { border-top-color:    var(--border-color) !important; }
+.map-tooltip.leaflet-tooltip-bottom::before { border-bottom-color: var(--border-color) !important; }
+.map-tooltip.leaflet-tooltip-left::before   { border-left-color:   var(--border-color) !important; }
+.map-tooltip.leaflet-tooltip-right::before  { border-right-color:  var(--border-color) !important; }
 
 /* Responsive Design */
 @media (max-width: 1024px) {

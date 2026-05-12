@@ -98,7 +98,7 @@ $species_data = load_species_from_csv();
 
             <!-- Hint label -->
             <div id="mapHint" style="position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:var(--bg-overlay); color:var(--text-primary); border:1px solid var(--border-color); font-size:0.78rem; padding:4px 12px; border-radius:20px; z-index:900; pointer-events:none;">
-                Hover a city area to preview predictions
+                Hover to preview · Click to load in BAU
             </div>
         </div>
     </div>
@@ -2947,40 +2947,68 @@ function buildCityHoverTooltipHtml(cityName, feature) {
     var canShowPrediction = mapRichness !== null;
     var mapMonthName = MONTH_NAMES[selectedMapMonth - 1];
 
+    // Read live CSS variables so the tooltip matches whichever theme is active
+    var cs       = getComputedStyle(document.documentElement);
+    var clrBg    = cs.getPropertyValue('--bg-card').trim();
+    var clrAlt   = cs.getPropertyValue('--bg-card-alt').trim();
+    var clrText  = cs.getPropertyValue('--text-primary').trim();
+    var clrSub   = cs.getPropertyValue('--text-secondary').trim();
+    var clrMuted = cs.getPropertyValue('--text-muted').trim();
+    var clrBdr   = cs.getPropertyValue('--border-color').trim();
+
+    var W  = 'min-width:210px;font-family:inherit;';
+    var HD = 'padding:9px 11px;border-bottom:1px solid ' + clrBdr + ';background:' + clrBg + ';';
+    var BD = 'padding:8px 11px;background:' + clrBg + ';';
+    var FT = 'padding:5px 11px 7px;background:' + clrAlt + ';border-top:1px solid ' + clrBdr + ';';
+
+    var dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:6px;vertical-align:middle;"></span>';
+
+    var cityTitle =
+        '<div style="font-weight:700;font-size:0.9rem;color:' + clrText + ';">' + cityName + '</div>' +
+        '<div style="margin-top:2px;font-size:0.76rem;color:' + clrSub + ';">' + dot + dominantName + '</div>';
+
     if (!canShowPrediction) {
-        return '<div style="min-width:170px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:8px; overflow:hidden;">' +
-            '<div style="padding:7px 9px; font-weight:700; font-size:0.88rem;">' + cityName + '</div>' +
-            '<div style="padding:0 9px 8px 9px; color:#94a3b8; font-size:0.8rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + dominantName + '</div>' +
-            '<div style="padding:0 9px 8px 9px; color:#64748b; font-size:0.75rem;">Run BAU for ' + mapMonthName + ' to display map richness.</div>' +
+        return '<div style="' + W + '">' +
+            '<div style="' + HD + '">' + cityTitle + '</div>' +
+            '<div style="' + BD + 'font-size:0.77rem;color:' + clrMuted + ';">Run BAU for ' + mapMonthName + ' to display richness.</div>' +
         '</div>';
     }
+
+    var richness =
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">' +
+            '<span style="font-size:0.74rem;color:' + clrSub + ';">Map Richness</span>' +
+            '<span style="font-size:1.3rem;line-height:1;font-weight:800;color:#a855f7;">' + mapRichness +
+                '<span style="font-size:0.7rem;font-weight:500;margin-left:2px;">spp.</span></span>' +
+        '</div>';
 
     if (!details) {
-        return '<div style="min-width:190px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:9px; overflow:hidden;">' +
-            '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
-                '<div style="font-weight:700; font-size:0.9rem;">' + cityName + '</div>' +
-                '<div style="margin-top:2px; color:#94a3b8; font-size:0.78rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + dominantName + '</div>' +
-            '</div>' +
-            '<div style="padding:7px 9px;">' +
-                '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px;"><span style="font-size:0.74rem; color:#94a3b8;">Map Richness</span><span style="font-size:1.2rem; line-height:1; font-weight:800; color:#d8b4fe;">' + mapRichness + ' spp.</span></div>' +
-                '<div style="font-size:0.76rem; color:#94a3b8;">Month: ' + mapMonthName + '</div>' +
-            '</div>' +
+        return '<div style="' + W + '">' +
+            '<div style="' + HD + '">' + cityTitle + '</div>' +
+            '<div style="' + BD + '">' + richness + '</div>' +
+            '<div style="' + FT + 'font-size:0.73rem;color:' + clrMuted + ';">Month: ' + mapMonthName + '</div>' +
         '</div>';
     }
 
-    return '<div style="min-width:200px; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:9px; overflow:hidden;">' +
-        '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
-            '<div style="font-weight:700; font-size:0.9rem;">' + cityName + '</div>' +
-            '<div style="margin-top:2px; color:#94a3b8; font-size:0.78rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#ef4444; margin-right:6px; vertical-align:middle;"></span>' + details.dominantName + '</div>' +
+    var guilds = [
+        ['#fb7185', 'Light Sensitive', details.lightSensitive],
+        ['#60a5fa', 'Light Tolerant',  details.lightTolerant],
+        ['#34d399', 'Resident',         details.resident],
+        ['#facc15', 'Migratory',        details.migratory],
+    ].map(function(r) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:1px 0;">' +
+            '<span style="font-size:0.79rem;color:' + r[0] + ';">' +
+                '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + r[0] + ';margin-right:6px;vertical-align:middle;"></span>' + r[1] +
+            '</span>' +
+            '<strong style="font-size:0.79rem;color:' + clrText + ';">' + r[2] + '</strong>' +
+        '</div>';
+    }).join('');
+
+    return '<div style="' + W + '">' +
+        '<div style="' + HD + '">' + cityTitle + '</div>' +
+        '<div style="' + BD + '">' + richness + guilds + '</div>' +
+        '<div style="' + FT + 'font-size:0.73rem;color:' + clrMuted + ';">' +
+            mapMonthName + ' · BAU: ' + details.monthName +
         '</div>' +
-        '<div style="padding:7px 9px; border-bottom:1px solid #1e293b;">' +
-            '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px;"><span style="font-size:0.74rem; color:#94a3b8;">Map Richness</span><span style="font-size:1.35rem; line-height:1; font-weight:800; color:#d8b4fe;">' + mapRichness + ' spp.</span></div>' +
-            '<div style="display:flex; justify-content:space-between; color:#fda4af; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#fb7185; margin-right:6px;"></span>Light Sensitive</span><strong>' + details.lightSensitive + '</strong></div>' +
-            '<div style="display:flex; justify-content:space-between; color:#60a5fa; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#60a5fa; margin-right:6px;"></span>Light Tolerant</span><strong>' + details.lightTolerant + '</strong></div>' +
-            '<div style="display:flex; justify-content:space-between; color:#34d399; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#34d399; margin-right:6px;"></span>Resident</span><strong>' + details.resident + '</strong></div>' +
-            '<div style="display:flex; justify-content:space-between; color:#facc15; font-size:0.82rem;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#facc15; margin-right:6px;"></span>Migratory</span><strong>' + details.migratory + '</strong></div>' +
-        '</div>' +
-        '<div style="padding:6px 9px; color:#94a3b8; font-size:0.76rem; font-style:italic;">Map month: ' + mapMonthName + ' · BAU run: ' + details.monthName + '</div>' +
     '</div>';
 }
 
@@ -3081,6 +3109,24 @@ function buildCityLayer() {
             layer.on('mouseout',  function() {
                 layer.setStyle(getComputedCityStyle(feature, false));
                 layer.closeTooltip();
+            });
+            layer.on('click', function() {
+                var citySelect  = document.getElementById('bauCitySelect');
+                var monthSlider = document.getElementById('bauMonthSlider');
+                var monthBadge  = document.getElementById('bauMonthBadge');
+                if (!citySelect) return;
+
+                var targetMonth = selectedMapMonth || 1;
+
+                // Sync month slider silently before firing city change
+                if (monthSlider) {
+                    monthSlider.value = targetMonth;
+                    if (monthBadge) monthBadge.textContent = MONTH_NAMES[targetMonth - 1];
+                }
+
+                // Trigger the existing city-change handler (loads baseline for city + month)
+                citySelect.value = cityName;
+                citySelect.dispatchEvent(new Event('change'));
             });
         }
     }).addTo(map);
