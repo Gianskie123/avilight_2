@@ -156,6 +156,39 @@ function rrc_isDeadlock(Throwable $e): bool {
     || strpos($msg, '1205') !== false;
 }
 
+function rrc_ensureSpatialMapTables(PDO $pdo): void {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS observation_city_map (
+        rbo_id BIGINT NOT NULL,
+        area VARCHAR(100) NOT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (rbo_id),
+        KEY idx_ocm_area (area)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS city_grid_map (
+        lat DECIMAL(10,8) NOT NULL,
+        lon DECIMAL(11,8) NOT NULL,
+        area VARCHAR(100) NOT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (lat, lon),
+        KEY idx_cgm_area (area)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ecological_yearly_summary (
+        area                VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+        year                INT NOT NULL,
+        bird_richness       INT NULL,
+        viirs_avg           DOUBLE NULL,
+        ndvi_avg            DOUBLE NULL,
+        lst_avg             DOUBLE NULL,
+        precipitation_total DOUBLE NULL,
+        updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (area, year),
+        KEY idx_area_year (area, year),
+        KEY idx_year (year)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
 function rrc_refreshSpatialMaps(PDO $pdo, array $cities): array {
     $sourceObsCount  = (int) $pdo->query('SELECT COUNT(*) FROM raw_bird_observation WHERE year IS NOT NULL AND species_id IS NOT NULL')->fetchColumn();
     $sourceGridCount = (int) $pdo->query('SELECT COUNT(*) FROM (
@@ -534,6 +567,7 @@ try {
     $pdo = get_mysql_db();
     // Give long-running refresh writes enough time when concurrent readers/writers exist.
     $pdo->exec('SET SESSION innodb_lock_wait_timeout = 300');
+    rrc_ensureSpatialMapTables($pdo);
     $t0  = microtime(true);
     $summaryOnly = ((string) ($_POST['summary_only'] ?? $_GET['summary_only'] ?? '0')) === '1';
 
