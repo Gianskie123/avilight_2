@@ -91,6 +91,10 @@ try {
     );
     $stmt->execute([':val_insert' => $json, ':val_update' => $json]);
 
+    // Write JSON cache so home.php, dashboard.php, and reports.php pick up the new values.
+    $cachePath = __DIR__ . '/../data/cache/thresholds.json';
+    @file_put_contents($cachePath, json_encode($normalized, JSON_PRETTY_PRINT));
+
     // Best-effort: touch audit table so Home tab reflects the config change.
     try {
         $db->exec('UPDATE kba_pa_audit_live SET updated_at = NOW()');

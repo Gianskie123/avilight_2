@@ -25,25 +25,40 @@ function loadHomeThresholdConfig(): array {
         'low_risk'            => 25.0,
         'kba_richness_weight' => 15.0,
         'kba_sensitive_weight' => 15.0,
-        'kba_ndvi_weight' => 15.0,
-        'kba_alan_weight' => 15.0,
-        'kba_lst_weight' => 15.0,
-        'kba_precip_weight' => 10.0,
+        'kba_ndvi_weight'     => 15.0,
+        'kba_alan_weight'     => 15.0,
+        'kba_lst_weight'      => 15.0,
+        'kba_precip_weight'   => 10.0,
     ];
 
+    // Primary: MySQL system_settings — persistent on all hosts including Railway.
+    try {
+        $db  = get_mysql_db();
+        $row = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")
+                  ->fetch(PDO::FETCH_ASSOC);
+        if ($row && isset($row['setting_value'])) {
+            $stored = json_decode((string) $row['setting_value'], true);
+            if (is_array($stored)) {
+                foreach ($defaults as $key => $value) {
+                    if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
+                        $defaults[$key] = (float) $stored[$key];
+                    }
+                }
+                return $defaults;
+            }
+        }
+    } catch (Throwable $_) {}
+
+    // Fallback: JSON cache file (local dev convenience).
     $path = __DIR__ . '/data/cache/thresholds.json';
-    if (!is_readable($path)) {
-        return $defaults;
-    }
-
-    $stored = json_decode((string) file_get_contents($path), true);
-    if (!is_array($stored)) {
-        return $defaults;
-    }
-
-    foreach ($defaults as $key => $value) {
-        if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
-            $defaults[$key] = (float) $stored[$key];
+    if (is_readable($path)) {
+        $stored = json_decode((string) file_get_contents($path), true);
+        if (is_array($stored)) {
+            foreach ($defaults as $key => $value) {
+                if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
+                    $defaults[$key] = (float) $stored[$key];
+                }
+            }
         }
     }
 
@@ -469,29 +484,6 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
                     <?php endforeach; ?>
                 </tbody>
             </table>
-
-            <!-- Color legend -->
-            <div style="display:flex; flex-wrap:wrap; gap:10px 18px; padding:10px 12px; margin-top:4px; border-top:1px solid var(--border-color); border-radius:0 0 8px 8px; background:var(--bg-card-alt);">
-                <span style="font-size:0.72rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; align-self:center;">Legend:</span>
-                <span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:var(--text-secondary);">
-                    <span style="width:10px; height:10px; border-radius:50%; background:#ef4444; flex-shrink:0;"></span>
-                    Critical — score &lt; 40
-                </span>
-                <span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:var(--text-secondary);">
-                    <span style="width:10px; height:10px; border-radius:50%; background:#eab308; flex-shrink:0;"></span>
-                    At Risk — score 40–59
-                </span>
-                <span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:var(--text-secondary);">
-                    <span style="width:10px; height:10px; border-radius:50%; background:#22c55e; flex-shrink:0;"></span>
-                    Moderate / Good — score ≥ 60
-                </span>
-                <span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:var(--text-muted);">
-                    Light Exposure thresholds: &nbsp;
-                    <span class="badge badge-success" style="font-size:0.7rem;">&lt; <?php echo number_format($weights['mod_risk'], 0); ?> nW</span>
-                    <span class="badge badge-warning" style="font-size:0.7rem;"><?php echo number_format($weights['mod_risk'], 0); ?>–<?php echo number_format($weights['high_risk'] - 1, 0); ?> nW</span>
-                    <span class="badge badge-danger" style="font-size:0.7rem;">≥ <?php echo number_format($weights['high_risk'], 0); ?> nW</span>
-                </span>
-            </div>
 
             <div class="kba-table-footer">
                 <p class="kba-footnote">

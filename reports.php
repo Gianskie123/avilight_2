@@ -159,25 +159,42 @@ function decorateKbaAuditRows(array $rows, array $thresholds): array {
 
 function loadThresholdConfig(): array {
     $defaults = [
-        'high_risk' => 60.0,
-        'mod_risk' => 40.0,
-        'low_risk' => 25.0,
+        'high_risk'           => 60.0,
+        'mod_risk'            => 40.0,
+        'low_risk'            => 25.0,
         'kba_richness_weight' => 15.0,
         'kba_sensitive_weight' => 15.0,
-        'kba_ndvi_weight' => 15.0,
-        'kba_alan_weight' => 15.0,
-        'kba_lst_weight' => 15.0,
-        'kba_precip_weight' => 10.0,
+        'kba_ndvi_weight'     => 15.0,
+        'kba_alan_weight'     => 15.0,
+        'kba_lst_weight'      => 15.0,
+        'kba_precip_weight'   => 10.0,
     ];
 
-    $stored = loadJsonAssocFile(__DIR__ . '/data/cache/thresholds.json');
-    if (!is_array($stored) || empty($stored)) {
-        return $defaults;
-    }
+    // Primary: MySQL system_settings — persistent on all hosts including Railway.
+    try {
+        $db  = get_mysql_db();
+        $row = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")
+                  ->fetch(PDO::FETCH_ASSOC);
+        if ($row && isset($row['setting_value'])) {
+            $stored = json_decode((string) $row['setting_value'], true);
+            if (is_array($stored) && !empty($stored)) {
+                foreach ($defaults as $key => $value) {
+                    if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
+                        $defaults[$key] = (float) $stored[$key];
+                    }
+                }
+                return $defaults;
+            }
+        }
+    } catch (Throwable $_) {}
 
-    foreach ($defaults as $key => $value) {
-        if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
-            $defaults[$key] = (float) $stored[$key];
+    // Fallback: JSON cache file (local dev convenience).
+    $stored = loadJsonAssocFile(__DIR__ . '/data/cache/thresholds.json');
+    if (is_array($stored) && !empty($stored)) {
+        foreach ($defaults as $key => $value) {
+            if (array_key_exists($key, $stored) && is_numeric($stored[$key])) {
+                $defaults[$key] = (float) $stored[$key];
+            }
         }
     }
 

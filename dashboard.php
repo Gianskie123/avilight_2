@@ -7,23 +7,38 @@ require_once 'includes/db.php';
 function loadDashboardThresholdConfig(): array {
     $defaults = [
         'high_risk' => 60.0,
-        'mod_risk' => 40.0,
-        'low_risk' => 25.0,
+        'mod_risk'  => 40.0,
+        'low_risk'  => 25.0,
     ];
 
+    // Primary: MySQL system_settings — persistent on all hosts including Railway.
+    try {
+        $db  = get_mysql_db();
+        $row = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")
+                  ->fetch(PDO::FETCH_ASSOC);
+        if ($row && isset($row['setting_value'])) {
+            $decoded = json_decode((string) $row['setting_value'], true);
+            if (is_array($decoded)) {
+                foreach ($defaults as $key => $value) {
+                    if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
+                        $defaults[$key] = (float) $decoded[$key];
+                    }
+                }
+                return $defaults;
+            }
+        }
+    } catch (Throwable $_) {}
+
+    // Fallback: JSON cache file (local dev convenience).
     $path = __DIR__ . '/data/cache/thresholds.json';
-    if (!is_readable($path)) {
-        return $defaults;
-    }
-
-    $decoded = json_decode((string) file_get_contents($path), true);
-    if (!is_array($decoded)) {
-        return $defaults;
-    }
-
-    foreach ($defaults as $key => $value) {
-        if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
-            $defaults[$key] = (float) $decoded[$key];
+    if (is_readable($path)) {
+        $decoded = json_decode((string) file_get_contents($path), true);
+        if (is_array($decoded)) {
+            foreach ($defaults as $key => $value) {
+                if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
+                    $defaults[$key] = (float) $decoded[$key];
+                }
+            }
         }
     }
 
@@ -668,9 +683,35 @@ var lightTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}
     maxZoom: 19
 });
 
-// Initialize map centered on Metro Manila with dark tile layer
-var map = L.map('map').setView([14.5995, 121.0], 10);
+// Initialize map constrained to Metro Manila
+var MM_BOUNDS = L.latLngBounds(L.latLng(14.35, 120.90), L.latLng(14.82, 121.22));
+var map = L.map('map', {
+    maxBounds:          MM_BOUNDS.pad(0.08),
+    maxBoundsViscosity: 0.9,
+    minZoom:            10
+});
+map.fitBounds(MM_BOUNDS, { padding: [8, 8] });
 darkTile.addTo(map);
+
+// Snap map back to Metro Manila if center drifts outside bounds
+map.on('moveend', function () {
+    if (!MM_BOUNDS.contains(map.getCenter())) {
+        map.flyToBounds(MM_BOUNDS, { padding: [20, 20], duration: 0.6 });
+    }
+});
+
+// Keep map properly sized when the container changes dimensions
+window.addEventListener('resize', function () {
+    map.invalidateSize({ animate: false });
+});
+(function () {
+    var mapEl = document.getElementById('map');
+    if (mapEl && typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(function () {
+            map.invalidateSize({ animate: false });
+        }).observe(mapEl);
+    }
+}());
 
 // Risk zone colors
 var riskColors = {
@@ -2702,7 +2743,7 @@ function setMapView(view) {
     }
 
     if (isHist) {
-        map.setView([14.5748, 121.0], 12);
+        map.fitBounds(MM_BOUNDS, { padding: [8, 8] });
         resetHistoricalSiteDetailPanel();
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
@@ -2722,6 +2763,10 @@ function setMapView(view) {
         playRiskViewAnimation();
         prepareRiskSidebarAutoReveal();
     }
+
+    // Force Leaflet to re-measure the container after every view switch.
+    // Tab/panel transitions don't fire window.resize, so tiles can mis-align.
+    setTimeout(function () { map.invalidateSize({ animate: false }); }, 60);
 }
 
 var histFiltersVisible = false;
@@ -2914,18 +2959,20 @@ function prepareRiskSidebarAutoReveal() {
     });
 }
 
-function updateTrendBadge(elementId, value, suffix, decimals, neutralClassName) {
+// inverted=true → increase is bad (red ↗), decrease is good (green ↘).
+// Use for metrics where "higher = worse" (e.g. At Risk Zones, Light Intensity).
+function updateTrendBadge(elementId, value, suffix, decimals, neutralClassName, inverted) {
     var element = document.getElementById(elementId);
     if (!element) return;
 
     var rounded = Math.abs(value).toFixed(decimals);
     if (value > 0) {
-        element.className = 'dash-stat-trend up';
+        element.className = 'dash-stat-trend ' + (inverted ? 'down' : 'up');
         element.textContent = '↗ +' + rounded + suffix;
         return;
     }
     if (value < 0) {
-        element.className = 'dash-stat-trend down';
+        element.className = 'dash-stat-trend ' + (inverted ? 'up' : 'down');
         element.textContent = '↘ -' + rounded + suffix;
         return;
     }
@@ -3098,8 +3145,9 @@ function updateYearDrivenUpdatesOnly(currentYear) {
     if (previousRiskSummary && previousViirs !== null) {
         var zonesPctDelta = getPctDelta(currentRiskSummary.atRiskZones, previousRiskSummary.atRiskZones);
         var viirsDelta = currentViirs - previousViirs;
-        updateTrendBadge('atRiskZonesTrend', zonesPctDelta, '%', 1);
-        updateTrendBadge('lightIntensityTrend', viirsDelta, ' nW', 1);
+        // Both metrics: higher = ecologically worse → invert colors
+        updateTrendBadge('atRiskZonesTrend',    zonesPctDelta, '%',   1, null, true);
+        updateTrendBadge('lightIntensityTrend', viirsDelta,    ' nW', 1, null, true);
 
         var currentBirdStats = getBirdYearStats(currentYear);
         var previousBirdStats = getBirdYearStats(previousYear);
