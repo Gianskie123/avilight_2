@@ -17,7 +17,7 @@ function loadDashboardThresholdConfig(): array {
         $row = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")
                   ->fetch(PDO::FETCH_ASSOC);
         if ($row && isset($row['setting_value'])) {
-            $decoded = json_decode($row['setting_value'], true);
+            $decoded = json_decode((string) $row['setting_value'], true);
             if (is_array($decoded)) {
                 foreach ($defaults as $key => $value) {
                     if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
@@ -27,8 +27,19 @@ function loadDashboardThresholdConfig(): array {
                 return $defaults;
             }
         }
-    } catch (\Throwable $e) {
-        // fall through to defaults
+    } catch (Throwable $_) {}
+
+    // Fallback: JSON cache file (local dev convenience).
+    $path = __DIR__ . '/data/cache/thresholds.json';
+    if (is_readable($path)) {
+        $decoded = json_decode((string) file_get_contents($path), true);
+        if (is_array($decoded)) {
+            foreach ($defaults as $key => $value) {
+                if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
+                    $defaults[$key] = (float) $decoded[$key];
+                }
+            }
+        }
     }
 
     return $defaults;
@@ -54,20 +65,19 @@ $risk_land_cover_map = [
     'Luneta National Park' => 1,
 ];
 $kba_coords = [
-    'Las Piñas-Parañaque Wetland Park' => ['lat' => 14.4500, 'lng' => 120.9833],
+    'Las Piñas-Parañaque Wetland Park'    => ['lat' => 14.4500, 'lng' => 120.9833],
     'Ninoy Aquino Parks and Wildlife Center' => ['lat' => 14.6537, 'lng' => 121.0499],
-    'Manila Bay' => ['lat' => 14.5700, 'lng' => 120.9800],
-    'Manila Bay Beach Resort' => ['lat' => 14.5200, 'lng' => 120.9700],
-    'Luneta National Park' => ['lat' => 14.5826, 'lng' => 120.9790],
+    'Manila Bay'                          => ['lat' => 14.5700, 'lng' => 120.9800],
+    'Manila Bay Beach Resort'             => ['lat' => 14.5200, 'lng' => 120.9700],
+    'Luneta National Park'                => ['lat' => 14.5826, 'lng' => 120.9790],
 ];
 
 $risk_city_map_json = json_encode($risk_city_map, JSON_UNESCAPED_UNICODE);
 try {
     $mysql = get_mysql_db();
-    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month, grid_cells_json FROM kba_pa_audit_live ORDER BY area_name ASC");
+    // grid_cells_json excluded — coordinate data now lives in kba_pa_locations.
+    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month FROM kba_pa_audit_live ORDER BY area_name ASC");
     $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-
-    $risk_cells_by_area = [];
 
     foreach ($rows as $row) {
         $name = (string) ($row['area_name'] ?? '');
@@ -76,87 +86,23 @@ try {
         }
         $coords = $kba_coords[$name];
         $kba_data[] = [
-            'name' => $name,
-            'type' => (string) ($row['area_type'] ?? ''),
-            'latitude' => (float) $coords['lat'],
-            'longitude' => (float) $coords['lng'],
+            'name'           => $name,
+            'type'           => (string) ($row['area_type'] ?? ''),
+            'latitude'       => (float) $coords['lat'],
+            'longitude'      => (float) $coords['lng'],
             'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : 0.0,
-            'status' => (string) ($row['status'] ?? ''),
-            'snapshot_year' => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
+            'status'         => (string) ($row['status'] ?? ''),
+            'snapshot_year'  => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
             'snapshot_month' => isset($row['snapshot_month']) ? (int) $row['snapshot_month'] : null,
-            'grid_cells_json' => (string) ($row['grid_cells_json'] ?? '[]'),
-            'land_cover' => (int) ($risk_land_cover_map[$name] ?? 11),
+            'land_cover'     => (int) ($risk_land_cover_map[$name] ?? 11),
         ];
 
         if (isset($row['snapshot_year']) && is_numeric($row['snapshot_year'])) {
             $risk_snapshot_year = max($risk_snapshot_year, (int) $row['snapshot_year']);
         }
-
-        $cells = json_decode((string) ($row['grid_cells_json'] ?? '[]'), true);
-        if (is_array($cells)) {
-            foreach ($cells as $cell) {
-                if (!is_array($cell) || !isset($cell['lat'], $cell['lon'])) {
-                    continue;
-                }
-                $lat = round((float) $cell['lat'], 8);
-                $lon = round((float) $cell['lon'], 8);
-                $key = $lat . '|' . $lon;
-                if (!isset($risk_cells_by_area[$name])) {
-                    $risk_cells_by_area[$name] = [];
-                }
-                $risk_cells_by_area[$name][$key] = ['lat' => $lat, 'lon' => $lon];
-            }
-        }
     }
 
-    if (!empty($risk_cells_by_area)) {
-        $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
-        $mysql->exec("CREATE TEMPORARY TABLE tmp_dashboard_risk_cells (
-            area_name VARCHAR(180) NOT NULL,
-            lat DECIMAL(10,8) NOT NULL,
-            lon DECIMAL(11,8) NOT NULL,
-            PRIMARY KEY (area_name, lat, lon)
-        ) ENGINE=MEMORY");
-
-        $insertCell = $mysql->prepare("INSERT IGNORE INTO tmp_dashboard_risk_cells (area_name, lat, lon) VALUES (:area_name, :lat, :lon)");
-        foreach ($risk_cells_by_area as $areaName => $cellsByKey) {
-            foreach ($cellsByKey as $cell) {
-                $insertCell->execute([
-                    ':area_name' => $areaName,
-                    ':lat' => $cell['lat'],
-                    ':lon' => $cell['lon'],
-                ]);
-            }
-        }
-
-        $siteYearStmt = $mysql->query("SELECT
-                c.area_name,
-                v.year,
-                AVG(NULLIF(v.viirs_avg_rad, 0)) AS site_viirs_year
-            FROM tmp_dashboard_risk_cells c
-            JOIN viirs v
-                ON v.latitude = c.lat
-               AND v.longitude = c.lon
-            WHERE v.year BETWEEN 2014 AND 2025
-            GROUP BY c.area_name, v.year
-            ORDER BY c.area_name ASC, v.year ASC");
-        $siteYearRows = $siteYearStmt ? ($siteYearStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-        foreach ($siteYearRows as $siteYearRow) {
-            $areaName = (string) ($siteYearRow['area_name'] ?? '');
-            $year = (int) ($siteYearRow['year'] ?? 0);
-            $viirs = isset($siteYearRow['site_viirs_year']) ? (float) $siteYearRow['site_viirs_year'] : null;
-            if ($areaName === '' || $year < 2014 || $year > 2025 || $viirs === null) {
-                continue;
-            }
-            if (!isset($risk_site_yearly[$areaName])) {
-                $risk_site_yearly[$areaName] = [];
-            }
-            $risk_site_yearly[$areaName][$year] = $viirs;
-        }
-
-        $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
-    }
-
+    // ecological_yearly_summary — Metro Manila aggregate for the information cards.
     $histStmt = $mysql->query("SELECT area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total
         FROM ecological_yearly_summary
         WHERE year BETWEEN 2014 AND 2025
@@ -179,12 +125,57 @@ try {
             'precipitation' => isset($histRow['precipitation_total']) ? (float) $histRow['precipitation_total'] : null,
         ];
     }
+
+    // Cross-reference accented/unaccented city name variants so the JS computeZoneLight
+    // fallback finds entries regardless of how the DB stored city names.
+    $accent_map = ['ñ'=>'n','Ñ'=>'n','á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','Á'=>'a','É'=>'e','Í'=>'i','Ó'=>'o','Ú'=>'u'];
+    $city_canonical = [];
+    foreach ($risk_city_map as $city) {
+        $city_canonical[strtolower(strtr($city, $accent_map))] = $city;
+    }
+    foreach ($historical_env_yearly as $yr => $areas) {
+        foreach ($areas as $areaKey => $data) {
+            $normKey = strtolower(strtr($areaKey, $accent_map));
+            if (isset($city_canonical[$normKey]) && $city_canonical[$normKey] !== $areaKey) {
+                $canonical = $city_canonical[$normKey];
+                if (!isset($historical_env_yearly[$yr][$canonical])) {
+                    $historical_env_yearly[$yr][$canonical] = $data;
+                }
+            }
+        }
+    }
 } catch (Throwable $e) {
-    $kba_data = [];
+    $kba_data = json_decode((string) file_get_contents('data/sample_kba.json'), true) ?: [];
 }
 ?>
 
-<style>
+<div class="alert alert-info" role="status">
+    📅 <strong>Dataset Period: 2014 – 2025</strong> | <strong>Monitoring Status: 2014 – 2025</strong> —
+    All metrics, readings, and site analyses are loaded from the database for the selected period.
+</div>
+
+<div class="dashboard-layout">
+    <!-- Left column: Map -->
+    <div class="dashboard-map-col">
+        <div style="position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+            <style>
+                .risk-site-panel {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: flex-start;
+                    gap: 8px 10px;
+                    padding: 8px 12px;
+                    border-bottom: 1px solid var(--border-color);
+                    background: var(--bg-card-alt);
+                    color: var(--text-primary);
+                }
+                .risk-site-panel h4 {
+                    margin: 0;
+                    font-size: 0.74rem;
+                    letter-spacing: 0.03em;
+                    text-transform: uppercase;
+                    color: var(--text-muted);
+                }
                 .risk-site-panel .risk-site-summary {
                     font-size: 0.7rem;
                     color: var(--text-secondary);
@@ -2706,7 +2697,7 @@ function loadHistoricalData() {
 
 function onEnvDataTypeChange() {
     var envType = document.getElementById('envDataSelect').value;
-    document.getElementById('landCoverChecklist').style.display = envType === 'land_cover' ? 'flex' : 'none';
+    document.getElementById('landCoverChecklist').style.display = envType === 'land_cover' ? 'inline-flex' : 'none';
     document.getElementById('landTempPeriod').style.display = envType === 'land_temp' ? 'inline-flex' : 'none';
     envRowsExpanded = false;
     loadHistoricalData();
@@ -2731,9 +2722,10 @@ function setMapView(view) {
         histBtn.setAttribute('aria-pressed', isHist ? 'true' : 'false');
     }
 
-    // Show/hide filter sidebar
-    var histSidebar = document.getElementById('historicalSidebar');
-    if (histSidebar) histSidebar.style.display = isHist ? 'flex' : 'none';
+    // Show/hide filter controls
+    var filters = document.getElementById('historicalFilters');
+    filters.style.display = isHist ? 'flex' : 'none';
+    document.getElementById('historicalOverlayControls').style.display = isHist ? 'flex' : 'none';
 
     document.getElementById('riskSidebarPanels').style.display = isHist ? 'none' : 'block';
     document.getElementById('historicalSidebarPanels').style.display = isHist ? 'block' : 'none';
@@ -2773,6 +2765,13 @@ function setMapView(view) {
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
     } else {
+        // Collapse filter sub-row when leaving historical view
+        histFiltersVisible = false;
+        var filterRow = document.getElementById('histAdvancedFilters');
+        var filterBtn = document.getElementById('histFiltersToggle');
+        if (filterRow) filterRow.style.display = 'none';
+        if (filterBtn) filterBtn.textContent = '+ Show advanced bird filters';
+
         resetHistoricalSiteDetailPanel();
         clearHistoricalTypingTimers();
         clearHistoricalAutoSequenceTimers();
