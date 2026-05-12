@@ -89,9 +89,10 @@ if [ -n "$UVICORN_APP" ]; then
             --host 127.0.0.1 \
             --port 8000 \
             --workers 1 \
+            --limit-max-requests 10 \
             --log-level info
-        echo "[PYTHON] uvicorn exited (OOM or crash) — restarting in 10s..."
-        sleep 10
+        echo "[PYTHON] uvicorn exited (OOM or crash) — restarting in 5s..."
+        sleep 5
     done) &
 fi
 

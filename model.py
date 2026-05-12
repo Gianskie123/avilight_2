@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
+import ctypes
+import gc
 import importlib.util
 import xgboost as xgb
 import tensorflow as tf
@@ -28,6 +30,14 @@ app = FastAPI(title="Avian Biodiversity Scenario ML Engine")
 # Serialize /predict calls so a second request waits rather than spawning
 # a second TF inference session in parallel (which doubles RAM and risks OOM).
 predict_semaphore = asyncio.Semaphore(1)
+
+def _release_memory():
+    """Force Python + libc to return freed pages to the OS (Linux/Railway)."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
 # Allow your PHP frontend to communicate with this Python backend
 app.add_middleware(
@@ -387,8 +397,8 @@ async def predict_scenario(data: ScenarioRequest):
                 lstm_tensor_local[0, 5, 0, 0, 2] = float(vec[2])
 
                 try:
-                    lstm_prob_local = lstm_clf.predict(lstm_tensor_local, verbose=0)[0, 0, 0, 0]
-                    lstm_counts_local = np.expm1(lstm_reg.predict(lstm_tensor_local, verbose=0)[0, 0, 0, :])
+                    lstm_prob_local = lstm_clf(lstm_tensor_local, training=False).numpy()[0, 0, 0, 0]
+                    lstm_counts_local = np.expm1(lstm_reg(lstm_tensor_local, training=False).numpy()[0, 0, 0, :])
                     lstm_raw_local = np.zeros(4) if lstm_prob_local < 0.5 else lstm_counts_local
                     lstm_local_reconciled = reconcile_predictions(lstm_raw_local)
                 except Exception:
@@ -571,8 +581,8 @@ async def predict_scenario(data: ScenarioRequest):
         # Fallback is needed if deployed ConvLSTM expects a different spatial input shape.
         lstm_warning = None
         try:
-            lstm_prob = lstm_clf.predict(lstm_tensor, verbose=0)[0, 0, 0, 0]
-            lstm_counts = np.expm1(lstm_reg.predict(lstm_tensor, verbose=0)[0, 0, 0, :])
+            lstm_prob = lstm_clf(lstm_tensor, training=False).numpy()[0, 0, 0, 0]
+            lstm_counts = np.expm1(lstm_reg(lstm_tensor, training=False).numpy()[0, 0, 0, :])
             lstm_raw = np.zeros(4) if lstm_prob < 0.5 else lstm_counts
             lstm_reconciled = reconcile_predictions(lstm_raw)
         except Exception as lstm_error:
@@ -668,6 +678,7 @@ async def predict_scenario(data: ScenarioRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
+        _release_memory()
         predict_semaphore.release()
 
 # =====================================================================
