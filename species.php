@@ -687,7 +687,7 @@ $edit_total = $no_category_count;
 $page_species_js = json_encode(array_values($filtered_species), JSON_HEX_TAG | JSON_HEX_AMP);
 $extra_scripts = <<<EOD
 <script>
-const pageSpecies = {$page_species_js};
+let pageSpecies = {$page_species_js};
 
 let _locSpeciesId = null;
 
