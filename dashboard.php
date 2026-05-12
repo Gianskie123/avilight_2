@@ -17,7 +17,7 @@ function loadDashboardThresholdConfig(): array {
         $row = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'thresholds' LIMIT 1")
                   ->fetch(PDO::FETCH_ASSOC);
         if ($row && isset($row['setting_value'])) {
-            $decoded = json_decode((string) $row['setting_value'], true);
+            $decoded = json_decode($row['setting_value'], true);
             if (is_array($decoded)) {
                 foreach ($defaults as $key => $value) {
                     if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
@@ -27,19 +27,8 @@ function loadDashboardThresholdConfig(): array {
                 return $defaults;
             }
         }
-    } catch (Throwable $_) {}
-
-    // Fallback: JSON cache file (local dev convenience).
-    $path = __DIR__ . '/data/cache/thresholds.json';
-    if (is_readable($path)) {
-        $decoded = json_decode((string) file_get_contents($path), true);
-        if (is_array($decoded)) {
-            foreach ($defaults as $key => $value) {
-                if (array_key_exists($key, $decoded) && is_numeric($decoded[$key])) {
-                    $defaults[$key] = (float) $decoded[$key];
-                }
-            }
-        }
+    } catch (\Throwable $e) {
+        // fall through to defaults
     }
 
     return $defaults;
@@ -65,19 +54,20 @@ $risk_land_cover_map = [
     'Luneta National Park' => 1,
 ];
 $kba_coords = [
-    'Las Piñas-Parañaque Wetland Park'    => ['lat' => 14.4500, 'lng' => 120.9833],
+    'Las Piñas-Parañaque Wetland Park' => ['lat' => 14.4500, 'lng' => 120.9833],
     'Ninoy Aquino Parks and Wildlife Center' => ['lat' => 14.6537, 'lng' => 121.0499],
-    'Manila Bay'                          => ['lat' => 14.5700, 'lng' => 120.9800],
-    'Manila Bay Beach Resort'             => ['lat' => 14.5200, 'lng' => 120.9700],
-    'Luneta National Park'                => ['lat' => 14.5826, 'lng' => 120.9790],
+    'Manila Bay' => ['lat' => 14.5700, 'lng' => 120.9800],
+    'Manila Bay Beach Resort' => ['lat' => 14.5200, 'lng' => 120.9700],
+    'Luneta National Park' => ['lat' => 14.5826, 'lng' => 120.9790],
 ];
 
 $risk_city_map_json = json_encode($risk_city_map, JSON_UNESCAPED_UNICODE);
 try {
     $mysql = get_mysql_db();
-    // grid_cells_json excluded — coordinate data now lives in kba_pa_locations.
-    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month FROM kba_pa_audit_live ORDER BY area_name ASC");
+    $stmt = $mysql->query("SELECT area_name, area_type, light_exposure, status, snapshot_year, snapshot_month, grid_cells_json FROM kba_pa_audit_live ORDER BY area_name ASC");
     $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+
+    $risk_cells_by_area = [];
 
     foreach ($rows as $row) {
         $name = (string) ($row['area_name'] ?? '');
@@ -86,23 +76,87 @@ try {
         }
         $coords = $kba_coords[$name];
         $kba_data[] = [
-            'name'           => $name,
-            'type'           => (string) ($row['area_type'] ?? ''),
-            'latitude'       => (float) $coords['lat'],
-            'longitude'      => (float) $coords['lng'],
+            'name' => $name,
+            'type' => (string) ($row['area_type'] ?? ''),
+            'latitude' => (float) $coords['lat'],
+            'longitude' => (float) $coords['lng'],
             'light_exposure' => isset($row['light_exposure']) ? (float) $row['light_exposure'] : 0.0,
-            'status'         => (string) ($row['status'] ?? ''),
-            'snapshot_year'  => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
+            'status' => (string) ($row['status'] ?? ''),
+            'snapshot_year' => isset($row['snapshot_year']) ? (int) $row['snapshot_year'] : null,
             'snapshot_month' => isset($row['snapshot_month']) ? (int) $row['snapshot_month'] : null,
-            'land_cover'     => (int) ($risk_land_cover_map[$name] ?? 11),
+            'grid_cells_json' => (string) ($row['grid_cells_json'] ?? '[]'),
+            'land_cover' => (int) ($risk_land_cover_map[$name] ?? 11),
         ];
 
         if (isset($row['snapshot_year']) && is_numeric($row['snapshot_year'])) {
             $risk_snapshot_year = max($risk_snapshot_year, (int) $row['snapshot_year']);
         }
+
+        $cells = json_decode((string) ($row['grid_cells_json'] ?? '[]'), true);
+        if (is_array($cells)) {
+            foreach ($cells as $cell) {
+                if (!is_array($cell) || !isset($cell['lat'], $cell['lon'])) {
+                    continue;
+                }
+                $lat = round((float) $cell['lat'], 8);
+                $lon = round((float) $cell['lon'], 8);
+                $key = $lat . '|' . $lon;
+                if (!isset($risk_cells_by_area[$name])) {
+                    $risk_cells_by_area[$name] = [];
+                }
+                $risk_cells_by_area[$name][$key] = ['lat' => $lat, 'lon' => $lon];
+            }
+        }
     }
 
-    // ecological_yearly_summary — Metro Manila aggregate for the information cards.
+    if (!empty($risk_cells_by_area)) {
+        $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
+        $mysql->exec("CREATE TEMPORARY TABLE tmp_dashboard_risk_cells (
+            area_name VARCHAR(180) NOT NULL,
+            lat DECIMAL(10,8) NOT NULL,
+            lon DECIMAL(11,8) NOT NULL,
+            PRIMARY KEY (area_name, lat, lon)
+        ) ENGINE=MEMORY");
+
+        $insertCell = $mysql->prepare("INSERT IGNORE INTO tmp_dashboard_risk_cells (area_name, lat, lon) VALUES (:area_name, :lat, :lon)");
+        foreach ($risk_cells_by_area as $areaName => $cellsByKey) {
+            foreach ($cellsByKey as $cell) {
+                $insertCell->execute([
+                    ':area_name' => $areaName,
+                    ':lat' => $cell['lat'],
+                    ':lon' => $cell['lon'],
+                ]);
+            }
+        }
+
+        $siteYearStmt = $mysql->query("SELECT
+                c.area_name,
+                v.year,
+                AVG(NULLIF(v.viirs_avg_rad, 0)) AS site_viirs_year
+            FROM tmp_dashboard_risk_cells c
+            JOIN viirs v
+                ON v.latitude = c.lat
+               AND v.longitude = c.lon
+            WHERE v.year BETWEEN 2014 AND 2025
+            GROUP BY c.area_name, v.year
+            ORDER BY c.area_name ASC, v.year ASC");
+        $siteYearRows = $siteYearStmt ? ($siteYearStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        foreach ($siteYearRows as $siteYearRow) {
+            $areaName = (string) ($siteYearRow['area_name'] ?? '');
+            $year = (int) ($siteYearRow['year'] ?? 0);
+            $viirs = isset($siteYearRow['site_viirs_year']) ? (float) $siteYearRow['site_viirs_year'] : null;
+            if ($areaName === '' || $year < 2014 || $year > 2025 || $viirs === null) {
+                continue;
+            }
+            if (!isset($risk_site_yearly[$areaName])) {
+                $risk_site_yearly[$areaName] = [];
+            }
+            $risk_site_yearly[$areaName][$year] = $viirs;
+        }
+
+        $mysql->exec("DROP TEMPORARY TABLE IF EXISTS tmp_dashboard_risk_cells");
+    }
+
     $histStmt = $mysql->query("SELECT area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total
         FROM ecological_yearly_summary
         WHERE year BETWEEN 2014 AND 2025
@@ -125,57 +179,12 @@ try {
             'precipitation' => isset($histRow['precipitation_total']) ? (float) $histRow['precipitation_total'] : null,
         ];
     }
-
-    // Cross-reference accented/unaccented city name variants so the JS computeZoneLight
-    // fallback finds entries regardless of how the DB stored city names.
-    $accent_map = ['ñ'=>'n','Ñ'=>'n','á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','Á'=>'a','É'=>'e','Í'=>'i','Ó'=>'o','Ú'=>'u'];
-    $city_canonical = [];
-    foreach ($risk_city_map as $city) {
-        $city_canonical[strtolower(strtr($city, $accent_map))] = $city;
-    }
-    foreach ($historical_env_yearly as $yr => $areas) {
-        foreach ($areas as $areaKey => $data) {
-            $normKey = strtolower(strtr($areaKey, $accent_map));
-            if (isset($city_canonical[$normKey]) && $city_canonical[$normKey] !== $areaKey) {
-                $canonical = $city_canonical[$normKey];
-                if (!isset($historical_env_yearly[$yr][$canonical])) {
-                    $historical_env_yearly[$yr][$canonical] = $data;
-                }
-            }
-        }
-    }
 } catch (Throwable $e) {
-    $kba_data = json_decode((string) file_get_contents('data/sample_kba.json'), true) ?: [];
+    $kba_data = [];
 }
 ?>
 
-<div class="alert alert-info" role="status">
-    📅 <strong>Dataset Period: 2014 – 2025</strong> | <strong>Monitoring Status: 2014 – 2025</strong> —
-    All metrics, readings, and site analyses are loaded from the database for the selected period.
-</div>
-
-<div class="dashboard-layout">
-    <!-- Left column: Map -->
-    <div class="dashboard-map-col">
-        <div style="position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
-            <style>
-                .risk-site-panel {
-                    display: flex;
-                    flex-wrap: wrap;
-                    align-items: flex-start;
-                    gap: 8px 10px;
-                    padding: 8px 12px;
-                    border-bottom: 1px solid var(--border-color);
-                    background: var(--bg-card-alt);
-                    color: var(--text-primary);
-                }
-                .risk-site-panel h4 {
-                    margin: 0;
-                    font-size: 0.74rem;
-                    letter-spacing: 0.03em;
-                    text-transform: uppercase;
-                    color: var(--text-muted);
-                }
+<style>
                 .risk-site-panel .risk-site-summary {
                     font-size: 0.7rem;
                     color: var(--text-secondary);
@@ -544,16 +553,6 @@ try {
                 <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:8px;">Unique species per site, summed across observed sites</div>
                 <div id="histObsBars" style="display:flex; flex-direction:column; gap:6px;"></div>
                 <div id="histObsTotal" style="margin-top:8px; font-size:0.82rem; color:var(--text-secondary);">Total: 0 spp.</div>
-                <div class="dash-stat-label" style="margin:12px 0 8px 0;">Species (first 5)</div>
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-                    <input id="histSpeciesSearch" class="map-control-input" type="search" placeholder="Search species" style="flex:1; min-width:140px;">
-                    <button type="button" id="histSpeciesSearchBtn" class="map-view-btn" style="padding:4px 10px;">Search</button>
-                </div>
-                <div id="histSpeciesTableWrap"></div>
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:6px;">
-                    <span id="histSpeciesMeta" style="font-size:0.72rem; color:var(--text-muted);"></span>
-                    <button type="button" id="histSpeciesNextBtn" class="map-view-btn" style="padding:4px 10px;">Next</button>
-                </div>
             </div>
 
             <div class="dash-stat-card" id="histEnvCard" style="display:none; margin-bottom:12px;">
@@ -1064,7 +1063,11 @@ fetch('MM_Cities_WGS84.geojson')
                         return;
                     }
 
-                    showHistoricalCityPopup(layer, cityName);
+                    var context = latestHistoricalContext || {};
+                    var popupSelections = context.selections || getHistoricalSelections();
+                    var popupRows = context.rows || latestHistoricalRows || [];
+                    var popupEnvRows = context.envRows || [];
+                    layer.bindPopup(getHistoricalBoundaryPopupContent(cityName, popupRows, popupEnvRows, popupSelections)).openPopup();
                 });
             }
         });
@@ -1214,15 +1217,6 @@ var historicalTypingTimers = [];
 var historicalTypingInProgress = false;
 var historicalAutoSequenceTimers = [];
 var expandedSpokeGroup = null;
-var histSpeciesState = {
-    area: 'All Areas',
-    page: 1,
-    perPage: 5,
-    query: '',
-    sort: 'name'
-};
-var histSpeciesCache = {};
-var histLatestSummary = null;
 
 function getRichnessColor(value) {
     var stops = [
@@ -1307,8 +1301,7 @@ function expandHistoricalSpokes(aggregateMarker, baseLat, baseLng, records) {
     historicalObservationLayers.push(hub);
 
     records.forEach(function(site, i) {
-        var siteMetrics = buildFilteredSpeciesMetrics(parseSpeciesList(site.species_list), selections);
-        var richness = toNumber(siteMetrics.counts.total);
+        var richness = toNumber(site.total_unique);
         var color = getRichnessColor(richness);
         var selectedBirdLabel = selections.selectedBird ? toDisplaySpeciesName(selections.selectedBird) : '';
         var birdFilterLine = selectedBirdLabel ? ('<br>Bird Filter: ' + escapeHtml(selectedBirdLabel)) : '';
@@ -1329,8 +1322,8 @@ function expandHistoricalSpokes(aggregateMarker, baseLat, baseLng, records) {
             '<strong>' + site.site_name + '</strong>' +
             '<br>Year: ' + site.year + '  ' + getMonthName(toNumber(site.month)) +
             '<br>Unique Species: <strong>' + richness + '</strong>' +
-            '<br>Resident: ' + toNumber(siteMetrics.counts.resident) + '  Migrant: ' + toNumber(siteMetrics.counts.migrant) +
-            '<br>Light Tolerant: ' + toNumber(siteMetrics.counts.tolerant) + '  Light Sensitive: ' + toNumber(siteMetrics.counts.sensitive) +
+            '<br>Resident: ' + toNumber(site.total_resident) + '  Migrant: ' + toNumber(site.total_migrant) +
+            '<br>Light Tolerant: ' + toNumber(site.total_tolerant) + '  Light Sensitive: ' + toNumber(site.total_sensitive) +
             birdFilterLine
         );
         marker.on('click', function(e) {
@@ -1572,234 +1565,6 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-function normalizeFilterValue(value) {
-    return String(value || '').trim().toLowerCase();
-}
-
-function normalizeSpeciesName(value) {
-    return String(value || '').trim().toLowerCase();
-}
-
-function buildSpeciesSummaryKey(area, selections, page, query) {
-    return [
-        area || 'All Areas',
-        selections.year,
-        selections.month,
-        selections.selectedBird || '',
-        normalizeFilterValue(selections.migrationFilter),
-        normalizeFilterValue(selections.lightFilter),
-        page || 1,
-        normalizeSpeciesName(query || ''),
-        histSpeciesState.sort
-    ].join('|');
-}
-
-function buildSpeciesSummaryUrl(area, selections, page, query) {
-    var params = [];
-    params.push('year=' + encodeURIComponent(selections.year));
-    if (selections.month > 0) {
-        params.push('month=' + encodeURIComponent(selections.month));
-    }
-    params.push('area=' + encodeURIComponent(area || 'All Areas'));
-
-    var birdKey = selections.selectedBird ? normalizeSpeciesName(selections.selectedBird) : '';
-    if (birdKey) {
-        params.push('bird=' + encodeURIComponent(birdKey));
-    }
-
-    var mig = normalizeFilterValue(selections.migrationFilter);
-    if (mig) {
-        params.push('filter_migratory=' + encodeURIComponent(mig));
-    }
-
-    var light = normalizeFilterValue(selections.lightFilter);
-    if (light) {
-        params.push('filter_light=' + encodeURIComponent(light));
-    }
-
-    if (query) {
-        params.push('species_query=' + encodeURIComponent(query));
-    }
-
-    params.push('species_page=' + encodeURIComponent(page || 1));
-    params.push('species_per_page=' + encodeURIComponent(histSpeciesState.perPage));
-    params.push('species_sort=' + encodeURIComponent(histSpeciesState.sort));
-
-    return 'api/get_dashboard_species_summary.php?' + params.join('&');
-}
-
-function fetchSpeciesSummary(area, selections, page, query) {
-    var key = buildSpeciesSummaryKey(area, selections, page, query);
-    if (histSpeciesCache[key]) {
-        return Promise.resolve(histSpeciesCache[key]);
-    }
-
-    var url = buildSpeciesSummaryUrl(area, selections, page, query);
-    return fetch(url)
-        .then(function(resp) { return resp.json(); })
-        .then(function(data) {
-            if (data && data.success) {
-                histSpeciesCache[key] = data;
-                return data;
-            }
-            return null;
-        })
-        .catch(function() {
-            return null;
-        });
-}
-
-function formatCategoryLabel(value) {
-    if (!value) return '';
-    var v = String(value || '').toLowerCase();
-    if (v === 'migratory') return 'Migratory';
-    if (v === 'resident') return 'Resident';
-    if (v === 'tolerant') return 'Light-tolerant';
-    if (v === 'sensitive') return 'Light-sensitive';
-    return v.charAt(0).toUpperCase() + v.slice(1);
-}
-
-function renderSpeciesTable(summary) {
-    var wrap = document.getElementById('histSpeciesTableWrap');
-    if (!wrap) return;
-
-    if (!summary || !summary.species || !Array.isArray(summary.species.rows)) {
-        wrap.innerHTML = '<div style="font-size:0.76rem; color:var(--text-muted);">No species list available.</div>';
-        return;
-    }
-
-    var rows = summary.species.rows;
-    if (!rows.length) {
-        wrap.innerHTML = '<div style="font-size:0.76rem; color:var(--text-muted);">No species found for the selected filters.</div>';
-        return;
-    }
-
-    var header = '<tr>' +
-        '<th style="text-align:left; font-size:0.72rem; color:var(--text-muted); padding:2px 4px;">Name</th>' +
-        '<th style="text-align:left; font-size:0.72rem; color:var(--text-muted); padding:2px 4px;">Migration</th>' +
-        '<th style="text-align:left; font-size:0.72rem; color:var(--text-muted); padding:2px 4px;">Light</th>' +
-        '</tr>';
-
-    var body = rows.map(function(row) {
-        var name = row.common_name || '';
-        var mig = formatCategoryLabel(row.migratory_status || '');
-        var light = formatCategoryLabel(row.light_tolerance || '');
-        return '<tr>' +
-            '<td style="padding:3px 4px; font-size:0.78rem; color:var(--text-primary);">' + escapeHtml(name) + '</td>' +
-            '<td style="padding:3px 4px; font-size:0.74rem; color:var(--text-secondary);">' + escapeHtml(mig) + '</td>' +
-            '<td style="padding:3px 4px; font-size:0.74rem; color:var(--text-secondary);">' + escapeHtml(light) + '</td>' +
-        '</tr>';
-    }).join('');
-
-    wrap.innerHTML = '<table style="width:100%; border-collapse:collapse;">' + header + body + '</table>';
-}
-
-function updateSpeciesMeta(summary) {
-    var meta = document.getElementById('histSpeciesMeta');
-    var nextBtn = document.getElementById('histSpeciesNextBtn');
-    if (!meta || !nextBtn) return;
-
-    if (!summary || !summary.species) {
-        meta.textContent = '';
-        nextBtn.disabled = true;
-        return;
-    }
-
-    var page = summary.species.page || 1;
-    var perPage = summary.species.per_page || histSpeciesState.perPage;
-    var total = summary.species.total || 0;
-    var maxPage = Math.max(1, Math.ceil(total / perPage));
-
-    meta.textContent = 'Page ' + page + ' of ' + maxPage;
-    nextBtn.disabled = page >= maxPage;
-}
-
-function applyZeroingToSummary(summary, selections) {
-    if (!summary || !summary.counts) return;
-
-    var mig = normalizeFilterValue(selections.migrationFilter);
-    var light = normalizeFilterValue(selections.lightFilter);
-
-    if (mig === 'migratory') {
-        summary.counts.resident = 0;
-    } else if (mig === 'resident') {
-        summary.counts.migratory = 0;
-    }
-
-    if (light === 'tolerant') {
-        summary.counts.sensitive = 0;
-    } else if (light === 'sensitive') {
-        summary.counts.tolerant = 0;
-    }
-
-    if (!summary.counts.total_species) {
-        var migrationTotal = toNumber(summary.counts.migratory) + toNumber(summary.counts.resident);
-        var lightTotal = toNumber(summary.counts.tolerant) + toNumber(summary.counts.sensitive);
-        summary.counts.total_species = Math.max(migrationTotal, lightTotal);
-    }
-}
-
-function buildSpeciesTableHtmlFromSummary(summary, limit) {
-    if (!summary || !summary.species || !Array.isArray(summary.species.rows)) {
-        return '<div style="font-size:0.76rem; color:var(--text-muted);">No species list available.</div>';
-    }
-
-    var rows = summary.species.rows.slice(0, Math.max(1, limit || 5));
-    if (!rows.length) {
-        return '<div style="font-size:0.76rem; color:var(--text-muted);">No species found for the selected filters.</div>';
-    }
-
-    var header = '<tr>' +
-        '<th style="text-align:left; font-size:0.72rem; color:var(--text-muted); padding:2px 4px;">Name</th>' +
-        '<th style="text-align:left; font-size:0.72rem; color:var(--text-muted); padding:2px 4px;">Migration</th>' +
-        '<th style="text-align:left; font-size:0.72rem; color:var(--text-muted); padding:2px 4px;">Light</th>' +
-        '</tr>';
-
-    var body = rows.map(function(row) {
-        var name = row.common_name || '';
-        var mig = formatCategoryLabel(row.migratory_status || '');
-        var light = formatCategoryLabel(row.light_tolerance || '');
-        return '<tr>' +
-            '<td style="padding:3px 4px; font-size:0.78rem; color:var(--text-primary);">' + escapeHtml(name) + '</td>' +
-            '<td style="padding:3px 4px; font-size:0.74rem; color:var(--text-secondary);">' + escapeHtml(mig) + '</td>' +
-            '<td style="padding:3px 4px; font-size:0.74rem; color:var(--text-secondary);">' + escapeHtml(light) + '</td>' +
-        '</tr>';
-    }).join('');
-
-    return '<table style="width:100%; border-collapse:collapse;">' + header + body + '</table>';
-}
-
-function refreshHistoricalSpeciesSummary(resetPage) {
-    var selections = getHistoricalSelections();
-    histSpeciesState.area = 'All Areas';
-
-    var input = document.getElementById('histSpeciesSearch');
-    if (input) {
-        histSpeciesState.query = normalizeSpeciesName(input.value);
-    }
-
-    if (resetPage) {
-        histSpeciesState.page = 1;
-    }
-
-    var query = histSpeciesState.query || '';
-    fetchSpeciesSummary(histSpeciesState.area, selections, histSpeciesState.page, query)
-        .then(function(summary) {
-            if (!summary) {
-                renderObservationSidebar(latestHistoricalRows || [], selections);
-                renderSpeciesTable(null);
-                updateSpeciesMeta(null);
-                return;
-            }
-
-            applyZeroingToSummary(summary, selections);
-            histLatestSummary = summary;
-            renderObservationSidebar(latestHistoricalRows || [], selections, summary);
-            renderSpeciesTable(summary);
-            updateSpeciesMeta(summary);
-        });
-}
-
 function parseSpeciesList(rawValue) {
     if (Array.isArray(rawValue)) {
         return rawValue.filter(function(item) { return !!String(item || '').trim(); });
@@ -1886,90 +1651,6 @@ function siteMatchesHistoricalFilters(site, selections) {
     return migrationMatches && lightMatches;
 }
 
-function applyFilterZeroing(counts, selections) {
-    var mig = normalizeFilterValue(selections.migrationFilter);
-    var light = normalizeFilterValue(selections.lightFilter);
-
-    if (mig === 'migratory') {
-        counts.resident = 0;
-    } else if (mig === 'resident') {
-        counts.migrant = 0;
-    }
-
-    if (light === 'tolerant') {
-        counts.sensitive = 0;
-    } else if (light === 'sensitive') {
-        counts.tolerant = 0;
-    }
-}
-
-function buildFilteredSpeciesMetrics(speciesNames, selections) {
-    var selectedBird = normalizeSpeciesName(selections.selectedBird || '');
-    var migrationFilter = normalizeFilterValue(selections.migrationFilter);
-    var lightFilter = normalizeFilterValue(selections.lightFilter);
-
-    var filtered = speciesNames
-        .map(function(name) { return normalizeSpeciesName(name); })
-        .filter(function(name) { return !!name; });
-
-    if (selectedBird) {
-        filtered = filtered.filter(function(name) { return name === selectedBird; });
-    }
-
-    if (migrationFilter) {
-        filtered = filtered.filter(function(name) {
-            var info = speciesLookup[name];
-            return info && normalizeFilterValue(info.migration) === migrationFilter;
-        });
-    }
-
-    if (lightFilter) {
-        filtered = filtered.filter(function(name) {
-            var info = speciesLookup[name];
-            return info && normalizeFilterValue(info.tolerance) === lightFilter;
-        });
-    }
-
-    var counts = {
-        resident: 0,
-        migrant: 0,
-        tolerant: 0,
-        sensitive: 0,
-        total: 0
-    };
-
-    filtered.forEach(function(name) {
-        var info = speciesLookup[name];
-        if (!info) {
-            counts.resident += 1;
-            counts.sensitive += 1;
-            counts.total += 1;
-            return;
-        }
-        var mig = normalizeFilterValue(info.migration);
-        var tol = normalizeFilterValue(info.tolerance);
-
-        if (mig === 'migratory') {
-            counts.migrant += 1;
-        } else {
-            counts.resident += 1;
-        }
-
-        if (tol === 'tolerant') {
-            counts.tolerant += 1;
-        } else {
-            counts.sensitive += 1;
-        }
-        counts.total += 1;
-    });
-
-    applyFilterZeroing(counts, selections);
-    return {
-        species: filtered,
-        counts: counts
-    };
-}
-
 function getHistoricalSiteCity(site) {
     if (!site) return HISTORICAL_DEFAULT_CITY;
 
@@ -2040,14 +1721,11 @@ function showHistoricalSiteDetail(site) {
     var envWrapEl = document.getElementById('histSiteEnvWrap');
     var envLabelEl = document.getElementById('histSiteEnvLabel');
     var envValueEl = document.getElementById('histSiteEnvValue');
-    var selections = (latestHistoricalContext && latestHistoricalContext.selections) ? latestHistoricalContext.selections : getHistoricalSelections();
-    var siteSpecies = parseSpeciesList(site.species_list);
-    var metrics = buildFilteredSpeciesMetrics(siteSpecies, selections);
-    var resident = toNumber(metrics.counts.resident);
-    var migrant = toNumber(metrics.counts.migrant);
-    var tolerant = toNumber(metrics.counts.tolerant);
-    var sensitive = toNumber(metrics.counts.sensitive);
-    var total = toNumber(metrics.counts.total);
+    var resident = toNumber(site.total_resident);
+    var migrant = toNumber(site.total_migrant);
+    var tolerant = toNumber(site.total_tolerant);
+    var sensitive = toNumber(site.total_sensitive);
+    var total = toNumber(site.total_unique);
     var maxCategory = Math.max(resident, migrant, tolerant, sensitive, 1);
 
     var bars = [
@@ -2070,10 +1748,10 @@ function showHistoricalSiteDetail(site) {
         '</div>';
     }).join('');
 
-    var speciesKeys = metrics.species;
-    var speciesHtml = speciesKeys.length
-        ? ('<ul class="historical-site-species-items">' + speciesKeys.map(function(key) {
-            var info = speciesLookup[key];
+    var species = parseSpeciesList(site.species_list);
+    var speciesHtml = species.length
+        ? ('<ul class="historical-site-species-items">' + species.map(function(name) {
+            var info = speciesLookup[name.toLowerCase()];
             var badges = '';
             if (info) {
                 var migClass  = info.migration  === 'Migratory' ? 'spp-badge-migrant'  : 'spp-badge-resident';
@@ -2083,7 +1761,7 @@ function showHistoricalSiteDetail(site) {
                 badges = ' <span class="spp-badge ' + migClass  + '">' + migLabel + '</span>' +
                          ' <span class="spp-badge ' + tolClass  + '">' + tolLabel + '</span>';
             }
-            return '<li>' + escapeHtml(toDisplaySpeciesName(key)) + badges + '</li>';
+            return '<li>' + escapeHtml(name) + badges + '</li>';
         }).join('') + '</ul>')
         : '<div class="historical-site-empty">No species list available for this site entry.</div>';
 
@@ -2091,6 +1769,7 @@ function showHistoricalSiteDetail(site) {
     document.getElementById('histSiteLocation').textContent = '📍 ' + cityName + ', Metro Manila';
 
     var envRows = (latestHistoricalContext && latestHistoricalContext.envRows) ? latestHistoricalContext.envRows : [];
+    var selections = (latestHistoricalContext && latestHistoricalContext.selections) ? latestHistoricalContext.selections : getHistoricalSelections();
     var hasEnvSelection = !!(selections && selections.envType);
     var municipalityEnv = null;
 
@@ -2518,67 +2197,6 @@ function getHistoricalBoundaryPopupContent(cityName, rows, envRows, selections) 
     '</div>';
 }
 
-function buildCityPopupContent(cityName, selections, envRows, summary) {
-    var envText = 'Not selected';
-    if (selections && selections.envType && Array.isArray(envRows) && envRows.length) {
-        var cityNorm = normalizeAreaKey(cityName || '');
-        var cityEnv = envRows.find(function(item) {
-            return normalizeAreaKey(item.city || '') === cityNorm;
-        }) || null;
-        if (cityEnv) {
-            envText = escapeHtml(cityEnv.label) + ' ' + escapeHtml(cityEnv.valueText);
-        }
-    }
-
-    if (!summary) {
-        return '<div style="min-width:220px; line-height:1.45;">' +
-            '<strong>' + escapeHtml(cityName || 'Metro Manila') + '</strong>' +
-            '<div style="margin-top:6px;">Environmental data: <strong>' + envText + '</strong></div>' +
-            '<div style="margin-top:6px; font-size:0.78rem; color:var(--text-secondary);">Loading species summary…</div>' +
-        '</div>';
-    }
-
-    var speciesTotal = toNumber(summary.counts && summary.counts.total_species);
-    var richnessText = speciesTotal > 0 ? speciesTotal.toLocaleString() + ' spp.' : 'No observation data';
-    var dateLabel = selections ? (selections.year + ' · ' + getMonthName(selections.month)) : 'Not applied';
-    var tableHtml = buildSpeciesTableHtmlFromSummary(summary, 5);
-
-    return '<div style="min-width:220px; line-height:1.45;">' +
-        '<strong>' + escapeHtml(cityName || 'Metro Manila') + '</strong>' +
-        '<div style="margin-top:6px;">Environmental data: <strong>' + envText + '</strong></div>' +
-        '<div>Bird richness: <strong>' + escapeHtml(richnessText) + '</strong></div>' +
-        '<div style="margin-top:4px; font-size:0.78rem; color:var(--text-secondary);">' +
-            'Sensitive: <strong>' + toNumber(summary.counts.sensitive).toLocaleString() + '</strong> · ' +
-            'Tolerant: <strong>' + toNumber(summary.counts.tolerant).toLocaleString() + '</strong><br>' +
-            'Migrant: <strong>' + toNumber(summary.counts.migratory).toLocaleString() + '</strong> · ' +
-            'Resident: <strong>' + toNumber(summary.counts.resident).toLocaleString() + '</strong>' +
-        '</div>' +
-        '<div style="margin-top:6px; font-size:0.78rem; color:var(--text-secondary);">' +
-            'Date filter: <strong>' + escapeHtml(dateLabel) + '</strong>' +
-        '</div>' +
-        '<div style="margin-top:8px;">' + tableHtml + '</div>' +
-    '</div>';
-}
-
-function showHistoricalCityPopup(layer, cityName) {
-    var context = latestHistoricalContext || {};
-    var selections = context.selections || getHistoricalSelections();
-    var envRows = context.envRows || [];
-
-    var loadingHtml = buildCityPopupContent(cityName, selections, envRows, null);
-    layer.bindPopup(loadingHtml).openPopup();
-
-    fetchSpeciesSummary(cityName, selections, 1, '')
-        .then(function(summary) {
-            if (!summary) return;
-            applyZeroingToSummary(summary, selections);
-            var html = buildCityPopupContent(cityName, selections, envRows, summary);
-            if (layer.getPopup()) {
-                layer.setPopupContent(html);
-            }
-        });
-}
-
 function renderHistoricalMap(rows, selections, options) {
     options = options || {};
     var preserveObservation = !!options.preserveObservation;
@@ -2676,8 +2294,7 @@ function renderHistoricalMap(rows, selections, options) {
                 return toNumber(r.total_unique) >= toNumber(best.total_unique) ? r : best;
             }, records[0]);
 
-            var repMetrics = buildFilteredSpeciesMetrics(parseSpeciesList(repRecord.species_list), selections);
-            var richness = toNumber(repMetrics.counts.total);
+            var richness = toNumber(repRecord.total_unique);
             var color = getRichnessColor(richness);
             var selectedBirdLabel = selections.selectedBird ? toDisplaySpeciesName(selections.selectedBird) : '';
             var birdFilterLine = selectedBirdLabel ? ('<br>Bird Filter: ' + escapeHtml(selectedBirdLabel)) : '';
@@ -2724,8 +2341,8 @@ function renderHistoricalMap(rows, selections, options) {
                     '<strong>' + repRecord.site_name + '</strong>' +
                     '<br>Year: ' + repRecord.year + '  ' + getMonthName(toNumber(repRecord.month)) +
                     '<br>Unique Species: <strong>' + richness + '</strong>' +
-                    '<br>Resident: ' + toNumber(repMetrics.counts.resident) + '  Migrant: ' + toNumber(repMetrics.counts.migrant) +
-                    '<br>Light Tolerant: ' + toNumber(repMetrics.counts.tolerant) + '  Light Sensitive: ' + toNumber(repMetrics.counts.sensitive) +
+                    '<br>Resident: ' + toNumber(repRecord.total_resident) + '  Migrant: ' + toNumber(repRecord.total_migrant) +
+                    '<br>Light Tolerant: ' + toNumber(repRecord.total_tolerant) + '  Light Sensitive: ' + toNumber(repRecord.total_sensitive) +
                     birdFilterLine
                 );
                 aggregateMarker.on('click', function(e) {
@@ -2834,35 +2451,20 @@ function updateEnvironmentalLegend(selections) {
     wrap.style.display = 'block';
 }
 
-function renderObservationSidebar(rows, selections, summary) {
+function renderObservationSidebar(rows, selections) {
     var resident = 0;
     var migrant = 0;
     var tolerant = 0;
     var sensitive = 0;
     var total = 0;
 
-    if (summary && summary.counts) {
-        resident = toNumber(summary.counts.resident);
-        migrant = toNumber(summary.counts.migratory);
-        tolerant = toNumber(summary.counts.tolerant);
-        sensitive = toNumber(summary.counts.sensitive);
-        total = toNumber(summary.counts.total_species || (resident + migrant));
-    } else {
-        rows.forEach(function(site) {
-            resident += toNumber(site.total_resident);
-            migrant += toNumber(site.total_migrant);
-            tolerant += toNumber(site.total_tolerant);
-            sensitive += toNumber(site.total_sensitive);
-            total += toNumber(site.total_unique);
-        });
-        var tmpCounts = { resident: resident, migrant: migrant, tolerant: tolerant, sensitive: sensitive, total: total };
-        applyFilterZeroing(tmpCounts, selections);
-        resident = tmpCounts.resident;
-        migrant = tmpCounts.migrant;
-        tolerant = tmpCounts.tolerant;
-        sensitive = tmpCounts.sensitive;
-        total = tmpCounts.total;
-    }
+    rows.forEach(function(site) {
+        resident += toNumber(site.total_resident);
+        migrant += toNumber(site.total_migrant);
+        tolerant += toNumber(site.total_tolerant);
+        sensitive += toNumber(site.total_sensitive);
+        total += toNumber(site.total_unique);
+    });
 
     var maxCategory = Math.max(resident, migrant, tolerant, sensitive, 1);
     var bars = [
@@ -3068,8 +2670,6 @@ function loadHistoricalData() {
                 renderObservationSidebar([], selections);
                 renderEnvironmentalSidebar([], selections);
                 renderHistoricalRecentUpdates(selections);
-                renderSpeciesTable(null);
-                updateSpeciesMeta(null);
                 prepareHistoricalDeferredPanels();
                 return;
             }
@@ -3088,12 +2688,11 @@ function loadHistoricalData() {
             renderHistoricalMap(filteredRows, selections, {
                 preserveObservation: preserveObservation
             });
+            renderObservationSidebar(filteredRows, selections);
             renderEnvironmentalSidebar(filteredRows, selections);
             renderHistoricalRecentUpdates(selections);
             prepareHistoricalDeferredPanels();
             runHistoricalAutoSequence();
-
-            refreshHistoricalSpeciesSummary(true);
 
             lastHistoricalObservationKey = selections.showObservation ? observationKey : '';
         })
@@ -3102,15 +2701,12 @@ function loadHistoricalData() {
             latestHistoricalRows = [];
             lastHistoricalObservationKey = '';
             clearHistoricalLayers();
-            renderObservationSidebar([], selections);
-            renderSpeciesTable(null);
-            updateSpeciesMeta(null);
         });
 }
 
 function onEnvDataTypeChange() {
     var envType = document.getElementById('envDataSelect').value;
-    document.getElementById('landCoverChecklist').style.display = envType === 'land_cover' ? 'inline-flex' : 'none';
+    document.getElementById('landCoverChecklist').style.display = envType === 'land_cover' ? 'flex' : 'none';
     document.getElementById('landTempPeriod').style.display = envType === 'land_temp' ? 'inline-flex' : 'none';
     envRowsExpanded = false;
     loadHistoricalData();
@@ -3135,10 +2731,9 @@ function setMapView(view) {
         histBtn.setAttribute('aria-pressed', isHist ? 'true' : 'false');
     }
 
-    // Show/hide filter controls
-    var filters = document.getElementById('historicalFilters');
-    filters.style.display = isHist ? 'flex' : 'none';
-    document.getElementById('historicalOverlayControls').style.display = isHist ? 'flex' : 'none';
+    // Show/hide filter sidebar
+    var histSidebar = document.getElementById('historicalSidebar');
+    if (histSidebar) histSidebar.style.display = isHist ? 'flex' : 'none';
 
     document.getElementById('riskSidebarPanels').style.display = isHist ? 'none' : 'block';
     document.getElementById('historicalSidebarPanels').style.display = isHist ? 'block' : 'none';
@@ -3178,13 +2773,6 @@ function setMapView(view) {
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
     } else {
-        // Collapse filter sub-row when leaving historical view
-        histFiltersVisible = false;
-        var filterRow = document.getElementById('histAdvancedFilters');
-        var filterBtn = document.getElementById('histFiltersToggle');
-        if (filterRow) filterRow.style.display = 'none';
-        if (filterBtn) filterBtn.textContent = '+ Show advanced bird filters';
-
         resetHistoricalSiteDetailPanel();
         clearHistoricalTypingTimers();
         clearHistoricalAutoSequenceTimers();
@@ -3221,36 +2809,6 @@ if (histSiteDetailCloseEl) {
     histSiteDetailCloseEl.addEventListener('click', function() {
         resetHistoricalSiteDetailPanel();
         renderEnvironmentalSidebar(latestHistoricalRows || [], getHistoricalSelections());
-    });
-}
-
-var histSpeciesSearchBtn = document.getElementById('histSpeciesSearchBtn');
-if (histSpeciesSearchBtn) {
-    histSpeciesSearchBtn.addEventListener('click', function() {
-        var input = document.getElementById('histSpeciesSearch');
-        histSpeciesState.query = normalizeSpeciesName(input ? input.value : '');
-        histSpeciesState.page = 1;
-        refreshHistoricalSpeciesSummary(false);
-    });
-}
-
-var histSpeciesSearchInput = document.getElementById('histSpeciesSearch');
-if (histSpeciesSearchInput) {
-    histSpeciesSearchInput.addEventListener('keydown', function(e) {
-        if (e && e.key === 'Enter') {
-            e.preventDefault();
-            histSpeciesState.query = normalizeSpeciesName(histSpeciesSearchInput.value);
-            histSpeciesState.page = 1;
-            refreshHistoricalSpeciesSummary(false);
-        }
-    });
-}
-
-var histSpeciesNextBtn = document.getElementById('histSpeciesNextBtn');
-if (histSpeciesNextBtn) {
-    histSpeciesNextBtn.addEventListener('click', function() {
-        histSpeciesState.page = Math.max(1, (histSpeciesState.page || 1) + 1);
-        refreshHistoricalSpeciesSummary(false);
     });
 }
 
