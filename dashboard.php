@@ -618,7 +618,7 @@ var DASHBOARD_MIN_YEAR = 2014;
 var DASHBOARD_MAX_YEAR = 2025;
 var riskSnapshotYear = {$risk_snapshot_year_json};
 var selectedRiskYear = riskSnapshotYear;
-var kbaPaBoundaries  = <?= $kba_pa_boundaries_json ?>;
+var kbaPaBoundaries  = {$kba_pa_boundaries_json};
 
 // ── Tile layers (dark for Risk Zones, light for Historical Data) ───────────
 var darkTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
