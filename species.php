@@ -230,26 +230,41 @@ $filtered_species = apply_image_cache_bust($filtered_species);
     <p class="page-subtitle">Searchable library of <?php echo $total_species; ?> bird species recorded in Metro Manila</p>
 </div>
 
-<!-- Statistics Summary: all 5 in one row -->
+<!-- Statistics Summary -->
 <div style="display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;">
     <div class="stat-card" style="flex:1;min-width:120px;">
-        <div class="stat-label">Total Species</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div class="stat-label" style="margin:0;">Total Species</div>
+        </div>
         <div class="stat-value"><?php echo number_format($total_species); ?></div>
     </div>
     <div class="stat-card" style="flex:1;min-width:120px;">
-        <div class="stat-label">Sensitive</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <div class="stat-label" style="margin:0;">Sensitive</div>
+        </div>
         <div class="stat-value"><?php echo number_format($sensitive_count); ?></div>
     </div>
     <div class="stat-card" style="flex:1;min-width:120px;">
-        <div class="stat-label">Tolerant</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <div class="stat-label" style="margin:0;">Tolerant</div>
+        </div>
         <div class="stat-value"><?php echo number_format($tolerant_count); ?></div>
     </div>
     <div class="stat-card" style="flex:1;min-width:120px;">
-        <div class="stat-label">Migratory</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--info-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>
+            <div class="stat-label" style="margin:0;">Migratory</div>
+        </div>
         <div class="stat-value"><?php echo number_format($migratory_count); ?></div>
     </div>
     <div class="stat-card" style="flex:1;min-width:120px;">
-        <div class="stat-label">Resident</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <div class="stat-label" style="margin:0;">Resident</div>
+        </div>
         <div class="stat-value"><?php echo number_format($resident_count); ?></div>
     </div>
 </div>
@@ -280,15 +295,16 @@ $edit_total = $no_category_count;
 
 <!-- Search and Filter Controls -->
 <div class="filter-container">
-    <form method="GET" action="species.php">
+    <form id="catalog-form" method="GET" action="species.php" onsubmit="return false;">
         <div class="filter-group">
             <div class="form-group" style="margin-bottom: 0;">
-                <input type="text" name="search" class="form-control" placeholder="Search by name..."
+                <input type="text" id="catalog-search" name="search" class="form-control"
+                       placeholder="Search by name..."
                        value="<?php echo htmlspecialchars($search_query); ?>" style="width: 300px;">
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
-                <select name="tolerance" class="form-control" style="width: 200px;">
+                <select id="catalog-tolerance" name="tolerance" class="form-control" style="width: 200px;">
                     <option value="all" <?php echo $tolerance_filter === 'all' ? 'selected' : ''; ?>>All Tolerance Levels</option>
                     <option value="Sensitive" <?php echo strtolower($tolerance_filter) === 'sensitive' ? 'selected' : ''; ?>>Light-Sensitive</option>
                     <option value="Tolerant" <?php echo strtolower($tolerance_filter) === 'tolerant' ? 'selected' : ''; ?>>Light-Tolerant</option>
@@ -296,36 +312,40 @@ $edit_total = $no_category_count;
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
-                <select name="migration" class="form-control" style="width: 200px;">
+                <select id="catalog-migration" name="migration" class="form-control" style="width: 200px;">
                     <option value="all" <?php echo $migration_filter === 'all' ? 'selected' : ''; ?>>All Migration Types</option>
                     <option value="Resident" <?php echo strtolower($migration_filter) === 'resident' ? 'selected' : ''; ?>>Resident</option>
                     <option value="Migratory" <?php echo strtolower($migration_filter) === 'migratory' ? 'selected' : ''; ?>>Migratory</option>
                 </select>
             </div>
 
-            <button type="submit" class="btn btn-primary">🔍 Filter</button>
+            <button type="button" class="btn btn-primary" onclick="fetchCatalog(1)">Search</button>
             <a href="species.php" class="btn btn-secondary">Clear</a>
         </div>
     </form>
 </div>
 
 <!-- Results Count -->
-<div style="margin: 20px 0; color: var(--text-secondary);">
+<div id="catalog-results-count" style="margin: 20px 0; color: var(--text-secondary);">
+    <?php if ($total_filtered > 0): ?>
     Showing <strong><?php echo number_format($offset + 1); ?>–<?php echo number_format(min($offset + $per_page, $total_filtered)); ?></strong>
     of <strong><?php echo number_format($total_filtered); ?></strong> species
     <?php if ($total_filtered !== $total_species): ?>
         (filtered from <?php echo number_format($total_species); ?> total)
     <?php endif; ?>
+    <?php else: ?>
+    No species found matching your search criteria.
+    <?php endif; ?>
 </div>
 
 <!-- Species Grid -->
-<div class="species-grid">
+<div id="catalog-grid" class="species-grid">
     <?php foreach ($filtered_species as $species): ?>
     <?php
     $tol_val = strtolower($species['light_tolerance']);
     $mig_val = strtolower($species['migration_status']);
-    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-success' : 'badge-danger';
-    $migration_class = $mig_val === 'migratory' ? 'badge-danger' : 'badge-success';
+    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-success' : 'badge-warning';
+    $migration_class = $mig_val === 'resident'  ? 'badge-success' : 'badge-info';
     $tol_label = ucfirst($tol_val);
     $mig_label = ucfirst($mig_val);
 
@@ -342,8 +362,10 @@ $edit_total = $no_category_count;
         }
     }
     ?>
-    <div class="species-card" style="background:var(--bg-card);">
-        <div class="species-image<?php echo $has_img ? ' has-photo' : ''; ?>">
+    <div class="species-card" style="background:var(--bg-card);"
+         onclick="showSpeciesDetails(<?php echo (int)$species['id']; ?>)">
+        <div class="species-image<?php echo $has_img ? ' has-photo' : ''; ?>"
+             <?php if ($has_img): ?>style="--card-img-url:url('<?php echo $img_src; ?>')"<?php endif; ?>>
             <?php if ($has_img): ?>
                 <picture>
                     <?php if ($webp_src): ?>
@@ -375,57 +397,33 @@ $edit_total = $no_category_count;
                 <span style="font-size:.78rem;color:var(--text-muted);">Not yet classified</span>
                 <?php endif; ?>
             </div>
-
-            <div style="flex: 1; min-height: 12px;"></div>
-            <button class="btn btn-primary" style="width: 100%; font-size: 0.9rem;"
-                    onclick="showSpeciesDetails(<?php echo (int)$species['id']; ?>)">
-                View Details
-            </button>
         </div>
     </div>
     <?php endforeach; ?>
 </div>
 
-<?php if ($total_filtered === 0): ?>
-<div class="alert alert-info">
-    No species found matching your search criteria. Try adjusting your filters.
-</div>
-<?php endif; ?>
-
-<!-- Pagination -->
-<?php if ($total_pages > 1): ?>
-<?php
-$base_params = array_filter([
-    'search'    => $search_query,
-    'tolerance' => $tolerance_filter !== 'all' ? $tolerance_filter : null,
-    'migration' => $migration_filter !== 'all' ? $migration_filter : null,
-]);
-$base_query = http_build_query($base_params);
-$page_url = function(int $p) use ($base_query): string {
-    $q = $base_query ? $base_query . '&page=' . $p : 'page=' . $p;
-    return 'species.php?' . $q;
-};
-?>
-<div style="display: flex; justify-content: center; gap: 8px; margin: 30px 0; flex-wrap: wrap;">
-    <?php if ($page > 1): ?>
-    <a href="<?php echo htmlspecialchars($page_url($page - 1)); ?>" class="btn btn-secondary">‹ Prev</a>
-    <?php endif; ?>
-
-    <?php
+<!-- Pagination (JS-intercepted; PHP provides fallback links for first load) -->
+<div id="catalog-pagination" style="display:flex;justify-content:center;gap:8px;margin:30px 0;flex-wrap:wrap;">
+<?php if ($total_pages > 1):
+    $base_params = array_filter([
+        'search'    => $search_query,
+        'tolerance' => $tolerance_filter !== 'all' ? $tolerance_filter : null,
+        'migration' => $migration_filter !== 'all' ? $migration_filter : null,
+    ]);
+    $base_query = http_build_query($base_params);
+    $page_url = function(int $p) use ($base_query): string {
+        $q = $base_query ? $base_query . '&page=' . $p : 'page=' . $p;
+        return 'species.php?' . $q;
+    };
     $start = max(1, $page - 3);
     $end   = min($total_pages, $page + 3);
-    if ($start > 1): ?><a href="<?php echo htmlspecialchars($page_url(1)); ?>" class="btn btn-secondary">1</a><?php if ($start > 2): ?><span style="align-self:center;">…</span><?php endif; endif; ?>
-    <?php for ($p = $start; $p <= $end; $p++): ?>
-    <a href="<?php echo htmlspecialchars($page_url($p)); ?>"
-       class="btn <?php echo $p === $page ? 'btn-primary' : 'btn-secondary'; ?>"><?php echo $p; ?></a>
-    <?php endfor; ?>
-    <?php if ($end < $total_pages): ?><?php if ($end < $total_pages - 1): ?><span style="align-self:center;">…</span><?php endif; ?><a href="<?php echo htmlspecialchars($page_url($total_pages)); ?>" class="btn btn-secondary"><?php echo $total_pages; ?></a><?php endif; ?>
-
-    <?php if ($page < $total_pages): ?>
-    <a href="<?php echo htmlspecialchars($page_url($page + 1)); ?>" class="btn btn-secondary">Next ›</a>
-    <?php endif; ?>
-</div>
+    if ($page > 1): ?><a href="<?php echo htmlspecialchars($page_url($page - 1)); ?>" class="btn btn-secondary" data-catalog-page="<?php echo $page - 1; ?>">‹ Prev</a><?php endif; ?>
+    <?php if ($start > 1): ?><a href="<?php echo htmlspecialchars($page_url(1)); ?>" class="btn btn-secondary" data-catalog-page="1">1</a><?php if ($start > 2): ?><span style="align-self:center;">…</span><?php endif; endif; ?>
+    <?php for ($p = $start; $p <= $end; $p++): ?><a href="<?php echo htmlspecialchars($page_url($p)); ?>" class="btn <?php echo $p === $page ? 'btn-primary' : 'btn-secondary'; ?>" data-catalog-page="<?php echo $p; ?>"><?php echo $p; ?></a><?php endfor; ?>
+    <?php if ($end < $total_pages): ?><?php if ($end < $total_pages - 1): ?><span style="align-self:center;">…</span><?php endif; ?><a href="<?php echo htmlspecialchars($page_url($total_pages)); ?>" class="btn btn-secondary" data-catalog-page="<?php echo $total_pages; ?>"><?php echo $total_pages; ?></a><?php endif; ?>
+    <?php if ($page < $total_pages): ?><a href="<?php echo htmlspecialchars($page_url($page + 1)); ?>" class="btn btn-secondary" data-catalog-page="<?php echo $page + 1; ?>">Next ›</a><?php endif; ?>
 <?php endif; ?>
+</div>
 
 </div><!-- /tab-catalog -->
 
@@ -661,12 +659,11 @@ $page_url = function(int $p) use ($base_query): string {
 </div>
 
 <!-- Species Details Modal -->
-<div id="speciesModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-     background: var(--bg-overlay); z-index: 2000; overflow-y: auto;">
-    <div style="max-width: 860px; margin: 50px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 30px; color: var(--text-primary); box-shadow: var(--shadow-lg);">
-        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
-            <h2 id="modalTitle" style="margin: 0;"></h2>
-            <span onclick="closeModal()" style="cursor: pointer; font-size: 2rem; color: var(--text-muted);">&times;</span>
+<div id="speciesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:2000;overflow-y:auto;">
+    <div style="max-width:860px;margin:50px auto 60px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:30px;color:var(--text-primary);box-shadow:var(--shadow-lg);">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:20px;">
+            <h2 id="modalTitle" style="margin:0;"></h2>
+            <span onclick="closeModal()" style="cursor:pointer;font-size:2rem;color:var(--text-muted);line-height:1;">&times;</span>
         </div>
         <div id="modalContent"></div>
     </div>
@@ -688,6 +685,139 @@ const pageSpecies = {$page_species_js};
 
 let _locSpeciesId = null;
 
+// ── Catalog AJAX (live search + pagination) ──────────────────────────────────
+let _catalogPage = <?php echo (int)$page; ?>;
+let _catalogSearchTimer = null;
+
+async function fetchCatalog(page) {
+    _catalogPage = page || 1;
+    const search = document.getElementById('catalog-search')?.value  ?? '';
+    const tol    = document.getElementById('catalog-tolerance')?.value ?? 'all';
+    const mig    = document.getElementById('catalog-migration')?.value ?? 'all';
+
+    const params = new URLSearchParams({ search, tolerance: tol, migration: mig, page: String(_catalogPage) });
+
+    const grid    = document.getElementById('catalog-grid');
+    const countEl = document.getElementById('catalog-results-count');
+    if (grid) grid.style.opacity = '0.45';
+
+    try {
+        const res  = await fetch('api/get_catalog.php?' + params);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'fetch failed');
+
+        pageSpecies = data.rows;
+        history.replaceState({}, '', 'species.php?' + params);
+        renderCatalogGrid(data);
+    } catch (err) {
+        if (countEl) countEl.textContent = 'Could not load species.';
+    } finally {
+        if (grid) grid.style.opacity = '1';
+    }
+}
+
+function renderCatalogGrid(data) {
+    const grid    = document.getElementById('catalog-grid');
+    const countEl = document.getElementById('catalog-results-count');
+    const pagEl   = document.getElementById('catalog-pagination');
+    if (!grid) return;
+
+    const offset = (data.page - 1) * data.per_page;
+    if (countEl) {
+        if (data.total_filtered > 0) {
+            const from = (offset + 1).toLocaleString();
+            const to   = Math.min(offset + data.per_page, data.total_filtered).toLocaleString();
+            countEl.innerHTML = `Showing <strong>${from}–${to}</strong> of <strong>${data.total_filtered.toLocaleString()}</strong> species`;
+        } else {
+            countEl.textContent = 'No species found matching your search criteria.';
+        }
+    }
+
+    grid.innerHTML = data.rows.length
+        ? data.rows.map(renderSpeciesCard).join('')
+        : '<div class="alert alert-info">No species found matching your search criteria. Try adjusting your filters.</div>';
+
+    if (pagEl) renderCatalogPagination(data.page, data.total_pages);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderSpeciesCard(sp) {
+    const tol      = (sp.light_tolerance  || '').toLowerCase();
+    const mig      = (sp.migration_status || '').toLowerCase();
+    const tolLabel = tol ? tol.charAt(0).toUpperCase() + tol.slice(1) : '';
+    const migLabel = mig ? mig.charAt(0).toUpperCase() + mig.slice(1) : '';
+    const tolClass = tol === 'tolerant' ? 'badge-success' : (tol ? 'badge-warning' : '');
+    const migClass = mig === 'resident' ? 'badge-success' : (mig ? 'badge-info'    : '');
+    const imgSrc   = escapeHtml(sp.image_path  || '');
+    const webpSrc  = escapeHtml(sp.webp_path   || '');
+    const altText  = escapeHtml(sp.common_name || '');
+    const id       = Number(sp.id);
+
+    let imgHtml;
+    if (imgSrc) {
+        const src = webpSrc ? `<source srcset="${webpSrc}" type="image/webp">` : '';
+        imgHtml = `<div class="species-image has-photo" style="--card-img-url:url('${imgSrc}')">
+            <picture>${src}<img class="species-photo" src="${imgSrc}" alt="${altText}"
+                loading="lazy" decoding="async" width="320" height="240"
+                onload="this.closest('.species-image')?.classList.add('img-loaded')"
+                onerror="handleImgError(this)"></picture></div>`;
+    } else {
+        imgHtml = `<div class="species-image"><div style="font-size:3rem;">🦜</div>
+            <small style="color:var(--text-muted);">Photo not available</small></div>`;
+    }
+
+    let badges;
+    if (!tolLabel && !migLabel) {
+        badges = '<span style="font-size:.78rem;color:var(--text-muted);">Not yet classified</span>';
+    } else {
+        badges = (tolLabel ? `<span class="badge ${tolClass}">${tolLabel}</span>` : '')
+               + (migLabel ? `<span class="badge ${migClass}">${migLabel}</span>` : '');
+    }
+
+    return `<div class="species-card" style="background:var(--bg-card);" onclick="showSpeciesDetails(${id})">
+        ${imgHtml}
+        <div class="species-info" style="background:var(--bg-card);">
+            <div class="species-name">${escapeHtml(sp.common_name)}</div>
+            <div class="species-tags">${badges}</div>
+        </div></div>`;
+}
+
+function renderCatalogPagination(page, totalPages) {
+    const pagEl = document.getElementById('catalog-pagination');
+    if (!pagEl) return;
+    if (totalPages <= 1) { pagEl.innerHTML = ''; return; }
+
+    const btn = (label, p, active) =>
+        `<button class="btn ${active ? 'btn-primary' : 'btn-secondary'}"
+                 onclick="fetchCatalog(${p})"${active ? ' disabled' : ''}>${label}</button>`;
+
+    const start = Math.max(1, page - 3);
+    const end   = Math.min(totalPages, page + 3);
+    let html = '';
+    if (page > 1) html += btn('‹ Prev', page - 1, false);
+    if (start > 1) { html += btn('1', 1, false); if (start > 2) html += '<span style="align-self:center">…</span>'; }
+    for (let p = start; p <= end; p++) html += btn(String(p), p, p === page);
+    if (end < totalPages) { if (end < totalPages - 1) html += '<span style="align-self:center">…</span>'; html += btn(String(totalPages), totalPages, false); }
+    if (page < totalPages) html += btn('Next ›', page + 1, false);
+    pagEl.innerHTML = html;
+}
+
+// Intercept PHP-rendered pagination links on first load
+document.getElementById('catalog-pagination')?.addEventListener('click', e => {
+    const link = e.target.closest('[data-catalog-page]');
+    if (!link) return;
+    e.preventDefault();
+    fetchCatalog(parseInt(link.dataset.catalogPage, 10));
+});
+
+// Live search: debounce input, instant on select change
+document.getElementById('catalog-search')?.addEventListener('input', () => {
+    clearTimeout(_catalogSearchTimer);
+    _catalogSearchTimer = setTimeout(() => fetchCatalog(1), 350);
+});
+document.getElementById('catalog-tolerance')?.addEventListener('change', () => fetchCatalog(1));
+document.getElementById('catalog-migration')?.addEventListener('change', () => fetchCatalog(1));
+
 function showSpeciesDetails(speciesId) {
     const species = pageSpecies.find(s => parseInt(s.id) === speciesId);
     if (!species) return;
@@ -698,8 +828,8 @@ function showSpeciesDetails(speciesId) {
     const mig      = (species.migration_status || '').toLowerCase();
     const tolLabel = tol.charAt(0).toUpperCase() + tol.slice(1);
     const migLabel = mig.charAt(0).toUpperCase() + mig.slice(1);
-    const tolClass = tol === 'tolerant'  ? 'badge-success' : 'badge-danger';
-    const migClass = mig === 'migratory' ? 'badge-danger' : 'badge-success';
+    const tolClass = tol === 'tolerant'  ? 'badge-success' : 'badge-warning';
+    const migClass = mig === 'resident'  ? 'badge-success' : 'badge-info';
 
     const description = (species.description && species.description.trim())
         ? species.description.trim()
@@ -1217,15 +1347,16 @@ async function executeMerge() {
         const res  = await fetch('api/merge_species.php', { method: 'POST', body });
         const data = await res.json();
         if (data.success) {
-            // Remove the source row from every edit table
-            document.querySelectorAll('.etable-row').forEach(tr => {
-                const editBtn = tr.querySelector('button');
-                if (editBtn && editBtn.getAttribute('onclick') &&
-                    editBtn.getAttribute('onclick').includes('"id":' + mergeSourceId)) {
-                    tr.remove();
-                }
-            });
             closeMergeModal();
+            showToast('Species merged successfully');
+            // Refresh the active edit sub-tab
+            const activePanel = Array.from(document.querySelectorAll('.edit-tab-panel'))
+                .find(p => p.style.display !== 'none');
+            const tab = activePanel ? activePanel.dataset.etab : null;
+            if (tab && editTableState[tab]) {
+                editTableState[tab].loaded = false;
+                fetchEditTable(tab, editTableState[tab].page);
+            }
         } else {
             msg.style.cssText = 'display:block;background:var(--bg-card-alt);border:1px solid var(--danger-color,#dc2626);color:var(--text-primary);padding:10px 14px;border-radius:7px;';
             msg.textContent = data.error || 'Merge failed.';

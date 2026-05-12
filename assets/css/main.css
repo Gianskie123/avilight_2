@@ -769,20 +769,35 @@ tr:hover {
     box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08), inset 0 10px 20px rgba(15, 23, 42, 0.08);
 }
 
+/* Blurred backdrop fills the card image area with a desaturated version of the photo */
+.species-image.has-photo::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--card-img-url);
+    background-size: cover;
+    background-position: center;
+    filter: blur(22px) saturate(0.25) brightness(0.45);
+    transform: scale(1.1);
+    z-index: 0;
+}
+
 .species-image.has-photo::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.16));
+    background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.28));
     pointer-events: none;
+    z-index: 2;
 }
 
 .species-photo {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
-    filter: saturate(0.9) contrast(0.96);
+    position: relative;
+    z-index: 1;
 }
 
 /* Skeleton shimmer while image loads */
@@ -801,14 +816,23 @@ tr:hover {
     background: var(--bg-input);
 }
 
+.species-card {
+    cursor: pointer;
+}
+
 .species-card .badge-success {
     background: rgba(34, 197, 94, 0.12);
     color: #3f7f55;
 }
 
-.species-card .badge-danger {
-    background: rgba(239, 68, 68, 0.12);
-    color: #8a4b4b;
+.species-card .badge-warning {
+    background: rgba(202, 138, 4, 0.13);
+    color: #92620e;
+}
+
+.species-card .badge-info {
+    background: rgba(8, 145, 178, 0.12);
+    color: #0c6d89;
 }
 
 .species-detail-image-shell {
@@ -826,9 +850,14 @@ tr:hover {
     color: #9be7b6;
 }
 
-[data-theme="dark"] .species-card .badge-danger {
-    background: rgba(239, 68, 68, 0.18);
-    color: #f3b0b0;
+[data-theme="dark"] .species-card .badge-warning {
+    background: rgba(234, 179, 8, 0.18);
+    color: #fde68a;
+}
+
+[data-theme="dark"] .species-card .badge-info {
+    background: rgba(34, 211, 238, 0.18);
+    color: #a5f3fc;
 }
 
 [data-theme="dark"] .species-image {
