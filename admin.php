@@ -172,6 +172,17 @@ require_once 'includes/header.php';
     <p class="page-subtitle">Data management, model configuration, and system monitoring</p>
 </div>
 
+<div class="settings-shell">
+    <nav class="settings-nav" aria-label="Settings sections">
+        <button type="button" class="is-active" data-settings-target="settings-data">Data &amp; Covariates</button>
+        <button type="button" data-settings-target="settings-model">Model &amp; Thresholds</button>
+        <button type="button" data-settings-target="settings-integrity">System Integrity</button>
+        <button type="button" data-settings-target="settings-access">Access &amp; Security</button>
+    </nav>
+    <div>
+        <section id="settings-data" class="settings-panel is-active">
+            <div class="settings-section-title">Data &amp; Covariates</div>
+
 <!-- Data Ingestion -->
 <div class="card">
     <h2 class="card-header">Data Ingestion</h2>
@@ -202,7 +213,7 @@ require_once 'includes/header.php';
             <!-- Left column -->
             <div>
                 <h4>Artificial Light (VIIRS)</h4>
-                <button class="btn btn-primary" onclick="fetchVIIRS.call(this, this)">
+                <button class="btn btn-outline" onclick="fetchVIIRS.call(this, this)">
                     Fetch Artificial Light (VIIRS) Data
                 </button>
                 <p style="margin-top: 10px; color: #666;">
@@ -213,7 +224,7 @@ require_once 'includes/header.php';
                 <hr style="margin: 20px 0;">
 
                 <h4>Land Surface Temperature (MODIS)</h4>
-                <button class="btn btn-primary" onclick="fetchNOAATemp.call(this, this)">
+                <button class="btn btn-outline" onclick="fetchNOAATemp.call(this, this)">
                     Fetch Land Surface Temperature (MODIS) Data
                 </button>
                 <p style="margin-top: 10px; color: #666;">
@@ -225,7 +236,7 @@ require_once 'includes/header.php';
             <!-- Right column -->
             <div>
                 <h4>Vegetation Index (MODIS)</h4>
-                <button class="btn btn-primary" onclick="fetchMODIS.call(this, this)">
+                <button class="btn btn-outline" onclick="fetchMODIS.call(this, this)">
                     Fetch Vegetation Index (MODIS) Data
                 </button>
                 <p style="margin-top: 10px; color: #666;">
@@ -236,7 +247,7 @@ require_once 'includes/header.php';
                 <hr style="margin: 20px 0;">
 
                 <h4>Precipitation (CHIRPS)</h4>
-                <button class="btn btn-primary" onclick="fetchNOAAPrecip.call(this, this)">
+                <button class="btn btn-outline" onclick="fetchNOAAPrecip.call(this, this)">
                     Fetch Precipitation (CHIRPS) Data
                 </button>
                 <p style="margin-top: 10px; color: #666;">
@@ -251,7 +262,7 @@ require_once 'includes/header.php';
 
         <!-- Land Cover (annual) -->
         <h4>Land Cover Type (MODIS)</h4>
-        <button class="btn btn-primary" onclick="fetchLandCover.call(this, this)">
+        <button class="btn btn-outline" onclick="fetchLandCover.call(this, this)">
             Fetch Land Cover Type (MODIS) Data
         </button>
         <p style="margin-top: 10px; color: #666;">
@@ -271,7 +282,7 @@ require_once 'includes/header.php';
                 <li>A bird species' category (light tolerance or migratory status) has been changed</li>
             </ul>
         </p>
-        <button class="btn btn-success" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
+        <button class="btn btn-outline" id="buildMasterGridBtn" onclick="buildMasterGrid.call(this, this)">
             Rebuild Analysis Data
         </button>
         <div id="masterGridStatus" style="margin-top: 10px;"></div>
@@ -286,10 +297,10 @@ require_once 'includes/header.php';
             to force a fresh recompute on the next forecast request.
         </p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-warning" id="clearBauCacheBtn" onclick="clearBauCache.call(this, false)">
+            <button class="btn btn-danger-muted" id="clearBauCacheBtn" onclick="clearBauCache.call(this, false)">
                 Reset BAU Cache
             </button>
-            <button class="btn btn-success" id="clearBauCachePrewarmBtn" onclick="clearBauCache.call(this, true)">
+            <button class="btn btn-danger-muted" id="clearBauCachePrewarmBtn" onclick="clearBauCache.call(this, true)">
                 Reset &amp; Prewarm All Cities
             </button>
         </div>
@@ -297,6 +308,11 @@ require_once 'includes/header.php';
 
     </div>
 </div>
+
+        </section>
+
+        <section id="settings-model" class="settings-panel">
+            <div class="settings-section-title">Model &amp; Thresholds</div>
 
 <?php if ($is_it_admin): ?>
 <!-- Model Versioning -->
@@ -333,6 +349,7 @@ require_once 'includes/header.php';
                 <table style="font-size: 0.9rem;">
                     <thead>
                         <tr>
+                            <th style="width:80px;">Active</th>
                             <th>Version</th>
                             <th>Date</th>
                             <th>Status</th>
@@ -340,7 +357,7 @@ require_once 'includes/header.php';
                         </tr>
                     </thead>
                     <tbody id="modelListBody">
-                        <tr><td colspan="4" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
+                        <tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>
                     </tbody>
                 </table>
                 <div id="modelStatus" style="margin-top: 10px;"></div>
@@ -412,12 +429,20 @@ require_once 'includes/header.php';
             <span style="font-size:0.875rem;color:var(--text-secondary);">Total Weight</span>
             <input type="text" id="kbaWeightTotal" readonly
                    style="width:80px;padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:transparent;font-weight:600;text-align:center;color:var(--text-primary);">
-            <small style="color:#666;">Should equal 100%</small>
+            <div id="kbaWeightStatus" class="kba-weight-status is-invalid">
+                <span id="kbaWeightRemainingLabel">Remaining</span>
+                <strong id="kbaWeightRemaining">0%</strong>
+            </div>
         </div>
 
-        <button class="btn btn-primary" onclick="saveThresholds()">Save Configuration</button>
+        <button class="btn btn-primary" id="saveThresholdsBtn" onclick="saveThresholds()">Save Configuration</button>
     </div>
 </div>
+
+        </section>
+
+        <section id="settings-integrity" class="settings-panel">
+            <div class="settings-section-title">System Integrity</div>
 
 <!-- Validation & Error Logs -->
 <div class="card">
@@ -453,6 +478,11 @@ require_once 'includes/header.php';
     </div>
 </div>
 
+        </section>
+
+        <section id="settings-access" class="settings-panel">
+            <div class="settings-section-title">Access &amp; Security</div>
+
 <?php if ($is_it_admin): ?>
 <!-- Account Management -->
 <div class="card">
@@ -461,7 +491,7 @@ require_once 'includes/header.php';
 
         <!-- Add new user -->
         <details id="addUserDetails" style="margin-bottom:20px;">
-            <summary style="cursor:pointer;font-size:0.9rem;color:var(--accent-blue,#3b82f6);margin-bottom:12px;">+ Add new account</summary>
+            <summary class="btn btn-outline btn-sm" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;">+ Add new account</summary>
             <div id="addUserStatus" style="margin-bottom:8px;"></div>
             <form id="addUserForm" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group" style="margin-bottom:0;">
@@ -517,7 +547,7 @@ require_once 'includes/header.php';
 <div class="card">
     <h2 class="card-header">Security & Access Logs</h2>
     <div class="card-body">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
+        <div class="settings-log-grid">
 
             <!-- Recent Activity -->
             <div>
@@ -539,8 +569,8 @@ require_once 'includes/header.php';
                     <input type="date" id="accessLogFrom" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                     <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">End Date</label>
                     <input type="date" id="accessLogTo" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
-                    <button onclick="loadAuditLog()" class="btn btn-primary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
-                    <button onclick="clearAuditFilters()" style="background:#7c3aed;border:none;border-radius:6px;color:#fff;font-size:0.8rem;font-weight:600;cursor:pointer;padding:3px 10px;transition:opacity .15s;" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Clear</button>
+                    <button onclick="loadAuditLog()" class="btn btn-outline btn-sm">Apply</button>
+                    <button onclick="clearAuditFilters()" class="btn btn-outline btn-sm">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
@@ -568,8 +598,8 @@ require_once 'includes/header.php';
                     <input type="date" id="failLogFrom" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
                     <label style="font-size:0.78rem;color:var(--text-secondary);white-space:nowrap;">End Date</label>
                     <input type="date" id="failLogTo" style="font-size:0.8rem;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#334155);background:var(--bg-input,#1e293b);color:var(--text-primary,#f1f5f9);">
-                    <button onclick="loadFailedAttempts()" class="btn btn-primary" style="padding:3px 10px;font-size:0.8rem;">Apply</button>
-                    <button onclick="clearFailFilters()" style="background:#7c3aed;border:none;border-radius:6px;color:#fff;font-size:0.8rem;font-weight:600;cursor:pointer;padding:3px 10px;transition:opacity .15s;" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Clear</button>
+                    <button onclick="loadFailedAttempts()" class="btn btn-outline btn-sm">Apply</button>
+                    <button onclick="clearFailFilters()" class="btn btn-outline btn-sm">Clear</button>
                 </div>
                 <div style="overflow-x:auto;">
                     <table style="font-size:0.85rem; width:100%;">
@@ -592,6 +622,18 @@ require_once 'includes/header.php';
     </div>
 </div>
 <?php endif; ?>
+
+        <?php if (!$is_it_admin): ?>
+            <div class="card">
+                <div class="card-body" style="color:var(--text-secondary);font-size:0.9rem;">
+                    Access &amp; security settings are restricted to IT administrators.
+                </div>
+            </div>
+        <?php endif; ?>
+
+        </section>
+    </div>
+</div>
 
 <?php
 $extra_scripts = <<<'EOD'
@@ -1472,35 +1514,45 @@ async function clearBauCache(btn, prewarm = false) {
 function loadModelList() {
     const tbody = document.getElementById('modelListBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:16px;">Loading…</td></tr>';
 
     fetch('api/list_models.php')
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                tbody.innerHTML = `<tr><td colspan="4" style="color:#f87171;padding:16px;">Failed to load models: ${escHtml(data.error || 'Unknown error')}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="color:#f87171;padding:16px;">Failed to load models: ${escHtml(data.error || 'Unknown error')}</td></tr>`;
                 return;
             }
             if (!data.models || !data.models.length) {
-                tbody.innerHTML = '<tr><td colspan="4" style="color:#888;padding:16px;">No model versions found yet.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="color:#888;padding:16px;">No model versions found yet.</td></tr>';
                 return;
             }
             tbody.innerHTML = data.models.map(row => {
                 const status    = row.status      || 'Backup';
                 const version   = row.version_name || '';
                 const date      = (row.created_at  || '').substring(0, 10);
+                const isActive  = status === 'Active';
                 const badgeCls  = status === 'Active' ? 'badge-success' : 'badge-secondary';
                 const nameCell  = status === 'Active'
                     ? `<strong>${escHtml(version)}</strong>`
                     : escHtml(version);
                 const safeV = version.replace(/'/g, "\\'");
+                const radio = isActive
+                    ? `<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-muted);">
+                            <input type="radio" name="activeModelVersion" checked disabled>
+                            Active
+                       </label>`
+                    : `<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-secondary);">
+                            <input type="radio" name="activeModelVersion" onchange="switchModel('${safeV}')">
+                            Set active
+                       </label>`;
                 const actions = status === 'Active'
                     ? `<span style="color:var(--text-muted,#64748b);font-size:0.82rem;">—</span>`
                     : `<div style="display:flex;gap:4px;align-items:center;">
-                        ${_iconBtn('Switch to this version', ICON_SWITCH, `switchModel('${safeV}')`, 'color:#6366f1;')}
                         ${_iconBtn('Delete this version',    ICON_TRASH,  `deleteModel('${safeV}')`, 'color:#dc2626;')}
                        </div>`;
                 return `<tr>
+                    <td>${radio}</td>
                     <td>${nameCell}</td>
                     <td>${escHtml(date)}</td>
                     <td><span class="badge ${badgeCls}">${escHtml(status)}</span></td>
@@ -1509,7 +1561,7 @@ function loadModelList() {
             }).join('');
         })
         .catch(err => {
-            if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="color:#f87171;padding:16px;">Network error: ${escHtml(err.message)}</td></tr>`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="color:#f87171;padding:16px;">Network error: ${escHtml(err.message)}</td></tr>`;
         });
 }
 
@@ -1669,9 +1721,28 @@ function updateKbaWeightTotal() {
     }, 0);
 
     const totalEl = document.getElementById('kbaWeightTotal');
+    const remainingEl = document.getElementById('kbaWeightRemaining');
+    const remainingLabelEl = document.getElementById('kbaWeightRemainingLabel');
+    const statusEl = document.getElementById('kbaWeightStatus');
+    const saveBtn = document.getElementById('saveThresholdsBtn');
     if (totalEl) {
         totalEl.value = total.toFixed(1);
         totalEl.style.color = Math.abs(total - 100) < 0.01 ? '#15803d' : '#b91c1c';
+    }
+    if (remainingEl) {
+        const delta = 100 - total;
+        const absDelta = Math.abs(delta);
+        remainingEl.textContent = absDelta.toFixed(1) + '%';
+        if (remainingLabelEl) {
+            remainingLabelEl.textContent = delta >= 0 ? 'Remaining' : 'Over by';
+        }
+    }
+    if (statusEl) {
+        const isValid = Math.abs(total - 100) < 0.01;
+        statusEl.className = 'kba-weight-status ' + (isValid ? 'is-valid' : 'is-invalid');
+    }
+    if (saveBtn) {
+        saveBtn.disabled = Math.abs(total - 100) >= 0.01;
     }
 }
 
@@ -1923,6 +1994,27 @@ document.getElementById('addUserForm')?.addEventListener('submit', function (e) 
     }
 });
 updateKbaWeightTotal();
+
+// ── Settings navigation ───────────────────────────────────────────────────
+document.querySelectorAll('.settings-nav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-settings-target');
+        if (!targetId) return;
+
+        document.querySelectorAll('.settings-nav button').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+
+        document.querySelectorAll('.settings-panel').forEach(panel => {
+            panel.classList.toggle('is-active', panel.id === targetId);
+        });
+
+        const targetPanel = document.getElementById(targetId);
+        if (targetPanel) {
+            const top = targetPanel.getBoundingClientRect().top + window.scrollY - 10;
+            window.scrollTo({ top, behavior: 'smooth' });
+        }
+    });
+});
 </script>
 EOD;
 
