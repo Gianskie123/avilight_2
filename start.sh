@@ -67,6 +67,15 @@ chmod -R 775 /var/www/html/api_models || true
 echo "[MODELS] Model storage ready ✅"
 
 # ─────────────────────────────────────────────
+# 4b. Fix permissions on species images volume
+# (Railway mounts volumes as root:root 755 — fix at runtime)
+# ─────────────────────────────────────────────
+mkdir -p /var/www/html/assets/species_images
+chown -R www-data:www-data /var/www/html/assets/species_images || true
+chmod -R 775 /var/www/html/assets/species_images || true
+echo "[IMAGES] Species images directory ready ✅"
+
+# ─────────────────────────────────────────────
 # 5. Start Python FastAPI backend (background)
 # ─────────────────────────────────────────────
 echo "[PYTHON] Starting FastAPI on port 8000..."
