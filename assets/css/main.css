@@ -1022,6 +1022,8 @@ tr:hover {
 
 .dashboard-map-col {
     min-height: 0;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .dashboard-map-col #map {

@@ -188,7 +188,7 @@ try {
 <div class="dashboard-layout">
     <!-- Left column: Map -->
     <div class="dashboard-map-col">
-        <div style="position: relative; display: flex; flex-direction: column; height: 100%;">
+        <div style="position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
             <style>
                 .risk-site-panel {
                     display: flex;
@@ -341,36 +341,38 @@ try {
                     </select>
                 </div>
 
-                <div id="historicalOverlayControls" style="display:none; width:100%; gap:10px; align-items:center; flex-wrap:wrap; padding-top:8px; border-top:1px solid var(--border-color);">
-                    <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Overlay:</span>
-                    <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; color:var(--text-secondary);">
-                        <input type="checkbox" id="obsToggle" checked onchange="loadHistoricalData()">
-                        Observation Data
-                    </label>
-                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Bird:</label>
-                    <input id="birdFilterInput" class="btn btn-secondary btn-sm" type="search" list="birdFilterOptions" placeholder="All birds" style="padding:3px 6px; min-width:180px;" onchange="loadHistoricalData()">
-                    <datalist id="birdFilterOptions"></datalist>
-                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Migration:</label>
-                    <select id="migrationFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
-                        <option value="">All</option>
-                        <option value="Resident">Resident</option>
-                        <option value="Migratory">Migratory</option>
-                    </select>
-                    <label style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Light:</label>
-                    <select id="lightFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
-                        <option value="">All</option>
-                        <option value="Tolerant">Light-tolerant</option>
-                        <option value="Sensitive">Light-sensitive</option>
-                    </select>
-                    <select id="envDataSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="onEnvDataTypeChange()">
-                        <option value="">Environmental Data (None)</option>
-                        <option value="land_cover">Land Cover</option>
-                        <option value="ndvi">NDVI</option>
-                        <option value="viirs">VIIRS</option>
-                        <option value="precip">Precip</option>
-                        <option value="land_temp">Land Temp</option>
-                    </select>
-                    <div id="landCoverChecklist" style="display:none; align-items:center; gap:6px; flex-wrap:wrap; border:1px solid var(--border-color); border-radius:8px; padding:5px 8px; background:var(--bg-card-alt);">
+                <!-- ── Historical overlay controls: two sub-rows ── -->
+                <div id="historicalOverlayControls" style="display:none; width:100%; flex-direction:column; gap:0; padding-top:8px; border-top:1px solid var(--border-color);">
+
+                    <!-- Sub-row A: Observation toggle · Map Overlay · Filters toggle -->
+                    <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <label style="display:flex; align-items:center; gap:5px; font-size:0.78rem; color:var(--text-secondary); white-space:nowrap;">
+                            <input type="checkbox" id="obsToggle" checked onchange="loadHistoricalData()">
+                            Observations
+                        </label>
+                        <div style="width:1px; height:20px; background:var(--border-color); flex-shrink:0;"></div>
+                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Overlay:</span>
+                        <select id="envDataSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="onEnvDataTypeChange()">
+                            <option value="">Environmental Data (None)</option>
+                            <option value="land_cover">Land Cover</option>
+                            <option value="ndvi">NDVI</option>
+                            <option value="viirs">VIIRS</option>
+                            <option value="precip">Precip</option>
+                            <option value="land_temp">Land Temp</option>
+                        </select>
+                        <select id="landTempPeriod" class="btn btn-secondary btn-sm" style="display:none; padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                            <option value="day">Land Temp: Day</option>
+                            <option value="night">Land Temp: Night</option>
+                        </select>
+                        <div style="flex:1;"></div>
+                        <button type="button" id="histFiltersToggle" onclick="toggleHistFilters()"
+                            style="font-size:0.78rem; color:var(--text-secondary); background:var(--bg-input); border:1px solid var(--border-color); border-radius:6px; padding:3px 10px; cursor:pointer; white-space:nowrap; line-height:1.5;">
+                            &#9881; Filters &#9660;
+                        </button>
+                    </div>
+
+                    <!-- Land-cover checklist (shown when overlay = land_cover) -->
+                    <div id="landCoverChecklist" style="display:none; align-items:center; gap:6px; flex-wrap:wrap; border:1px solid var(--border-color); border-radius:8px; padding:5px 8px; margin-top:6px; background:var(--bg-card-alt);">
                         <span style="font-size:0.74rem; color:var(--text-muted); margin-right:4px;">Land Cover:</span>
                         <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Urban &amp; Built-up" checked onchange="loadHistoricalData()">Urban &amp; Built-up</label>
                         <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Water Bodies" checked onchange="loadHistoricalData()">Water Bodies</label>
@@ -382,10 +384,27 @@ try {
                         <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Cropland Mosaics" checked onchange="loadHistoricalData()">Cropland Mosaics</label>
                         <label style="display:flex; align-items:center; gap:4px; font-size:0.74rem; color:var(--text-secondary);"><input type="checkbox" class="land-cover-toggle" value="Barren" checked onchange="loadHistoricalData()">Barren</label>
                     </div>
-                    <select id="landTempPeriod" class="btn btn-secondary btn-sm" style="display:none; padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
-                        <option value="day">Land Temp: Day</option>
-                        <option value="night">Land Temp: Night</option>
-                    </select>
+
+                    <!-- Sub-row B: Bird / Migration / Light filters (collapsible) -->
+                    <div id="histFilterRow" style="display:none; align-items:center; flex-wrap:wrap; gap:8px; padding-top:8px; border-top:1px solid var(--border-color); margin-top:8px;">
+                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Bird:</span>
+                        <input id="birdFilterInput" class="btn btn-secondary btn-sm" type="search" list="birdFilterOptions" placeholder="All birds" style="padding:3px 6px; width:160px;" onchange="loadHistoricalData()">
+                        <datalist id="birdFilterOptions"></datalist>
+                        <div style="width:1px; height:20px; background:var(--border-color); flex-shrink:0;"></div>
+                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Migration:</span>
+                        <select id="migrationFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                            <option value="">All</option>
+                            <option value="Resident">Resident</option>
+                            <option value="Migratory">Migratory</option>
+                        </select>
+                        <div style="width:1px; height:20px; background:var(--border-color); flex-shrink:0;"></div>
+                        <span style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">Light:</span>
+                        <select id="lightFilterSelect" class="btn btn-secondary btn-sm" style="padding:3px 6px; cursor:pointer;" onchange="loadHistoricalData()">
+                            <option value="">All</option>
+                            <option value="Tolerant">Light-tolerant</option>
+                            <option value="Sensitive">Light-sensitive</option>
+                        </select>
+                    </div>
                 </div>
 
             </div>
@@ -397,7 +416,7 @@ try {
                 <div class="risk-site-list" id="riskSiteList"></div>
             </div>
 
-            <div style="position: relative; flex: 1;">
+            <div style="position: relative; flex: 1; overflow: hidden;">
             <div id="map"></div>
 
             <!-- Risk Zones legend -->
@@ -490,21 +509,21 @@ try {
                 <div class="section-title">Risk Zone Recent Updates</div>
                 <div class="activity-feed">
                     <div class="activity-item">
-                        <div class="activity-icon red">⚠</div>
+                        <div class="activity-icon blue" id="riskIconBird">&#8644;</div>
                         <div class="activity-text">
                             <strong id="recentBirdChange">Bird richness change vs previous year pending</strong>
                             <span id="recentBirdPeriod">2014 vs 2013</span>
                         </div>
                     </div>
                     <div class="activity-item">
-                        <div class="activity-icon green">✓</div>
+                        <div class="activity-icon blue" id="riskIconViirs">&#8644;</div>
                         <div class="activity-text">
                             <strong id="recentViirsChange">Avg VIIRS change vs previous year pending</strong>
                             <span id="recentViirsPeriod">2014 vs 2013</span>
                         </div>
                     </div>
                     <div class="activity-item">
-                        <div class="activity-icon blue">⏱</div>
+                        <div class="activity-icon blue" id="riskIconMonitor">&#8596;</div>
                         <div class="activity-text">
                             <strong id="recentMonitoringStatus">Monitoring period comparison active</strong>
                             <span id="recentMonitoringPeriod">2014 vs 2013</span>
@@ -539,11 +558,12 @@ try {
             </div>
 
             <div class="dash-stat-card" id="histObsCard" style="margin-bottom:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <div class="dash-stat-label" style="margin:0;">Observation Count Per Category</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                    <div class="dash-stat-label" style="margin:0;">Recorded Species by Category</div>
                     <span id="histObsHeaderBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2025 · All</span>
                 </div>
                 <div id="histObsHeaderMeta" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px;">2025 · All · Metro Manila (0 sites)</div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:8px;">Unique species per site, summed across observed sites</div>
                 <div id="histObsBars" style="display:flex; flex-direction:column; gap:6px;"></div>
                 <div id="histObsTotal" style="margin-top:8px; font-size:0.82rem; color:var(--text-secondary);">Total: 0 spp.</div>
             </div>
@@ -565,21 +585,21 @@ try {
                 </div>
                 <div class="activity-feed" style="margin:0;">
                     <div class="activity-item">
-                        <div class="activity-icon green">↗</div>
+                        <div class="activity-icon blue" id="histIconBird">&#8644;</div>
                         <div class="activity-text">
                             <strong id="histRecentBird">Bird richness increase by 0.0% vs 2024</strong>
                             <span id="histRecentBirdSub">2025 vs 2024 (annual)</span>
                         </div>
                     </div>
                     <div class="activity-item">
-                        <div class="activity-icon" style="background:rgba(234,179,8,0.18); color:#facc15;">△</div>
+                        <div class="activity-icon blue" id="histIconViirs">&#8644;</div>
                         <div class="activity-text">
                             <strong id="histRecentViirs">Avg VIIRS increase by 0.0 nW vs 2024</strong>
                             <span id="histRecentViirsSub">2025 vs 2024 (annual)</span>
                         </div>
                     </div>
                     <div class="activity-item">
-                        <div class="activity-icon blue">i</div>
+                        <div class="activity-icon blue" id="histIconMonitor">&#8596;</div>
                         <div class="activity-text">
                             <strong id="histRecentMonitor">Monitoring period: 2024–2025 comparison active</strong>
                             <span id="histRecentMonitorSub">Annual summary</span>
@@ -745,7 +765,13 @@ function renderRiskSiteList() {
                 '<span class="risk-site-item-name">' + zone.name + '</span>' +
                 '<span class="risk-site-item-actions" onclick="event.stopPropagation();">' +
                     '<input class="risk-site-toggle" type="checkbox" checked aria-label="Toggle ' + zone.name.replace(/"/g, '&quot;') + '" onchange="setRiskZoneVisible(' + index + ', this.checked)">' +
-                    '<button class="risk-site-focus" type="button" aria-label="Focus ' + zone.name.replace(/"/g, '&quot;') + '" onclick="event.stopPropagation(); focusRiskZone(' + index + ')">⌖</button>' +
+                    '<button class="risk-site-focus" type="button" aria-label="Focus ' + zone.name.replace(/"/g, '&quot;') + '" onclick="event.stopPropagation(); focusRiskZone(' + index + ')">' +
+                        '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">' +
+                            '<line x1="5.5" y1="0" x2="5.5" y2="11"/>' +
+                            '<line x1="0" y1="5.5" x2="11" y2="5.5"/>' +
+                            '<circle cx="5.5" cy="5.5" r="2.4"/>' +
+                        '</svg>' +
+                    '</button>' +
                 '</span>' +
             '</button>';
     }).join('');
@@ -2527,9 +2553,14 @@ function renderHistoricalRecentUpdates(selections) {
         : 'Bird richness baseline period selected (no previous comparison)';
     document.getElementById('histRecentBirdSub').textContent = hasPrev ? (currentPeriodLabel + ' vs ' + previousPeriodLabel) : (currentPeriodLabel + ' baseline');
 
+    var envDelta = null;
+    var envIsBeneficialWhenDown = false;
     if (selections.envType && currentSummary.envAverage !== null) {
         if (hasPrev && previousSummary && previousSummary.envAverage !== null) {
-            document.getElementById('histRecentViirs').textContent = formatChangeStatement(currentSummary.envLabel || 'Environmental overlay', currentSummary.envAverage - previousSummary.envAverage, currentSummary.envUnit, currentSummary.envDecimals);
+            envDelta = currentSummary.envAverage - previousSummary.envAverage;
+            document.getElementById('histRecentViirs').textContent = formatChangeStatement(currentSummary.envLabel || 'Environmental overlay', envDelta, currentSummary.envUnit, currentSummary.envDecimals);
+            // VIIRS and land temp going up are generally bad for birds; NDVI/precip going up is good
+            envIsBeneficialWhenDown = (selections.envType === 'viirs' || selections.envType === 'land_temp');
         } else {
             document.getElementById('histRecentViirs').textContent = (currentSummary.envLabel || 'Environmental overlay') + ': ' + currentSummary.envAverage.toFixed(currentSummary.envDecimals) + currentSummary.envUnit;
         }
@@ -2542,6 +2573,17 @@ function renderHistoricalRecentUpdates(selections) {
         ? ('Monitoring period: ' + currentPeriodLabel + ' comparison active')
         : ('Monitoring period: ' + currentPeriodLabel + ' baseline active');
     document.getElementById('histRecentMonitorSub').textContent = selections.month > 0 ? 'Selected month comparison' : 'Annual summary';
+
+    // Update historical icons dynamically
+    applyActivityIcon('histIconBird', birdDelta, hasPrev, false);
+    if (envDelta !== null) {
+        applyActivityIcon('histIconViirs', envDelta, true, envIsBeneficialWhenDown);
+    } else {
+        var histViirsIconEl = document.getElementById('histIconViirs');
+        if (histViirsIconEl) { histViirsIconEl.className = 'activity-icon blue'; histViirsIconEl.innerHTML = '&#8644;'; }
+    }
+    var histMonitorIconEl = document.getElementById('histIconMonitor');
+    if (histMonitorIconEl) { histMonitorIconEl.className = 'activity-icon blue'; histMonitorIconEl.innerHTML = '&#8596;'; }
 }
 
 function loadHistoricalData() {
@@ -2661,6 +2703,13 @@ function setMapView(view) {
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
     } else {
+        // Collapse filter sub-row when leaving historical view
+        histFiltersVisible = false;
+        var filterRow = document.getElementById('histFilterRow');
+        var filterBtn = document.getElementById('histFiltersToggle');
+        if (filterRow) filterRow.style.display = 'none';
+        if (filterBtn) filterBtn.innerHTML = '&#9881; Filters &#9660;';
+
         resetHistoricalSiteDetailPanel();
         clearHistoricalTypingTimers();
         clearHistoricalAutoSequenceTimers();
@@ -2669,6 +2718,15 @@ function setMapView(view) {
         playRiskViewAnimation();
         prepareRiskSidebarAutoReveal();
     }
+}
+
+var histFiltersVisible = false;
+function toggleHistFilters() {
+    histFiltersVisible = !histFiltersVisible;
+    var row = document.getElementById('histFilterRow');
+    var btn = document.getElementById('histFiltersToggle');
+    if (row) row.style.display = histFiltersVisible ? 'flex' : 'none';
+    if (btn) btn.innerHTML = histFiltersVisible ? '&#9881; Filters &#9650;' : '&#9881; Filters &#9660;';
 }
 
 var histEnvToggleEl = document.getElementById('histEnvToggle');
@@ -2902,6 +2960,31 @@ function updateBirdTrendMeta(currentYear, currentStats, previousStats) {
     peakDeltaTextEl.textContent = 'Peak ' + phrase + ' by ' + Math.abs(peakPctDelta).toFixed(1) + '% vs ' + (currentYear - 1);
 }
 
+function applyActivityIcon(iconId, delta, hasPrev, isBeneficialWhenDown) {
+    var el = document.getElementById(iconId);
+    if (!el) return;
+    el.className = 'activity-icon';
+    el.style.cssText = '';
+    if (!hasPrev) {
+        el.className = 'activity-icon blue';
+        el.innerHTML = '&#8644;';
+        return;
+    }
+    var isPositive = delta > 0.05;
+    var isNegative = delta < -0.05;
+    if (isBeneficialWhenDown) {
+        // e.g. VIIRS: going down is good (green), going up is bad (red)
+        if (isNegative)      { el.className = 'activity-icon green'; el.innerHTML = '&#8595;'; }
+        else if (isPositive) { el.className = 'activity-icon red';   el.innerHTML = '&#8593;'; }
+        else                 { el.className = 'activity-icon blue';  el.innerHTML = '&#8644;'; }
+    } else {
+        // e.g. Bird richness: going up is good (green), going down is bad (red)
+        if (isPositive)      { el.className = 'activity-icon green'; el.innerHTML = '&#8593;'; }
+        else if (isNegative) { el.className = 'activity-icon red';   el.innerHTML = '&#8595;'; }
+        else                 { el.className = 'activity-icon blue';  el.innerHTML = '&#8644;'; }
+    }
+}
+
 function updateRecentUpdates(currentYear, birdPctDelta, viirsDelta) {
     var prevYear = currentYear - 1;
     var hasPrev = birdRichnessData.hasOwnProperty(prevYear);
@@ -2934,6 +3017,15 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsDelta) {
             : ('Monitoring period: ' + currentYear + ' baseline year active');
     }
     if (monitorPeriodEl) monitorPeriodEl.textContent = periodLabel;
+
+    // Update icons dynamically based on direction and ecological meaning
+    applyActivityIcon('riskIconBird',    birdPctDelta, hasPrev, false); // richness up = good
+    applyActivityIcon('riskIconViirs',   viirsDelta,   hasPrev, true);  // VIIRS up = bad
+    var monitorIconEl = document.getElementById('riskIconMonitor');
+    if (monitorIconEl) {
+        monitorIconEl.className = 'activity-icon blue';
+        monitorIconEl.innerHTML = '&#8596;';
+    }
 }
 
 function updateYearDrivenUpdatesOnly(currentYear) {
