@@ -313,8 +313,8 @@ $edit_total = $no_category_count;
     <?php
     $tol_val = strtolower($species['light_tolerance']);
     $mig_val = strtolower($species['migration_status']);
-    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-success' : 'badge-warning';
-    $migration_class = $mig_val === 'resident'  ? 'badge-success' : 'badge-info';
+    $tolerance_class = $tol_val === 'tolerant'  ? 'badge-tolerant' : 'badge-sensitive';
+    $migration_class = $mig_val === 'resident'  ? 'badge-resident' : 'badge-migratory';
     $tol_label = ucfirst($tol_val);
     $mig_label = ucfirst($mig_val);
 
@@ -730,8 +730,8 @@ function renderSpeciesCard(sp) {
     var mig      = (sp.migration_status || '').toLowerCase();
     var tolLabel = tol ? tol.charAt(0).toUpperCase() + tol.slice(1) : '';
     var migLabel = mig ? mig.charAt(0).toUpperCase() + mig.slice(1) : '';
-    var tolClass = tol === 'tolerant' ? 'badge-success' : (tol ? 'badge-warning' : '');
-    var migClass = mig === 'resident' ? 'badge-success' : (mig ? 'badge-info'    : '');
+    var tolClass = tol === 'tolerant' ? 'badge-tolerant' : (tol ? 'badge-sensitive' : '');
+    var migClass = mig === 'resident' ? 'badge-resident' : (mig ? 'badge-migratory' : '');
     var imgSrc   = escapeHtml(sp.image_path  || '');
     var webpSrc  = escapeHtml(sp.webp_path   || '');
     var altText  = escapeHtml(sp.common_name || '');
@@ -836,8 +836,8 @@ function showSpeciesDetails(speciesId) {
     const mig      = (species.migration_status || '').toLowerCase();
     const tolLabel = tol.charAt(0).toUpperCase() + tol.slice(1);
     const migLabel = mig.charAt(0).toUpperCase() + mig.slice(1);
-    const tolClass = tol === 'tolerant'  ? 'badge-success' : 'badge-warning';
-    const migClass = mig === 'resident'  ? 'badge-success' : 'badge-info';
+    const tolClass = tol === 'tolerant'  ? 'badge-tolerant' : 'badge-sensitive';
+    const migClass = mig === 'resident'  ? 'badge-resident' : 'badge-migratory';
 
     const description = (species.description && species.description.trim())
         ? species.description.trim()
