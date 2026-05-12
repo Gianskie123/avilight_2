@@ -140,14 +140,16 @@ try {
             }
         }
 
+        // Use a tolerance match instead of exact equality to handle floating-point
+        // precision differences between grid_cells_json and the viirs table storage.
         $siteYearStmt = $mysql->query("SELECT
                 c.area_name,
                 v.year,
                 AVG(NULLIF(v.viirs_avg_rad, 0)) AS site_viirs_year
             FROM tmp_dashboard_risk_cells c
             JOIN viirs v
-                ON v.latitude = c.lat
-               AND v.longitude = c.lon
+                ON ABS(v.latitude  - c.lat) < 0.00005
+               AND ABS(v.longitude - c.lon) < 0.00005
             WHERE v.year BETWEEN 2014 AND 2025
             GROUP BY c.area_name, v.year
             ORDER BY c.area_name ASC, v.year ASC");
@@ -189,6 +191,27 @@ try {
             'lst' => isset($histRow['lst_avg']) ? (float) $histRow['lst_avg'] : null,
             'precipitation' => isset($histRow['precipitation_total']) ? (float) $histRow['precipitation_total'] : null,
         ];
+    }
+
+    // For any KBA/PA site and year where the coordinate-based join returned no data,
+    // fill from the city-level ecological_yearly_summary (graceful degradation).
+    foreach (array_keys($kba_coords) as $siteName) {
+        $city = $risk_city_map[$siteName] ?? null;
+        if (!$city) {
+            continue;
+        }
+        for ($yr = 2014; $yr <= 2025; $yr++) {
+            if (isset($risk_site_yearly[$siteName][$yr])) {
+                continue; // coordinate-level data already present
+            }
+            $cityViirs = $historical_env_yearly[$yr][$city]['viirs'] ?? null;
+            if ($cityViirs !== null) {
+                if (!isset($risk_site_yearly[$siteName])) {
+                    $risk_site_yearly[$siteName] = [];
+                }
+                $risk_site_yearly[$siteName][$yr] = (float) $cityViirs;
+            }
+        }
     }
 } catch (Throwable $e) {
     $kba_data = json_decode((string) file_get_contents('data/sample_kba.json'), true) ?: [];
@@ -494,7 +517,7 @@ try {
                     <div class="dash-stat-label">Light Intensity <span id="lightIntensityYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
                     <div>
                         <span class="dash-stat-value" id="lightIntensityValue">0.0 nW</span>
-                        <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0 nW</span>
+                        <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0%</span>
                     </div>
                     <div class="dash-stat-desc">
                         Metro Manila avg. VIIRS night-light radiance for the selected year. Higher intensity correlates with larger, brighter circles on the map and increased disturbance risk to bird species.
@@ -3036,7 +3059,8 @@ function applyActivityIcon(iconId, delta, hasPrev, isBeneficialWhenDown) {
     }
 }
 
-function updateRecentUpdates(currentYear, birdPctDelta, viirsDelta) {
+// viirsPctDelta is a percentage (getPctDelta result), not absolute nW.
+function updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta) {
     var prevYear = currentYear - 1;
     var hasPrev = birdRichnessData.hasOwnProperty(prevYear);
     var periodLabel = hasPrev ? (currentYear + ' vs ' + prevYear) : (currentYear + ' baseline year');
@@ -3057,7 +3081,7 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsDelta) {
 
     if (viirsChangeEl) {
         viirsChangeEl.textContent = hasPrev
-            ? formatChangeStatement('Avg VIIRS', viirsDelta, ' nW', 1)
+            ? formatChangeStatement('Avg VIIRS radiance', viirsPctDelta, '%', 1)
             : 'Avg VIIRS baseline year selected (no previous-year comparison)';
     }
     if (viirsPeriodEl) viirsPeriodEl.textContent = periodLabel;
@@ -3070,8 +3094,8 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsDelta) {
     if (monitorPeriodEl) monitorPeriodEl.textContent = periodLabel;
 
     // Update icons dynamically based on direction and ecological meaning
-    applyActivityIcon('riskIconBird',    birdPctDelta, hasPrev, false); // richness up = good
-    applyActivityIcon('riskIconViirs',   viirsDelta,   hasPrev, true);  // VIIRS up = bad
+    applyActivityIcon('riskIconBird',    birdPctDelta,   hasPrev, false); // richness up = good
+    applyActivityIcon('riskIconViirs',   viirsPctDelta, hasPrev, true);  // VIIRS up = bad
     var monitorIconEl = document.getElementById('riskIconMonitor');
     if (monitorIconEl) {
         monitorIconEl.className = 'activity-icon blue';
@@ -3144,18 +3168,20 @@ function updateYearDrivenUpdatesOnly(currentYear) {
 
     if (previousRiskSummary && previousViirs !== null) {
         var zonesPctDelta = getPctDelta(currentRiskSummary.atRiskZones, previousRiskSummary.atRiskZones);
-        var viirsDelta = currentViirs - previousViirs;
-        // Both metrics: higher = ecologically worse → invert colors
-        updateTrendBadge('atRiskZonesTrend',    zonesPctDelta, '%',   1, null, true);
-        updateTrendBadge('lightIntensityTrend', viirsDelta,    ' nW', 1, null, true);
+        // Use percentage delta for light intensity — consistent with at-risk zones badge
+        // and more meaningful than raw nW difference across different baseline years.
+        var viirsPctDelta = getPctDelta(currentViirs, previousViirs);
+        // Both metrics: higher = ecologically worse → invert colors (green ↘ = good)
+        updateTrendBadge('atRiskZonesTrend',    zonesPctDelta, '%', 1, null, true);
+        updateTrendBadge('lightIntensityTrend', viirsPctDelta, '%', 1, null, true);
 
         var currentBirdStats = getBirdYearStats(currentYear);
         var previousBirdStats = getBirdYearStats(previousYear);
         var birdPctDelta = getPctDelta(currentBirdStats.avg, previousBirdStats.avg);
-        updateRecentUpdates(currentYear, birdPctDelta, viirsDelta);
+        updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta);
     } else {
-        updateTrendBadge('atRiskZonesTrend', 0, '%', 1);
-        updateTrendBadge('lightIntensityTrend', 0, ' nW', 1);
+        updateTrendBadge('atRiskZonesTrend',    0, '%', 1);
+        updateTrendBadge('lightIntensityTrend', 0, '%', 1);
         updateRecentUpdates(currentYear, 0, 0);
     }
 }
