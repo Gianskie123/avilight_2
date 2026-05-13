@@ -14,7 +14,7 @@ $startYear = 2014;
 $endYear = 2025;
 
 try {
-    $pdo = get_db();
+    $pdo = get_mysql_db();
 
         $stmt = $pdo->prepare(
                 'SELECT year, month, AVG(unique_species_count) AS richness
