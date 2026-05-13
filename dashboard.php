@@ -2098,6 +2098,23 @@ function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
         sensitive: 0
     };
 
+    var citySummary = latestHistoricalContext && Array.isArray(latestHistoricalContext.citySummary)
+        ? latestHistoricalContext.citySummary
+        : null;
+    var citySummaryRow = citySummary
+        ? citySummary.find(function(item) {
+            return normalizeAreaKey(item.area || '') === cityNorm;
+        })
+        : null;
+
+    if (citySummaryRow) {
+        summary.richness = Number(citySummaryRow.total_unique || 0);
+        summary.resident = Number(citySummaryRow.total_resident || 0);
+        summary.migrant = Number(citySummaryRow.total_migrant || 0);
+        summary.tolerant = Number(citySummaryRow.total_tolerant || 0);
+        summary.sensitive = Number(citySummaryRow.total_sensitive || 0);
+    }
+
     cityRows.forEach(function(site) {
         var siteSpecies = parseSpeciesList(site.species_list);
         siteSpecies.forEach(function(name) {
@@ -2106,17 +2123,21 @@ function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
         });
 
         maxSiteRichness = Math.max(maxSiteRichness, toNumber(site.total_unique));
-        summary.resident += toNumber(site.total_resident);
-        summary.migrant += toNumber(site.total_migrant);
-        summary.tolerant += toNumber(site.total_tolerant);
-        summary.sensitive += toNumber(site.total_sensitive);
+        if (!citySummaryRow) {
+            summary.resident += toNumber(site.total_resident);
+            summary.migrant += toNumber(site.total_migrant);
+            summary.tolerant += toNumber(site.total_tolerant);
+            summary.sensitive += toNumber(site.total_sensitive);
+        }
     });
 
     // City richness should represent unique species, not sum of per-site richness.
-    summary.richness = speciesSet.size > 0 ? speciesSet.size : maxSiteRichness;
+    if (!citySummaryRow) {
+        summary.richness = speciesSet.size > 0 ? speciesSet.size : maxSiteRichness;
+    }
 
     // Keep category counts consistent with city-level unique species richness.
-    if (speciesSet.size > 0 && speciesLookup && typeof speciesLookup === 'object') {
+    if (!citySummaryRow && speciesSet.size > 0 && speciesLookup && typeof speciesLookup === 'object') {
         var lookedUpSpecies = 0;
         var residentCount = 0;
         var migrantCount = 0;
@@ -2193,7 +2214,14 @@ function renderHistoricalMap(rows, selections, options) {
     var preserveObservation = !!options.preserveObservation;
     rows = rows || [];
 
-    latestHistoricalContext = { rows: rows, selections: selections, envRows: [] };
+    var priorContext = latestHistoricalContext || {};
+    latestHistoricalContext = {
+        rows: rows,
+        selections: selections,
+        envRows: [],
+        summary: options.summary || priorContext.summary || null,
+        citySummary: options.citySummary || priorContext.citySummary || null
+    };
 
     clearHistoricalEnvLayers();
     if (!selections.showObservation) {
@@ -2442,20 +2470,28 @@ function updateEnvironmentalLegend(selections) {
     wrap.style.display = 'block';
 }
 
-function renderObservationSidebar(rows, selections) {
+function renderObservationSidebar(rows, selections, summary) {
     var resident = 0;
     var migrant = 0;
     var tolerant = 0;
     var sensitive = 0;
     var total = 0;
 
-    rows.forEach(function(site) {
-        resident += toNumber(site.total_resident);
-        migrant += toNumber(site.total_migrant);
-        tolerant += toNumber(site.total_tolerant);
-        sensitive += toNumber(site.total_sensitive);
-        total += toNumber(site.total_unique);
-    });
+    if (summary && typeof summary === 'object') {
+        resident = toNumber(summary.resident);
+        migrant = toNumber(summary.migrant);
+        tolerant = toNumber(summary.tolerant);
+        sensitive = toNumber(summary.sensitive);
+        total = toNumber(summary.total_unique);
+    } else {
+        rows.forEach(function(site) {
+            resident += toNumber(site.total_resident);
+            migrant += toNumber(site.total_migrant);
+            tolerant += toNumber(site.total_tolerant);
+            sensitive += toNumber(site.total_sensitive);
+            total += toNumber(site.total_unique);
+        });
+    }
 
     var maxCategory = Math.max(resident, migrant, tolerant, sensitive, 1);
     var bars = [
@@ -2513,7 +2549,14 @@ function renderEnvironmentalSidebar(rows, selections) {
     var coverageFeatures = getCoverageFeaturesForSelections(selections);
     var envRows = buildMunicipalityEnvRows(selections, coverageFeatures);
 
-    latestHistoricalContext = { rows: rows, selections: selections, envRows: envRows };
+    var priorContext = latestHistoricalContext || {};
+    latestHistoricalContext = {
+        rows: rows,
+        selections: selections,
+        envRows: envRows,
+        summary: priorContext.summary || null,
+        citySummary: priorContext.citySummary || null
+    };
 
     var avgEl = document.getElementById('histEnvAvg');
     if (selections.envType !== 'land_cover' && envRows.length) {
@@ -2650,6 +2693,15 @@ function loadHistoricalData() {
     updateEnvironmentalLegend(selections);
 
     var url = 'api/get_historical_data.php?year=' + year + (month > 0 ? '&month=' + month : '');
+    if (selections.selectedBird) {
+        url += '&bird=' + encodeURIComponent(selections.selectedBird);
+    }
+    if (selections.migrationFilter) {
+        url += '&migration=' + encodeURIComponent(selections.migrationFilter);
+    }
+    if (selections.lightFilter) {
+        url += '&light=' + encodeURIComponent(selections.lightFilter);
+    }
     fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(resp) {
@@ -2658,7 +2710,7 @@ function loadHistoricalData() {
                 latestHistoricalRows = [];
                 lastHistoricalObservationKey = '';
                 clearHistoricalLayers();
-                renderObservationSidebar([], selections);
+                renderObservationSidebar([], selections, null);
                 renderEnvironmentalSidebar([], selections);
                 renderHistoricalRecentUpdates(selections);
                 prepareHistoricalDeferredPanels();
@@ -2671,15 +2723,17 @@ function loadHistoricalData() {
                 lastHistoricalObservationKey === observationKey;
 
             var rawRows = resp.data || [];
-            var filteredRows = rawRows.filter(function(site) {
-                return siteMatchesHistoricalFilters(site, selections);
-            });
+            var filteredRows = rawRows;
+            var summary = resp.summary || null;
+            var citySummary = resp.city_summary || null;
 
             latestHistoricalRows = filteredRows;
             renderHistoricalMap(filteredRows, selections, {
-                preserveObservation: preserveObservation
+                preserveObservation: preserveObservation,
+                summary: summary,
+                citySummary: citySummary
             });
-            renderObservationSidebar(filteredRows, selections);
+            renderObservationSidebar(filteredRows, selections, summary);
             renderEnvironmentalSidebar(filteredRows, selections);
             renderHistoricalRecentUpdates(selections);
             prepareHistoricalDeferredPanels();
@@ -3257,6 +3311,15 @@ function buildHistoricalSectionSummary(rows, selections, envRows) {
 
 function fetchHistoricalRowsForSelections(selections) {
     var url = 'api/get_historical_data.php?year=' + selections.year + (selections.month > 0 ? '&month=' + selections.month : '');
+    if (selections.selectedBird) {
+        url += '&bird=' + encodeURIComponent(selections.selectedBird);
+    }
+    if (selections.migrationFilter) {
+        url += '&migration=' + encodeURIComponent(selections.migrationFilter);
+    }
+    if (selections.lightFilter) {
+        url += '&light=' + encodeURIComponent(selections.lightFilter);
+    }
     return fetch(url)
         .then(function(resp) { return resp.json(); })
         .then(function(data) {

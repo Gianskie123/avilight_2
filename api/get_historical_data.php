@@ -15,6 +15,10 @@ require_once __DIR__ . '/../includes/db.php';
 
 $year  = isset($_GET['year'])  ? (int)$_GET['year']  : 0;
 $month = isset($_GET['month']) ? (int)$_GET['month'] : 0;
+$selectedBird = isset($_GET['bird']) ? trim((string) $_GET['bird']) : '';
+$migrationFilter = isset($_GET['migration']) ? trim((string) $_GET['migration']) : '';
+$lightFilter = isset($_GET['light']) ? trim((string) $_GET['light']) : '';
+$hasFilters = ($selectedBird !== '' || $migrationFilter !== '' || $lightFilter !== '');
 
 if ($year < 2000 || $year > 2100) {
     echo json_encode(['success' => false, 'error' => 'Invalid year']);
@@ -37,7 +41,7 @@ try {
         && in_array('latitude', $columns, true)
         && in_array('longitude', $columns, true);
 
-    if ($hasAggregatedColumns) {
+    if ($hasAggregatedColumns && !$hasFilters) {
         $selectSpeciesList = in_array('species_list', $columns, true)
             ? 'species_list'
             : "'' AS species_list";
@@ -106,9 +110,37 @@ try {
             && in_array('species_name', $rawColumns, true);
 
         if ($hasModernRaw) {
-            // Modern normalized schema.
+            $filterSql = 'rbo.year = :yr ';
+            $params = [
+                ':yr'      => $year,
+                ':lat_min' => $mm_lat_min,
+                ':lat_max' => $mm_lat_max,
+                ':lng_min' => $mm_lng_min,
+                ':lng_max' => $mm_lng_max,
+            ];
+            if ($month >= 1 && $month <= 12) {
+                $filterSql .= 'AND rbo.month = :mo ';
+                $params[':mo'] = $month;
+            }
+            $filterSql .= 'AND rbo.latitude BETWEEN :lat_min AND :lat_max '
+                . 'AND rbo.longitude BETWEEN :lng_min AND :lng_max '
+                . 'AND rbo.latitude != 0 AND rbo.longitude != 0 ';
+
+            if ($selectedBird !== '') {
+                $filterSql .= 'AND LOWER(TRIM(sm.species_name)) = :bird ';
+                $params[':bird'] = strtolower($selectedBird);
+            }
+            if ($migrationFilter !== '') {
+                $filterSql .= 'AND LOWER(TRIM(sm.migratory_status)) = :migration ';
+                $params[':migration'] = strtolower($migrationFilter);
+            }
+            if ($lightFilter !== '') {
+                $filterSql .= 'AND LOWER(TRIM(sm.light_tolerance)) = :light ';
+                $params[':light'] = strtolower($lightFilter);
+            }
+
             $sql = "SELECT
-                    GROUP_CONCAT(DISTINCT sm.common_name ORDER BY sm.common_name SEPARATOR ', ') AS species_list,
+                    GROUP_CONCAT(DISTINCT sm.species_name ORDER BY sm.species_name SEPARATOR ', ') AS species_list,
                     COALESCE(NULLIF(rbo.site_name, ''), 'Observation Site') AS site_name,
                     rbo.latitude AS latitude,
                     rbo.longitude AS longitude,
@@ -119,18 +151,18 @@ try {
                     COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive,
                     COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident' THEN rbo.species_id END) AS total_resident,
                     COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END) AS total_migrant,
-                    SUM(COALESCE(rbo.count, 0)) AS total_count
+                    SUM(COALESCE(rbo.bird_count, 0)) AS total_count
                 FROM raw_bird_observation rbo
                 LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
-                WHERE rbo.year = :yr "
-                . ($month >= 1 && $month <= 12 ? 'AND rbo.month = :mo ' : '')
-                . 'AND rbo.latitude  BETWEEN :lat_min AND :lat_max
-                AND rbo.longitude BETWEEN :lng_min AND :lng_max
-                AND rbo.latitude != 0 AND rbo.longitude != 0
+                WHERE {$filterSql}
                 GROUP BY site_name, rbo.latitude, rbo.longitude, rbo.month, rbo.year
-                ORDER BY total_unique DESC';
+                ORDER BY total_unique DESC";
 
             $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } elseif ($hasLegacyRaw) {
+            $filterSql = 'YEAR(rbo.submission_date) = :yr ';
             $params = [
                 ':yr'      => $year,
                 ':lat_min' => $mm_lat_min,
@@ -139,12 +171,18 @@ try {
                 ':lng_max' => $mm_lng_max,
             ];
             if ($month >= 1 && $month <= 12) {
+                $filterSql .= 'AND MONTH(rbo.submission_date) = :mo ';
                 $params[':mo'] = $month;
             }
-            $stmt->execute($params);
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } elseif ($hasLegacyRaw) {
-            // Legacy raw schema found in some deployments.
+            $filterSql .= 'AND rbo.location_lat BETWEEN :lat_min AND :lat_max '
+                . 'AND rbo.location_long BETWEEN :lng_min AND :lng_max '
+                . 'AND rbo.location_lat != 0 AND rbo.location_long != 0 ';
+
+            if ($selectedBird !== '') {
+                $filterSql .= 'AND LOWER(TRIM(rbo.species_name)) = :bird ';
+                $params[':bird'] = strtolower($selectedBird);
+            }
+
             $sql = "SELECT
                     GROUP_CONCAT(DISTINCT rbo.species_name ORDER BY rbo.species_name SEPARATOR ', ') AS species_list,
                     COALESCE(NULLIF(rbo.habitat_type, ''), 'Observation Site') AS site_name,
@@ -159,25 +197,11 @@ try {
                     0 AS total_migrant,
                     SUM(COALESCE(rbo.count, 0)) AS total_count
                 FROM raw_bird_observation rbo
-                WHERE YEAR(rbo.submission_date) = :yr "
-                . ($month >= 1 && $month <= 12 ? 'AND MONTH(rbo.submission_date) = :mo ' : '')
-                . 'AND rbo.location_lat  BETWEEN :lat_min AND :lat_max
-                AND rbo.location_long BETWEEN :lng_min AND :lng_max
-                AND rbo.location_lat != 0 AND rbo.location_long != 0
+                WHERE {$filterSql}
                 GROUP BY site_name, ROUND(rbo.location_lat, 4), ROUND(rbo.location_long, 4), MONTH(rbo.submission_date), YEAR(rbo.submission_date)
-                ORDER BY total_unique DESC';
+                ORDER BY total_unique DESC";
 
             $stmt = $pdo->prepare($sql);
-            $params = [
-                ':yr'      => $year,
-                ':lat_min' => $mm_lat_min,
-                ':lat_max' => $mm_lat_max,
-                ':lng_min' => $mm_lng_min,
-                ':lng_max' => $mm_lng_max,
-            ];
-            if ($month >= 1 && $month <= 12) {
-                $params[':mo'] = $month;
-            }
             $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } else {
@@ -185,7 +209,95 @@ try {
         }
     }
 
-    echo json_encode(['success' => true, 'data' => $rows]);
+    $summary = [
+        'total_unique' => 0,
+        'resident' => 0,
+        'migrant' => 0,
+        'tolerant' => 0,
+        'sensitive' => 0,
+    ];
+    $citySummary = [];
+
+    if (isset($hasModernRaw) && $hasModernRaw) {
+        $summaryFilterSql = 'rbo.year = :yr ';
+        $summaryParams = [
+            ':yr'      => $year,
+            ':lat_min' => $mm_lat_min,
+            ':lat_max' => $mm_lat_max,
+            ':lng_min' => $mm_lng_min,
+            ':lng_max' => $mm_lng_max,
+        ];
+        if ($month >= 1 && $month <= 12) {
+            $summaryFilterSql .= 'AND rbo.month = :mo ';
+            $summaryParams[':mo'] = $month;
+        }
+        $summaryFilterSql .= 'AND rbo.latitude BETWEEN :lat_min AND :lat_max '
+            . 'AND rbo.longitude BETWEEN :lng_min AND :lng_max '
+            . 'AND rbo.latitude != 0 AND rbo.longitude != 0 ';
+
+        if ($selectedBird !== '') {
+            $summaryFilterSql .= 'AND LOWER(TRIM(sm.species_name)) = :bird ';
+            $summaryParams[':bird'] = strtolower($selectedBird);
+        }
+        if ($migrationFilter !== '') {
+            $summaryFilterSql .= 'AND LOWER(TRIM(sm.migratory_status)) = :migration ';
+            $summaryParams[':migration'] = strtolower($migrationFilter);
+        }
+        if ($lightFilter !== '') {
+            $summaryFilterSql .= 'AND LOWER(TRIM(sm.light_tolerance)) = :light ';
+            $summaryParams[':light'] = strtolower($lightFilter);
+        }
+
+        $summarySql = "SELECT
+                COUNT(DISTINCT rbo.species_id) AS total_unique,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident' THEN rbo.species_id END) AS total_resident,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END) AS total_migrant,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'tolerant' THEN rbo.species_id END) AS total_tolerant,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive
+            FROM raw_bird_observation rbo
+            LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
+            WHERE {$summaryFilterSql}";
+
+        $summaryStmt = $pdo->prepare($summarySql);
+        $summaryStmt->execute($summaryParams);
+        $summaryRow = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $summary = [
+            'total_unique' => (int) ($summaryRow['total_unique'] ?? 0),
+            'resident' => (int) ($summaryRow['total_resident'] ?? 0),
+            'migrant' => (int) ($summaryRow['total_migrant'] ?? 0),
+            'tolerant' => (int) ($summaryRow['total_tolerant'] ?? 0),
+            'sensitive' => (int) ($summaryRow['total_sensitive'] ?? 0),
+        ];
+
+        $gridEpsilon = 0.0001;
+        $citySql = "SELECT
+                cgm.area AS area,
+                COUNT(DISTINCT rbo.species_id) AS total_unique,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident' THEN rbo.species_id END) AS total_resident,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END) AS total_migrant,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'tolerant' THEN rbo.species_id END) AS total_tolerant,
+                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive
+            FROM raw_bird_observation rbo
+            INNER JOIN city_grid_map cgm
+                ON ABS(cgm.lat - rbo.grid_lat) <= :grid_eps
+               AND ABS(cgm.lon - rbo.grid_lon) <= :grid_eps
+            LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
+            WHERE {$summaryFilterSql}
+            GROUP BY cgm.area
+            ORDER BY cgm.area";
+
+        $cityStmt = $pdo->prepare($citySql);
+        $summaryParams[':grid_eps'] = $gridEpsilon;
+        $cityStmt->execute($summaryParams);
+        $citySummary = $cityStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    echo json_encode([
+        'success' => true,
+        'data' => $rows,
+        'summary' => $summary,
+        'city_summary' => $citySummary,
+    ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
