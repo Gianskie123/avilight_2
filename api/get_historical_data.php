@@ -126,16 +126,20 @@ try {
                 . 'AND rbo.latitude != 0 AND rbo.longitude != 0 ';
 
             if ($selectedBird !== '') {
-                $filterSql .= 'AND LOWER(TRIM(sm.species_name)) = :bird ';
-                $params[':bird'] = strtolower($selectedBird);
+                $filterSql .= 'AND sm.species_name = :bird ';
+                $params[':bird'] = $selectedBird;
             }
             if ($migrationFilter !== '') {
-                $filterSql .= 'AND LOWER(TRIM(sm.migratory_status)) = :migration ';
-                $params[':migration'] = strtolower($migrationFilter);
+                // Map migration filter to numeric code: 'resident' = 0, 'migratory' = 1
+                $migrationCode = ($migrationFilter === 'resident') ? 0 : 1;
+                $filterSql .= 'AND sm.migratory_status_code = :migration ';
+                $params[':migration'] = $migrationCode;
             }
             if ($lightFilter !== '') {
-                $filterSql .= 'AND LOWER(TRIM(sm.light_tolerance)) = :light ';
-                $params[':light'] = strtolower($lightFilter);
+                // Map light filter to numeric code: 'sensitive' = 0, 'tolerant' = 1
+                $lightCode = ($lightFilter === 'sensitive') ? 0 : 1;
+                $filterSql .= 'AND sm.light_tolerance_code = :light ';
+                $params[':light'] = $lightCode;
             }
 
             $sql = "SELECT
@@ -146,10 +150,10 @@ try {
                     rbo.month AS month,
                     rbo.year AS year,
                     COUNT(DISTINCT rbo.species_id) AS total_unique,
-                    COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'tolerant' THEN rbo.species_id END) AS total_tolerant,
-                    COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive,
-                    COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident' THEN rbo.species_id END) AS total_resident,
-                    COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END) AS total_migrant,
+                    COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 1 THEN rbo.species_id END) AS total_tolerant,
+                    COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 0 THEN rbo.species_id END) AS total_sensitive,
+                    COUNT(DISTINCT CASE WHEN sm.migratory_status_code = 0 THEN rbo.species_id END) AS total_resident,
+                    COUNT(DISTINCT CASE WHEN sm.migratory_status_code = 1 THEN rbo.species_id END) AS total_migrant,
                     SUM(COALESCE(rbo.bird_count, 0)) AS total_count
                 FROM raw_bird_observation rbo
                 LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
@@ -235,24 +239,26 @@ try {
             . 'AND rbo.latitude != 0 AND rbo.longitude != 0 ';
 
         if ($selectedBird !== '') {
-            $summaryFilterSql .= 'AND LOWER(TRIM(sm.species_name)) = :bird ';
-            $summaryParams[':bird'] = strtolower($selectedBird);
+            $summaryFilterSql .= 'AND sm.species_name = :bird ';
+            $summaryParams[':bird'] = $selectedBird;
         }
         if ($migrationFilter !== '') {
-            $summaryFilterSql .= 'AND LOWER(TRIM(sm.migratory_status)) = :migration ';
-            $summaryParams[':migration'] = strtolower($migrationFilter);
+            $migrationCode = ($migrationFilter === 'resident') ? 0 : 1;
+            $summaryFilterSql .= 'AND sm.migratory_status_code = :migration ';
+            $summaryParams[':migration'] = $migrationCode;
         }
         if ($lightFilter !== '') {
-            $summaryFilterSql .= 'AND LOWER(TRIM(sm.light_tolerance)) = :light ';
-            $summaryParams[':light'] = strtolower($lightFilter);
+            $lightCode = ($lightFilter === 'sensitive') ? 0 : 1;
+            $summaryFilterSql .= 'AND sm.light_tolerance_code = :light ';
+            $summaryParams[':light'] = $lightCode;
         }
 
         $summarySql = "SELECT
                 COUNT(DISTINCT rbo.species_id) AS total_unique,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident' THEN rbo.species_id END) AS total_resident,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END) AS total_migrant,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'tolerant' THEN rbo.species_id END) AS total_tolerant,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive
+                COUNT(DISTINCT CASE WHEN sm.migratory_status_code = 0 THEN rbo.species_id END) AS total_resident,
+                COUNT(DISTINCT CASE WHEN sm.migratory_status_code = 1 THEN rbo.species_id END) AS total_migrant,
+                COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 1 THEN rbo.species_id END) AS total_tolerant,
+                COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 0 THEN rbo.species_id END) AS total_sensitive
             FROM raw_bird_observation rbo
             LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
             WHERE {$summaryFilterSql}";
@@ -268,18 +274,18 @@ try {
             'sensitive' => (int) ($summaryRow['total_sensitive'] ?? 0),
         ];
 
-        $gridEpsilon = 0.0001;
+        // Use exact grid matching instead of floating-point epsilon comparison for better performance
         $citySql = "SELECT
                 cgm.area AS area,
                 COUNT(DISTINCT rbo.species_id) AS total_unique,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'resident' THEN rbo.species_id END) AS total_resident,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.migratory_status)) = 'migratory' THEN rbo.species_id END) AS total_migrant,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'tolerant' THEN rbo.species_id END) AS total_tolerant,
-                COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive
+                COUNT(DISTINCT CASE WHEN sm.migratory_status_code = 0 THEN rbo.species_id END) AS total_resident,
+                COUNT(DISTINCT CASE WHEN sm.migratory_status_code = 1 THEN rbo.species_id END) AS total_migrant,
+                COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 1 THEN rbo.species_id END) AS total_tolerant,
+                COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 0 THEN rbo.species_id END) AS total_sensitive
             FROM raw_bird_observation rbo
             INNER JOIN city_grid_map cgm
-                ON ABS(cgm.lat - rbo.grid_lat) <= {$gridEpsilon}
-               AND ABS(cgm.lon - rbo.grid_lon) <= {$gridEpsilon}
+                ON cgm.lat = rbo.grid_lat
+               AND cgm.lon = rbo.grid_lon
             LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
             WHERE {$summaryFilterSql}
             GROUP BY cgm.area
