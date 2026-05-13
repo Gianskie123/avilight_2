@@ -41,6 +41,18 @@ try {
         && in_array('latitude', $columns, true)
         && in_array('longitude', $columns, true);
 
+    $rawColumns = $pdo->query('SHOW COLUMNS FROM raw_bird_observation')->fetchAll(PDO::FETCH_COLUMN);
+    $hasModernRaw = in_array('year', $rawColumns, true)
+        && in_array('month', $rawColumns, true)
+        && in_array('latitude', $rawColumns, true)
+        && in_array('longitude', $rawColumns, true)
+        && in_array('species_id', $rawColumns, true);
+
+    $hasLegacyRaw = in_array('submission_date', $rawColumns, true)
+        && in_array('location_lat', $rawColumns, true)
+        && in_array('location_long', $rawColumns, true)
+        && in_array('species_name', $rawColumns, true);
+
     if ($hasAggregatedColumns && !$hasFilters) {
         $selectSpeciesList = in_array('species_list', $columns, true)
             ? 'species_list'
@@ -96,19 +108,6 @@ try {
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $rawColumns = $pdo->query('SHOW COLUMNS FROM raw_bird_observation')->fetchAll(PDO::FETCH_COLUMN);
-
-        $hasModernRaw = in_array('year', $rawColumns, true)
-            && in_array('month', $rawColumns, true)
-            && in_array('latitude', $rawColumns, true)
-            && in_array('longitude', $rawColumns, true)
-            && in_array('species_id', $rawColumns, true);
-
-        $hasLegacyRaw = in_array('submission_date', $rawColumns, true)
-            && in_array('location_lat', $rawColumns, true)
-            && in_array('location_long', $rawColumns, true)
-            && in_array('species_name', $rawColumns, true);
-
         if ($hasModernRaw) {
             $filterSql = 'rbo.year = :yr ';
             $params = [
@@ -218,7 +217,7 @@ try {
     ];
     $citySummary = [];
 
-    if (isset($hasModernRaw) && $hasModernRaw) {
+    if ($hasModernRaw) {
         $summaryFilterSql = 'rbo.year = :yr ';
         $summaryParams = [
             ':yr'      => $year,
