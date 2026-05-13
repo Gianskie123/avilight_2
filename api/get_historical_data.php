@@ -278,15 +278,14 @@ try {
                 COUNT(DISTINCT CASE WHEN LOWER(TRIM(sm.light_tolerance)) = 'sensitive' THEN rbo.species_id END) AS total_sensitive
             FROM raw_bird_observation rbo
             INNER JOIN city_grid_map cgm
-                ON ABS(cgm.lat - rbo.grid_lat) <= :grid_eps
-               AND ABS(cgm.lon - rbo.grid_lon) <= :grid_eps
+                ON ABS(cgm.lat - rbo.grid_lat) <= {$gridEpsilon}
+               AND ABS(cgm.lon - rbo.grid_lon) <= {$gridEpsilon}
             LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
             WHERE {$summaryFilterSql}
             GROUP BY cgm.area
             ORDER BY cgm.area";
 
         $cityStmt = $pdo->prepare($citySql);
-        $summaryParams[':grid_eps'] = $gridEpsilon;
         $cityStmt->execute($summaryParams);
         $citySummary = $cityStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
