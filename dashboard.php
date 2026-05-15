@@ -103,11 +103,21 @@ try {
     }
 
     // ecological_yearly_summary — Metro Manila aggregate for the information cards.
-    $histStmt = $mysql->query("SELECT area, year, viirs_avg, ndvi_avg, lst_avg, precipitation_total
-        FROM ecological_yearly_summary
-        WHERE year BETWEEN 2014 AND 2025
-          AND area IS NOT NULL
-        ORDER BY year ASC, area ASC");
+    // Join a subquery that averages lst_night_avg per area/year from the monthly table,
+    // so that night temperature is available in yearly (all-months) view too.
+    $histStmt = $mysql->query("SELECT eys.area, eys.year,
+            eys.viirs_avg, eys.ndvi_avg, eys.lst_avg, eys.precipitation_total,
+            ems_night.lst_night_yearly
+        FROM ecological_yearly_summary eys
+        LEFT JOIN (
+            SELECT area, year, AVG(lst_night_avg) AS lst_night_yearly
+            FROM ecological_monthly_summary
+            WHERE lst_night_avg IS NOT NULL
+            GROUP BY area, year
+        ) ems_night ON LOWER(eys.area) = ems_night.area AND eys.year = ems_night.year
+        WHERE eys.year BETWEEN 2014 AND 2025
+          AND eys.area IS NOT NULL
+        ORDER BY eys.year ASC, eys.area ASC");
     $histRows = $histStmt ? ($histStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
     foreach ($histRows as $histRow) {
         $year = (int) ($histRow['year'] ?? 0);
@@ -119,9 +129,10 @@ try {
             $historical_env_yearly[$year] = [];
         }
         $historical_env_yearly[$year][$area] = [
-            'viirs' => isset($histRow['viirs_avg']) ? (float) $histRow['viirs_avg'] : null,
-            'ndvi' => isset($histRow['ndvi_avg']) ? (float) $histRow['ndvi_avg'] : null,
-            'lst' => isset($histRow['lst_avg']) ? (float) $histRow['lst_avg'] : null,
+            'viirs'      => isset($histRow['viirs_avg'])        ? (float) $histRow['viirs_avg']        : null,
+            'ndvi'       => isset($histRow['ndvi_avg'])         ? (float) $histRow['ndvi_avg']         : null,
+            'lst'        => isset($histRow['lst_avg'])          ? (float) $histRow['lst_avg']          : null,
+            'lst_night'  => isset($histRow['lst_night_yearly']) ? (float) $histRow['lst_night_yearly'] : null,
             'precipitation' => isset($histRow['precipitation_total']) ? (float) $histRow['precipitation_total'] : null,
         ];
     }
@@ -1859,9 +1870,6 @@ function getHistoricalEnvConfig(envType, landTempPeriod) {
     if (envType === 'land_temp') {
         var isNight = landTempPeriod === 'night';
         return {
-            // key is used for the yearly-data fallback; night has no yearly breakdown so use
-            // 'lst_night' which won't exist in yearly data — this correctly shows no data
-            // rather than silently displaying day values.
             key: isNight ? 'lst_night' : 'lst',
             monthlyKey: isNight ? 'lst_night' : 'lst',
             label: isNight ? 'Land Temp (Night)' : 'Land Temp (Day)',
