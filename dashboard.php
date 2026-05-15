@@ -52,7 +52,7 @@ $risk_site_yearly      = [];
 $kbaSiteYearly         = [];  // [year][siteName] = annual viirs avg from kba_pa_monthly_stats
 $kbaAllYearlyViirs     = [];  // [year] = avg viirs across all sites
 $kbaMonthlySpecies     = [];  // [year] = 12-element array of monthly species sums
-$kbaSiteAnnualSpecies  = [];  // [siteName][year] = avg monthly species count (multi-line chart)
+$kbaSiteMonthlySpecies = [];  // [siteName][year][monthIndex] = species_count from kba_pa_monthly_stats
 $risk_snapshot_year    = 2025;
 $risk_city_map = [
     'Las Piñas-Parañaque Wetland Park' => 'Las Piñas',
@@ -114,8 +114,7 @@ try {
              ORDER BY year ASC, kba_pa_name ASC, month ASC"
         );
         $kmsRows = $kmsStmt ? $kmsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
-        $siteYearViirs   = [];
-        $siteYearSpecies = [];
+        $siteYearViirs = [];
         foreach ($kmsRows as $r) {
             $yr      = (int)   ($r['year']          ?? 0);
             $mo      = (int)   ($r['month']         ?? 0);
@@ -126,8 +125,9 @@ try {
             // Monthly species sums across all sites (0-indexed for JS array)
             if (!isset($kbaMonthlySpecies[$yr])) $kbaMonthlySpecies[$yr] = array_fill(0, 12, 0);
             $kbaMonthlySpecies[$yr][$mo - 1] += $species;
-            // Per-site monthly species for multi-line chart
-            $siteYearSpecies[$name][$yr][] = $species;
+            // Per-site monthly species count (0-indexed) for multi-line chart
+            if (!isset($kbaSiteMonthlySpecies[$name][$yr])) $kbaSiteMonthlySpecies[$name][$yr] = array_fill(0, 12, 0);
+            $kbaSiteMonthlySpecies[$name][$yr][$mo - 1] = $species;
             // Collect monthly viirs per site to average annually
             if ($viirs !== null) {
                 $siteYearViirs[$name][$yr][] = $viirs;
@@ -145,13 +145,6 @@ try {
             $filtered = array_filter($siteVals, function ($v) { return $v !== null; });
             if (count($filtered) > 0) {
                 $kbaAllYearlyViirs[$yr] = round(array_sum($filtered) / count($filtered), 4);
-            }
-        }
-        // Per-site average monthly species per year (multi-line chart datasets)
-        foreach ($siteYearSpecies as $sName => $yearData) {
-            foreach ($yearData as $sYr => $counts) {
-                if (!isset($kbaSiteAnnualSpecies[$sName])) $kbaSiteAnnualSpecies[$sName] = [];
-                $kbaSiteAnnualSpecies[$sName][$sYr] = round(array_sum($counts) / count($counts), 1);
             }
         }
     } catch (Throwable $_) { /* kba_pa_monthly_stats may not exist yet; degraded gracefully */ }
@@ -728,7 +721,7 @@ $risk_site_yearly_json      = json_encode($risk_site_yearly,      JSON_UNESCAPED
 $kba_site_yearly_json         = json_encode($kbaSiteYearly,         JSON_UNESCAPED_UNICODE);
 $kba_all_yearly_viirs_json    = json_encode($kbaAllYearlyViirs,     JSON_UNESCAPED_UNICODE);
 $kba_monthly_species_json     = json_encode($kbaMonthlySpecies,     JSON_UNESCAPED_UNICODE);
-$kba_site_annual_species_json = json_encode($kbaSiteAnnualSpecies,  JSON_UNESCAPED_UNICODE);
+$kba_site_monthly_species_json = json_encode($kbaSiteMonthlySpecies, JSON_UNESCAPED_UNICODE);
 $risk_snapshot_year_json    = json_encode($risk_snapshot_year);
 
 $extra_scripts = <<<SCRIPTS
@@ -742,7 +735,7 @@ var riskSiteYearly    = {$risk_site_yearly_json};
 var kbaSiteYearly        = {$kba_site_yearly_json};         // {year: {siteName: annualViirs}}
 var kbaAllYearlyViirs    = {$kba_all_yearly_viirs_json};    // {year: allSitesAvgViirs}
 var kbaMonthlySpecies    = {$kba_monthly_species_json};     // {year: [12 monthly species sums]}
-var kbaSiteAnnualSpecies = {$kba_site_annual_species_json}; // {siteName: {year: avgMonthlySpecies}}
+var kbaSiteMonthlySpecies = {$kba_site_monthly_species_json}; // {siteName: {year: [12 monthly species counts]}}
 var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
 var DASHBOARD_MAX_YEAR = 2025;
@@ -3371,14 +3364,16 @@ function updateBirdTrendMeta(currentYear, currentStats, previousStats) {
     if (peakTextEl) {
         var yearKey = String(currentYear);
         var topSite = null, topCount = -1;
-        if (kbaSiteAnnualSpecies) {
-            Object.keys(kbaSiteAnnualSpecies).forEach(function(site) {
-                var v = Number(kbaSiteAnnualSpecies[site][yearKey]);
-                if (!isNaN(v) && v > topCount) { topCount = v; topSite = site; }
+        if (kbaSiteMonthlySpecies) {
+            Object.keys(kbaSiteMonthlySpecies).forEach(function(site) {
+                var monthData = (kbaSiteMonthlySpecies[site] || {})[yearKey];
+                if (!monthData) return;
+                var peak = Math.max.apply(null, monthData.filter(function(v) { return v !== null; }));
+                if (peak > topCount) { topCount = peak; topSite = site; }
             });
         }
         peakTextEl.textContent = topSite
-            ? 'Top site (' + currentYear + '): ' + topSite + ' — ' + topCount.toFixed(1) + ' avg species/mo'
+            ? 'Top site (' + currentYear + '): ' + topSite + ' — ' + topCount + ' species (peak month)'
             : 'Top site (' + currentYear + '): no data';
     }
 
@@ -3530,8 +3525,21 @@ function updateYearDrivenUpdatesOnly(currentYear) {
 }
 
 function updateChartForYear(year) {
-    // Chart shows all years at once; just redraw the selected-year highlight and update meta.
-    if (birdChart) birdChart.update('none');
+    if (birdChart) {
+        var yr = String(year);
+        birdChart.data.datasets.forEach(function(ds) {
+            var yearData = (kbaSiteMonthlySpecies[ds.label] || {})[yr];
+            ds.data = yearData ? yearData.slice() : new Array(12).fill(null);
+        });
+        var allValues = birdChart.data.datasets.reduce(function(acc, ds) {
+            return acc.concat(ds.data.filter(function(v) { return v !== null; }));
+        }, []);
+        if (allValues.length && birdChart.options.scales.y) {
+            var maxVal = Math.max.apply(null, allValues);
+            birdChart.options.scales.y.max = Math.ceil(maxVal * 1.2) || 10;
+        }
+        birdChart.update();
+    }
     var currentStats  = getBirdYearStats(year);
     var previousStats = (year > DASHBOARD_MIN_YEAR) ? getBirdYearStats(year - 1) : null;
     updateBirdTrendMeta(year, currentStats, previousStats);
@@ -3615,66 +3623,36 @@ function fetchHistoricalRowsForSelections(selections) {
         });
 }
 
-// Bird Richness Trend Chart — multi-line, one line per KBA/PA site, years on x-axis
+// Bird Richness Trend Chart — multi-line, one line per KBA/PA site, months on x-axis
 var SITE_PALETTE = ['#2563eb','#16a34a','#dc2626','#d97706','#8b5cf6','#0891b2'];
-var yearLabels = [];
-for (var _y = DASHBOARD_MIN_YEAR; _y <= DASHBOARD_MAX_YEAR; _y++) yearLabels.push(String(_y));
 
-var richnessSiteDatasets = [];
-var richnessSiteNames = Object.keys(kbaSiteAnnualSpecies || {}).sort();
-richnessSiteNames.forEach(function(siteName, idx) {
-    var color = SITE_PALETTE[idx % SITE_PALETTE.length];
-    var siteData = kbaSiteAnnualSpecies[siteName] || {};
-    var values = yearLabels.map(function(yr) {
-        var v = siteData[yr];
-        return (v !== undefined && v !== null) ? Number(v) : null;
+function buildSiteDatasets(year) {
+    var yr = String(year);
+    var datasets = [];
+    Object.keys(kbaSiteMonthlySpecies || {}).sort().forEach(function(siteName, idx) {
+        var color = SITE_PALETTE[idx % SITE_PALETTE.length];
+        var yearData = (kbaSiteMonthlySpecies[siteName] || {})[yr] || new Array(12).fill(null);
+        datasets.push({
+            label: siteName,
+            data: yearData.slice(),
+            borderColor: color,
+            backgroundColor: color + '1a',
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 7,
+            tension: 0.3,
+            fill: false
+        });
     });
-    richnessSiteDatasets.push({
-        label: siteName,
-        data: values,
-        borderColor: color,
-        backgroundColor: color + '1a',
-        borderWidth: 2.5,
-        pointRadius: 4,
-        pointHoverRadius: 7,
-        tension: 0.3,
-        fill: false,
-        spanGaps: true
-    });
-});
-
-// Plugin: draws a dashed vertical line at the selected year
-var selectedYearLinePlugin = {
-    id: 'selectedYearLine',
-    afterDraw: function(chart) {
-        var yr = String(getSelectedDashboardYear());
-        var idx = chart.data.labels ? chart.data.labels.indexOf(yr) : -1;
-        if (idx === -1 || !chart.data.datasets.length) return;
-        var meta0 = chart.getDatasetMeta(0);
-        if (!meta0 || !meta0.data || !meta0.data[idx]) return;
-        var x = meta0.data[idx].x;
-        var yScale = chart.scales['y'];
-        if (!yScale) return;
-        var c = chart.ctx;
-        c.save();
-        c.beginPath();
-        c.setLineDash([4, 4]);
-        c.strokeStyle = 'rgba(255,255,255,0.22)';
-        c.lineWidth = 1.5;
-        c.moveTo(x, yScale.top);
-        c.lineTo(x, yScale.bottom);
-        c.stroke();
-        c.restore();
-    }
-};
+    return datasets;
+}
 
 var ctx = document.getElementById('birdRichnessChart').getContext('2d');
 var birdChart = new Chart(ctx, {
     type: 'line',
-    plugins: [selectedYearLinePlugin],
     data: {
-        labels: yearLabels,
-        datasets: richnessSiteDatasets
+        labels: months,
+        datasets: buildSiteDatasets(riskSnapshotYear)
     },
     options: {
         responsive: true,
@@ -3683,14 +3661,12 @@ var birdChart = new Chart(ctx, {
         interaction: { mode: 'index', intersect: false },
         scales: {
             x: {
-                title: { display: true, text: 'Year', color: '#a0a4b0', font: { size: 11 } },
                 grid: { color: 'rgba(255,255,255,0.06)' },
                 ticks: { color: '#a0a4b0' }
             },
             y: {
                 beginAtZero: true,
                 min: 0,
-                title: { display: true, text: 'Avg species / month', color: '#a0a4b0', font: { size: 11 } },
                 grid: { color: 'rgba(255,255,255,0.06)' },
                 ticks: { color: '#a0a4b0' }
             }
@@ -3706,7 +3682,7 @@ var birdChart = new Chart(ctx, {
                     label: function(context) {
                         var v = context.parsed.y;
                         if (v === null || v === undefined) return context.dataset.label + ': —';
-                        return context.dataset.label + ': ' + Number(v).toFixed(1) + ' species/mo';
+                        return context.dataset.label + ': ' + Math.round(v) + ' species';
                     }
                 }
             }
