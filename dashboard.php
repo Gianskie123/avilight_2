@@ -556,14 +556,14 @@ try {
                         <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0%</span>
                     </div>
                     <div class="dash-stat-desc">
-                        Annual avg. VIIRS night-light radiance across Metro Manila cities for the selected year.
+                        Annual avg. VIIRS night-light radiance across Metro Manila cities for the selected year. The arrow and percentage indicate the change relative to the previous year — a downward trend signals reduced artificial light exposure.
                     </div>
                 </div>
             </div>
 
             <!-- Bird Richness Trend -->
             <div class="chart-card" id="riskBirdTrendCard">
-                <div class="section-title">KBA &amp; PA Bird Richness</div>
+                <div class="section-title">Metro Manila Bird Richness</div>
                 <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Monthly unique species observed across Metro Manila — hover for values</div>
                 <div class="bird-richness-controls">
                     <label class="slider-label" for="yearSlider">
@@ -3549,10 +3549,29 @@ function updateYearDrivenUpdatesOnly(currentYear) {
     }
 }
 
+function getBirdChartPointStyles(data) {
+    var maxVal = -Infinity, peakIdx = -1;
+    data.forEach(function(v, i) {
+        if (v !== null && v > maxVal) { maxVal = v; peakIdx = i; }
+    });
+    return {
+        pointBackgroundColor: data.map(function(_, i) { return i === peakIdx && peakIdx >= 0 ? '#facc15' : '#3b82f6'; }),
+        pointBorderColor:     data.map(function(_, i) { return i === peakIdx && peakIdx >= 0 ? '#f59e0b' : '#3b82f6'; }),
+        pointRadius:          data.map(function(_, i) { return i === peakIdx && peakIdx >= 0 ? 6 : 2.5; }),
+        pointHoverRadius:     data.map(function(_, i) { return i === peakIdx && peakIdx >= 0 ? 9 : 5; })
+    };
+}
+
 function updateChartForYear(year) {
     if (birdChart) {
         var yearData = birdRichnessData[year] || new Array(12).fill(0);
-        birdChart.data.datasets[0].data = yearData.slice();
+        var styles = getBirdChartPointStyles(yearData);
+        var ds = birdChart.data.datasets[0];
+        ds.data                 = yearData.slice();
+        ds.pointBackgroundColor = styles.pointBackgroundColor;
+        ds.pointBorderColor     = styles.pointBorderColor;
+        ds.pointRadius          = styles.pointRadius;
+        ds.pointHoverRadius     = styles.pointHoverRadius;
         var allValues = yearData.filter(function(v) { return v !== null && v > 0; });
         if (allValues.length && birdChart.options.scales.y) {
             var maxVal = Math.max.apply(null, allValues);
@@ -3645,21 +3664,25 @@ function fetchHistoricalRowsForSelections(selections) {
 
 // Bird Richness Trend Chart — single line, Metro Manila unique species per month
 var ctx = document.getElementById('birdRichnessChart').getContext('2d');
+var _birdInitData   = birdRichnessData[riskSnapshotYear] || new Array(12).fill(0);
+var _birdInitStyles = getBirdChartPointStyles(_birdInitData);
 var birdChart = new Chart(ctx, {
     type: 'line',
     data: {
         labels: months,
         datasets: [{
             label: 'Metro Manila',
-            data: birdRichnessData[riskSnapshotYear] || new Array(12).fill(0),
+            data: _birdInitData,
             borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59,130,246,0.08)',
+            backgroundColor: 'rgba(59,130,246,0.13)',
             borderWidth: 2,
             borderDash: [5, 4],
-            pointRadius: 2.5,
-            pointHoverRadius: 5,
+            pointBackgroundColor: _birdInitStyles.pointBackgroundColor,
+            pointBorderColor:     _birdInitStyles.pointBorderColor,
+            pointRadius:          _birdInitStyles.pointRadius,
+            pointHoverRadius:     _birdInitStyles.pointHoverRadius,
             tension: 0.3,
-            fill: false
+            fill: true
         }]
     },
     options: {
