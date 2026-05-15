@@ -575,13 +575,16 @@ try {
             </div>
 
             <div class="dash-stat-card" id="histEnvCard" style="display:none; margin-bottom:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                     <div class="dash-stat-label" id="histEnvTitle" style="margin:0;">Environmental Data</div>
-                    <span id="histEnvBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2025 · All</span>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <button id="histEnvSortBtn" onclick="toggleEnvSort()" style="font-size:0.68rem; color:var(--text-muted); background:var(--bg-input); border:1px solid var(--border-color); border-radius:999px; padding:2px 8px; cursor:pointer; line-height:1.5;" title="Toggle sort order">▼ Value</button>
+                        <span id="histEnvBadge" style="font-size:0.72rem; color:var(--text-muted); background:var(--bg-input); border-radius:999px; padding:2px 8px;">2025 · All</span>
+                    </div>
                 </div>
-                <div id="histEnvAvg" style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px; display:none;"></div>
-                <div id="histEnvRows" style="display:flex; flex-direction:column; gap:4px;"></div>
-                <div id="histEnvToggle" style="margin-top:10px; font-size:0.76rem; color:var(--text-muted); cursor:pointer; user-select:none;">See all cities</div>
+                <div id="histEnvAvg" style="font-size:0.76rem; color:var(--text-secondary); margin-bottom:8px; display:none;"></div>
+                <div id="histEnvRows" style="display:flex; flex-direction:column; gap:0;"></div>
+                <div id="histEnvToggle" style="margin-top:10px; font-size:0.75rem; color:var(--primary-color, #3b82f6); cursor:pointer; user-select:none; text-decoration:underline; text-underline-offset:2px;">See all cities</div>
             </div>
 
             <div class="dash-stat-card" style="margin-bottom:0;">
@@ -709,6 +712,7 @@ window.addEventListener('resize', function () {
 var dashboardMapSyncMq = window.matchMedia('(min-width: 1025px)');
 
 function syncDashboardMapHeight() {
+    if (typeof currentMapView !== 'undefined' && currentMapView === 'historical') return;
     var mapCol = document.querySelector('.dashboard-map-col');
     var sidebar = document.querySelector('.dashboard-sidebar');
     if (!mapCol || !sidebar) return;
@@ -1228,6 +1232,7 @@ var lastHistoricalObservationKey = '';
 var latestHistoricalContext = null;
 var selectedHistoricalSite = null;
 var envRowsExpanded = false;
+var envSortByValue = true; // true = descending value, false = alphabetical
 var historicalClickStep = 0;
 var historicalBarsAnimated = false;
 var HISTORICAL_DEFAULT_CITY = 'Metro Manila';
@@ -1960,13 +1965,11 @@ function getEnvColor(envType, valueObj, landCoverClass, landTempPeriod) {
     var value = valueObj ? valueObj.value : 0;
 
     if (envType === 'viirs') {
-        var hiT  = Number((dashboardThresholds && dashboardThresholds.high_risk) || 60);
-        var modT = Number((dashboardThresholds && dashboardThresholds.mod_risk)  || 40);
-        var loT  = Number((dashboardThresholds && dashboardThresholds.low_risk)  || 25);
-        if (value > hiT)  return '#7f1d1d'; // critical
-        if (value > modT) return '#ef4444'; // high
-        if (value > loT)  return '#f59e0b'; // moderate
-        return '#22c55e';                   // low
+        var modT = Number((dashboardThresholds && dashboardThresholds.mod_risk) || 40);
+        var loT  = Number((dashboardThresholds && dashboardThresholds.low_risk) || 25);
+        if (value >= modT) return '#ef4444'; // high (mod_risk and above)
+        if (value >= loT)  return '#f59e0b'; // moderate
+        return '#22c55e';                    // low (0 → low_risk)
     }
 
     if (envType === 'ndvi') {
@@ -2331,25 +2334,30 @@ function renderHistoricalMap(rows, selections, options) {
             sourceDict = historicalEnvYearly[String(selections.year)] || null;
         }
 
-        var cityEnvLayer = L.geoJSON(municipalityGeoData, {
-            style: function(feature) {
+        // Pre-compute per-city styles once so the style callback is a fast O(1) lookup.
+        var cityStyleCache = {};
+        if (municipalityGeoData) {
+            municipalityGeoData.features.forEach(function(feature) {
                 var cityName = getMunicipalityName(feature);
                 var cityKey  = cityName.toLowerCase();
-                // Try lowercase key (monthly data) then display-name key (yearly fallback).
-                var record = null;
-                if (sourceDict && mkey) {
-                    record = sourceDict[cityKey] || sourceDict[cityName] || null;
-                }
+                var record = (sourceDict && mkey)
+                    ? (sourceDict[cityKey] || sourceDict[cityName] || null)
+                    : null;
                 var value = (record && record[mkey] != null) ? Number(record[mkey]) : null;
-                var fillColor = value !== null
-                    ? getEnvColor(selections.envType, { value: value }, '', selections.landTempPeriod)
-                    : '#94a3b8';
-                return {
+                cityStyleCache[cityName] = {
                     color: '#ffffff',
                     weight: 0.8,
-                    fillColor: fillColor,
+                    fillColor: value !== null
+                        ? getEnvColor(selections.envType, { value: value }, '', selections.landTempPeriod)
+                        : '#94a3b8',
                     fillOpacity: value !== null ? 0.70 : 0.12
                 };
+            });
+        }
+        var cityEnvLayer = L.geoJSON(municipalityGeoData, {
+            style: function(feature) {
+                return cityStyleCache[getMunicipalityName(feature)]
+                    || { color: '#ffffff', weight: 0.8, fillColor: '#94a3b8', fillOpacity: 0.12 };
             },
             interactive: false
         }).addTo(map);
@@ -2504,11 +2512,22 @@ function renderHistoricalMap(rows, selections, options) {
 function getEnvironmentalLegendHTML(envType, landTempPeriod) {
     if (!envType) return '';
 
-    function legendRow(color, label) {
-        return '<div class="map-legend-item" style="margin-bottom:4px;">' +
-            '<span class="map-legend-dot" style="background:' + color + '; flex-shrink:0;"></span>' +
-            '<span style="font-size:0.74rem;">' + label + '</span>' +
-        '</div>';
+    function gradientLegend(title, gradient, ticks, labels) {
+        var tickHtml = ticks.map(function(t) {
+            return '<span style="font-size:0.68rem; color:var(--text-muted);">' + t + '</span>';
+        }).join('');
+        var labelHtml = '';
+        if (labels) {
+            labelHtml = '<div style="display:flex; justify-content:space-between; margin-top:2px; font-size:0.68rem; color:var(--text-muted);">' +
+                labels.map(function(l) { return '<span>' + l + '</span>'; }).join('') +
+            '</div>';
+        }
+        return '<div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">' + title + '</div>' +
+            '<div style="display:flex; align-items:center; gap:4px; margin-top:4px;">' +
+                '<div style="flex:1; height:10px; border-radius:3px; background:' + gradient + ';"></div>' +
+            '</div>' +
+            '<div style="display:flex; justify-content:space-between; margin-top:3px;">' + tickHtml + '</div>' +
+            labelHtml;
     }
 
     if (envType === 'land_cover') {
@@ -2523,47 +2542,60 @@ function getEnvironmentalLegendHTML(envType, landTempPeriod) {
             { label: 'Cropland Mosaics', color: '#f59e0b' },
             { label: 'Barren',           color: '#92400e' }
         ];
-        return lcItems.map(function(item) { return legendRow(item.color, item.label); }).join('');
+        return lcItems.map(function(item) {
+            return '<div class="map-legend-item" style="margin-bottom:3px;">' +
+                '<span class="map-legend-dot" style="background:' + item.color + '; flex-shrink:0;"></span>' +
+                '<span style="font-size:0.74rem;">' + item.label + '</span>' +
+            '</div>';
+        }).join('');
     }
 
     if (envType === 'viirs') {
         var loT  = Number((dashboardThresholds && dashboardThresholds.low_risk)  || 25);
         var modT = Number((dashboardThresholds && dashboardThresholds.mod_risk)  || 40);
         var hiT  = Number((dashboardThresholds && dashboardThresholds.high_risk) || 60);
-        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">VIIRS Night Light (nW/cm²/sr)</div>' +
-            legendRow('#22c55e', '&lt; '  + loT  + ' nW — Low') +
-            legendRow('#f59e0b', loT  + ' – ' + modT + ' nW — Moderate') +
-            legendRow('#ef4444', modT + ' – ' + hiT  + ' nW — High') +
-            legendRow('#7f1d1d', '&gt; '  + hiT  + ' nW — Critical');
+        return gradientLegend(
+            'VIIRS Night Light (nW/cm²/sr)',
+            'linear-gradient(to right,#22c55e,' + loT/hiT*50 + '%,#f59e0b,' + modT/hiT*80 + '%,#ef4444)',
+            ['0', loT, modT, hiT + '+'],
+            ['Low', '', 'Moderate', 'High']
+        );
     }
 
     if (envType === 'ndvi') {
-        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">NDVI (vegetation index)</div>' +
-            legendRow('#eab308', '&lt; 0.30 — Low vegetation') +
-            legendRow('#84cc16', '0.30 – 0.50 — Moderate') +
-            legendRow('#16a34a', '&gt; 0.50 — Good vegetation');
+        return gradientLegend(
+            'NDVI (vegetation index, 0–1)',
+            'linear-gradient(to right,#eab308,#84cc16,#16a34a)',
+            ['0', '0.30', '0.50', '1.0'],
+            ['Sparse', '', 'Moderate', 'Dense']
+        );
     }
 
     if (envType === 'precip') {
-        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">Precipitation (mm / month)</div>' +
-            legendRow('#93c5fd', '&lt; 100 mm — Dry') +
-            legendRow('#38bdf8', '100 – 200 mm — Moderate') +
-            legendRow('#0ea5e9', '&gt; 200 mm — Wet');
+        return gradientLegend(
+            'Avg Precipitation (mm / month)',
+            'linear-gradient(to right,#93c5fd,#38bdf8,#0ea5e9)',
+            ['0', '100', '200', '300+'],
+            ['Dry', '', 'Moderate', 'Wet']
+        );
     }
 
     if (envType === 'land_temp') {
         var isNight = landTempPeriod === 'night';
-        var title = isNight ? 'Land Surface Temp — Night (°C)' : 'Land Surface Temp — Day (°C)';
         if (isNight) {
-            return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">' + title + '</div>' +
-                legendRow('#22c55e', '&lt; 20 °C — Cool') +
-                legendRow('#f97316', '20 – 25 °C — Warm') +
-                legendRow('#ef4444', '&gt; 25 °C — Hot');
+            return gradientLegend(
+                'Land Surface Temp — Night (°C)',
+                'linear-gradient(to right,#22c55e,#f97316,#ef4444)',
+                ['15°', '20°', '25°', '32°+'],
+                ['Cool', '', 'Warm', 'Hot']
+            );
         }
-        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">' + title + '</div>' +
-            legendRow('#22c55e', '&lt; 27 °C — Cool') +
-            legendRow('#f97316', '27 – 31 °C — Warm') +
-            legendRow('#ef4444', '&gt; 31 °C — Hot');
+        return gradientLegend(
+            'Land Surface Temp — Day (°C)',
+            'linear-gradient(to right,#22c55e,#f97316,#ef4444)',
+            ['20°', '27°', '31°', '38°+'],
+            ['Cool', '', 'Warm', 'Hot']
+        );
     }
 
     return '';
@@ -2688,29 +2720,66 @@ function renderEnvironmentalSidebar(rows, selections) {
     renderEnvironmentalRows();
 }
 
+function toggleEnvSort() {
+    envSortByValue = !envSortByValue;
+    var btn = document.getElementById('histEnvSortBtn');
+    if (btn) btn.textContent = envSortByValue ? '▼ Value' : 'A–Z';
+    renderEnvironmentalRows();
+}
+
 function renderEnvironmentalRows() {
     if (!latestHistoricalContext) return;
 
-    var envRows = latestHistoricalContext.envRows || [];
-    var rowsToShow = envRowsExpanded ? envRows : envRows.slice(0, 5);
-    var rowsHtml = rowsToShow.map(function(item) {
-        return '<div style="display:flex; justify-content:space-between; align-items:center; font-size:0.76rem; color:var(--text-secondary); padding:2px 0;">' +
-            '<span class="hist-env-text">' + item.city + '</span>' +
-            '<span style="display:flex; align-items:center; gap:6px; color:' + item.color + '; font-weight:600;">' +
-                '<span class="hist-env-dot" style="display:inline-block; width:7px; height:7px; border-radius:999px; background:' + item.color + ';"></span>' +
-                '<span class="hist-env-text">' + item.label + ' ' + item.valueText + '</span>' +
-            '</span>' +
+    var envRows = (latestHistoricalContext.envRows || []).slice(); // shallow copy before sort
+
+    // Numeric values present → support sort; otherwise always alphabetical
+    var hasNumeric = envRows.length && envRows[0].numericValue != null;
+
+    if (envSortByValue && hasNumeric) {
+        envRows.sort(function(a, b) { return b.numericValue - a.numericValue; });
+    } else {
+        envRows.sort(function(a, b) { return a.city.localeCompare(b.city); });
+    }
+
+    var maxVal = hasNumeric ? Math.max.apply(null, envRows.map(function(r) { return r.numericValue || 0; })) : 1;
+    maxVal = maxVal || 1;
+
+    var rowsToShow = envRowsExpanded ? envRows : envRows.slice(0, 6);
+
+    var rowsHtml = rowsToShow.map(function(item, idx) {
+        // Show only the raw number — no label, no unit (header carries context)
+        var numStr = item.numericValue != null
+            ? (item.numericValue % 1 === 0
+                ? item.numericValue.toLocaleString()
+                : parseFloat(item.numericValue.toFixed(item.numericValue < 1 ? 2 : 1)).toLocaleString())
+            : item.valueText;
+
+        var barPct = hasNumeric ? Math.max(3, Math.round((item.numericValue / maxVal) * 100)) : 0;
+        var isLast = (idx === rowsToShow.length - 1);
+
+        return '<div style="padding:5px 0;' + (isLast ? '' : ' border-bottom:1px solid var(--border-color);') + '">' +
+            // City name + dotted leader + value
+            '<div style="display:flex; align-items:baseline; margin-bottom:3px;">' +
+                '<span class="hist-env-text" style="font-size:0.74rem; color:var(--text-secondary); white-space:nowrap;">' + escapeHtml(item.city) + '</span>' +
+                '<span style="flex:1; border-bottom:1px dotted var(--border-color); margin:0 5px 3px 5px;"></span>' +
+                '<span class="hist-env-text" style="font-size:0.74rem; font-weight:600; color:' + item.color + '; white-space:nowrap;">' + numStr + '</span>' +
+            '</div>' +
+            // Mini bar proportional to value
+            '<div style="height:3px; border-radius:2px; background:var(--bg-input); overflow:hidden;">' +
+                '<div style="height:100%; width:' + barPct + '%; background:' + item.color + '; border-radius:2px;"></div>' +
+            '</div>' +
         '</div>';
     }).join('');
 
-    document.getElementById('histEnvRows').innerHTML = rowsHtml || '<div style="font-size:0.76rem; color:var(--text-muted);">No matching environmental data for selected filter.</div>';
+    document.getElementById('histEnvRows').innerHTML = rowsHtml ||
+        '<div style="font-size:0.76rem; color:var(--text-muted); padding:4px 0;">No data for selected filter.</div>';
 
     var toggleEl = document.getElementById('histEnvToggle');
-    if (envRows.length <= 5) {
+    if (envRows.length <= 6) {
         toggleEl.style.display = 'none';
     } else {
         toggleEl.style.display = 'block';
-        toggleEl.textContent = envRowsExpanded ? 'See fewer cities' : ('See all ' + envRows.length + ' cities');
+        toggleEl.textContent = envRowsExpanded ? 'Show less' : ('Show all ' + envRows.length + ' cities');
     }
 }
 
@@ -2928,11 +2997,21 @@ function setMapView(view) {
     }
 
     if (isHist) {
+        // Set map to 2× natural height — fixed, not dynamic — to avoid resize-driven layout shift.
+        var mapCol = document.querySelector('.dashboard-map-col');
+        if (mapCol) {
+            mapCol.style.height = '';
+            var naturalH = mapCol.getBoundingClientRect().height || 600;
+            mapCol.style.height = (naturalH * 2) + 'px';
+        }
         map.fitBounds(MM_BOUNDS, { padding: [8, 8] });
         resetHistoricalSiteDetailPanel();
         prepareHistoricalDeferredPanels();
         loadHistoricalData();
     } else {
+        // Restore natural height when returning to risk view.
+        var mapColReset = document.querySelector('.dashboard-map-col');
+        if (mapColReset) mapColReset.style.height = '';
         // Collapse filter sub-row when leaving historical view
         histFiltersVisible = false;
         var filterRow = document.getElementById('histAdvancedFilters');
