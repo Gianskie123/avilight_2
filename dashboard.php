@@ -1762,7 +1762,7 @@ function showHistoricalSiteDetail(site) {
     ];
 
     var barsHtml = bars.map(function(item) {
-        var widthPct = Math.max(4, Math.round((item.value / maxCategory) * 100));
+        var widthPct = item.value > 0 ? Math.max(4, Math.round((item.value / maxCategory) * 100)) : 0;
         return '<div>' +
             '<div style="display:flex; justify-content:space-between; font-size:0.74rem; color:var(--text-secondary); margin-bottom:2px;">' +
                 '<span>' + escapeHtml(item.label) + '</span>' +
@@ -2038,10 +2038,14 @@ function buildMunicipalityEnvRows(selections, coverageFeatures) {
         if (!envConfig) return [];
 
         // Prefer monthly-specific data when a month is selected.
+        var usingMonthly = false;
         var sourceDict = null;
         if (selections.month > 0 && historicalEnvMonthly) {
             var mb = historicalEnvMonthly[String(selections.year)];
-            if (mb) sourceDict = mb[String(selections.month)] || null;
+            if (mb && mb[String(selections.month)]) {
+                sourceDict = mb[String(selections.month)];
+                usingMonthly = true;
+            }
         }
         // Fall back to annual averages.
         if (!sourceDict && historicalEnvYearly) {
@@ -2049,7 +2053,9 @@ function buildMunicipalityEnvRows(selections, coverageFeatures) {
         }
         if (!sourceDict) return [];
 
-        var mkey = envConfig.monthlyKey || envConfig.key;
+        // Monthly source uses monthlyKey (e.g. 'lst_night'); yearly source uses key (e.g. 'lst')
+        // since ecological_yearly_summary only stores a single LST column.
+        var mkey = usingMonthly ? (envConfig.monthlyKey || envConfig.key) : envConfig.key;
         var rowsFromSummary = Object.keys(sourceDict).map(function(cityKey) {
             var record = sourceDict[cityKey] || {};
             var numeric = record[mkey];
@@ -2323,16 +2329,23 @@ function renderHistoricalMap(rows, selections, options) {
         // Non-land_cover overlays: colour each city polygon from real ecological_monthly_summary
         // data (monthly when a specific month is selected, annual otherwise).
         var envConfig = getHistoricalEnvConfig(selections.envType, selections.landTempPeriod);
-        var mkey = envConfig ? (envConfig.monthlyKey || envConfig.key) : null;
 
+        var usingMonthlyOverlay = false;
         var sourceDict = null;
         if (selections.month > 0 && historicalEnvMonthly) {
             var mb = historicalEnvMonthly[String(selections.year)];
-            if (mb) sourceDict = mb[String(selections.month)] || null;
+            if (mb && mb[String(selections.month)]) {
+                sourceDict = mb[String(selections.month)];
+                usingMonthlyOverlay = true;
+            }
         }
         if (!sourceDict && historicalEnvYearly) {
             sourceDict = historicalEnvYearly[String(selections.year)] || null;
         }
+
+        var mkey = envConfig
+            ? (usingMonthlyOverlay ? (envConfig.monthlyKey || envConfig.key) : envConfig.key)
+            : null;
 
         // Pre-compute per-city styles once so the style callback is a fast O(1) lookup.
         var cityStyleCache = {};
@@ -2639,6 +2652,14 @@ function renderObservationSidebar(rows, selections, summary) {
         });
     }
 
+    // When a migration/light filter is active, the excluded category is definitionally zero.
+    var migF = String((selections && selections.migrationFilter) || '').toLowerCase();
+    var litF = String((selections && selections.lightFilter)     || '').toLowerCase();
+    if (migF === 'resident')  migrant   = 0;
+    if (migF === 'migratory') resident  = 0;
+    if (litF === 'tolerant')  sensitive = 0;
+    if (litF === 'sensitive') tolerant  = 0;
+
     var maxCategory = Math.max(resident, migrant, tolerant, sensitive, 1);
     var bars = [
         { label: 'Resident', value: resident, color: '#34d399' },
@@ -2648,7 +2669,7 @@ function renderObservationSidebar(rows, selections, summary) {
     ];
 
     var barsHtml = bars.map(function(item) {
-        var widthPct = Math.max(4, Math.round((item.value / maxCategory) * 100));
+        var widthPct = item.value > 0 ? Math.max(4, Math.round((item.value / maxCategory) * 100)) : 0;
         return '<div>' +
             '<div style="display:flex; justify-content:space-between; font-size:0.74rem; color:var(--text-secondary); margin-bottom:2px;">' +
                 '<span>' + item.label + '</span>' +
