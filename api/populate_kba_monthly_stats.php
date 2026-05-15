@@ -85,8 +85,8 @@ try {
             kba_pa_id BIGINT UNSIGNED NOT NULL,
             lat       DECIMAL(10,8)  NOT NULL,
             lon       DECIMAL(11,8)  NOT NULL,
-            KEY idx_ll (lat, lon),
-            KEY idx_id (kba_pa_id)
+            PRIMARY KEY (kba_pa_id, lat, lon),
+            KEY idx_ll (lat, lon)
         )
     ");
 
