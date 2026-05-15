@@ -52,6 +52,7 @@ $risk_site_yearly      = [];
 $kbaSiteYearly         = [];  // [year][siteName] = annual viirs avg from kba_pa_monthly_stats
 $kbaAllYearlyViirs     = [];  // [year] = avg viirs across all sites
 $kbaMonthlySpecies     = [];  // [year] = 12-element array of monthly species sums
+$kbaSiteAnnualSpecies  = [];  // [siteName][year] = avg monthly species count (multi-line chart)
 $risk_snapshot_year    = 2025;
 $risk_city_map = [
     'Las Piñas-Parañaque Wetland Park' => 'Las Piñas',
@@ -113,7 +114,8 @@ try {
              ORDER BY year ASC, kba_pa_name ASC, month ASC"
         );
         $kmsRows = $kmsStmt ? $kmsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
-        $siteYearViirs = [];
+        $siteYearViirs   = [];
+        $siteYearSpecies = [];
         foreach ($kmsRows as $r) {
             $yr      = (int)   ($r['year']          ?? 0);
             $mo      = (int)   ($r['month']         ?? 0);
@@ -124,6 +126,8 @@ try {
             // Monthly species sums across all sites (0-indexed for JS array)
             if (!isset($kbaMonthlySpecies[$yr])) $kbaMonthlySpecies[$yr] = array_fill(0, 12, 0);
             $kbaMonthlySpecies[$yr][$mo - 1] += $species;
+            // Per-site monthly species for multi-line chart
+            $siteYearSpecies[$name][$yr][] = $species;
             // Collect monthly viirs per site to average annually
             if ($viirs !== null) {
                 $siteYearViirs[$name][$yr][] = $viirs;
@@ -141,6 +145,13 @@ try {
             $filtered = array_filter($siteVals, function ($v) { return $v !== null; });
             if (count($filtered) > 0) {
                 $kbaAllYearlyViirs[$yr] = round(array_sum($filtered) / count($filtered), 4);
+            }
+        }
+        // Per-site average monthly species per year (multi-line chart datasets)
+        foreach ($siteYearSpecies as $sName => $yearData) {
+            foreach ($yearData as $sYr => $counts) {
+                if (!isset($kbaSiteAnnualSpecies[$sName])) $kbaSiteAnnualSpecies[$sName] = [];
+                $kbaSiteAnnualSpecies[$sName][$sYr] = round(array_sum($counts) / count($counts), 1);
             }
         }
     } catch (Throwable $_) { /* kba_pa_monthly_stats may not exist yet; degraded gracefully */ }
@@ -368,7 +379,11 @@ try {
                         <button class="map-view-btn is-active" id="btnRiskZones" onclick="setMapView('risk')" aria-pressed="true">⚠️ Risk Zones</button>
                         <button class="map-view-btn" id="btnHistorical" onclick="setMapView('historical')" aria-pressed="false">📊 Historical Data</button>
                     </div>
-                    <span class="map-view-info" title="Historical view shows species richness and overlays." aria-label="Historical view info">i</span>
+                    <span class="map-view-info" id="mapViewInfoBtn"
+                        data-risk-tip="Risk Zone view: KBA &amp; PA sites shown as color-coded circles. Circle color reflects ecological risk level based on VIIRS light exposure and species richness."
+                        data-hist-tip="Historical Data view: plots bird observation sites by species richness for a selected year and month. Use the filters to explore species, migration status, and light tolerance."
+                        title="Risk Zone view: KBA &amp; PA sites shown as color-coded circles. Circle color reflects ecological risk level based on VIIRS light exposure and species richness."
+                        aria-label="Map view info">i</span>
                 </div>
 
                 <!-- Historical data filters (hidden by default) -->
@@ -544,7 +559,7 @@ try {
                         <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0%</span>
                     </div>
                     <div class="dash-stat-desc">
-                        Annual avg. VIIRS night-light radiance across all monitored KBA &amp; PA sites for the selected year. Higher values drive larger circles and a worse risk classification on the map.
+                        Annual avg. VIIRS night-light radiance across all monitored KBA &amp; PA sites for the selected year.
                     </div>
                 </div>
             </div>
@@ -552,7 +567,7 @@ try {
             <!-- Bird Richness Trend -->
             <div class="chart-card" id="riskBirdTrendCard">
                 <div class="section-title">KBA &amp; PA Bird Richness</div>
-                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Monthly unique species observed across all KBA &amp; PA sites</div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Annual avg. unique species per site — click legend to isolate, hover for values</div>
                 <div class="bird-richness-controls">
                     <label class="slider-label" for="yearSlider">
                         <span>Year: <strong id="yearDisplay">2014</strong></span>
@@ -562,8 +577,8 @@ try {
                 </div>
                 <canvas id="birdRichnessChart"></canvas>
                 <div class="dash-stat-desc" style="margin-top:8px;" id="birdTrendMeta">
-                    <div id="birdTrendPeak">Peak value: —</div>
-                    <div id="birdTrendPeakDelta">Peak change vs previous year: —</div>
+                    <div id="birdTrendPeak">Top site (selected year): —</div>
+                    <div id="birdTrendPeakDelta">Year-over-year overall richness: —</div>
                 </div>
             </div>
 
@@ -710,9 +725,10 @@ $dashboard_thresholds_json = json_encode($dashboard_thresholds, JSON_UNESCAPED_U
 $historical_env_yearly_json = json_encode($historical_env_yearly, JSON_UNESCAPED_UNICODE);
 $historical_env_monthly_json = json_encode($historical_env_monthly ?? [], JSON_UNESCAPED_UNICODE);
 $risk_site_yearly_json      = json_encode($risk_site_yearly,      JSON_UNESCAPED_UNICODE);
-$kba_site_yearly_json       = json_encode($kbaSiteYearly,         JSON_UNESCAPED_UNICODE);
-$kba_all_yearly_viirs_json  = json_encode($kbaAllYearlyViirs,     JSON_UNESCAPED_UNICODE);
-$kba_monthly_species_json   = json_encode($kbaMonthlySpecies,     JSON_UNESCAPED_UNICODE);
+$kba_site_yearly_json         = json_encode($kbaSiteYearly,         JSON_UNESCAPED_UNICODE);
+$kba_all_yearly_viirs_json    = json_encode($kbaAllYearlyViirs,     JSON_UNESCAPED_UNICODE);
+$kba_monthly_species_json     = json_encode($kbaMonthlySpecies,     JSON_UNESCAPED_UNICODE);
+$kba_site_annual_species_json = json_encode($kbaSiteAnnualSpecies,  JSON_UNESCAPED_UNICODE);
 $risk_snapshot_year_json    = json_encode($risk_snapshot_year);
 
 $extra_scripts = <<<SCRIPTS
@@ -723,9 +739,10 @@ var dashboardThresholds = {$dashboard_thresholds_json};
 var historicalEnvYearly = {$historical_env_yearly_json};
 var historicalEnvMonthly = {$historical_env_monthly_json};
 var riskSiteYearly    = {$risk_site_yearly_json};
-var kbaSiteYearly     = {$kba_site_yearly_json};      // {year: {siteName: annualViirs}}
-var kbaAllYearlyViirs = {$kba_all_yearly_viirs_json}; // {year: allSitesAvgViirs}
-var kbaMonthlySpecies = {$kba_monthly_species_json};  // {year: [12 monthly species sums]}
+var kbaSiteYearly        = {$kba_site_yearly_json};         // {year: {siteName: annualViirs}}
+var kbaAllYearlyViirs    = {$kba_all_yearly_viirs_json};    // {year: allSitesAvgViirs}
+var kbaMonthlySpecies    = {$kba_monthly_species_json};     // {year: [12 monthly species sums]}
+var kbaSiteAnnualSpecies = {$kba_site_annual_species_json}; // {siteName: {year: avgMonthlySpecies}}
 var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
 var DASHBOARD_MAX_YEAR = 2025;
@@ -3083,8 +3100,16 @@ function setMapView(view) {
     filters.style.display = isHist ? 'flex' : 'none';
     document.getElementById('historicalOverlayControls').style.display = isHist ? 'flex' : 'none';
 
-    document.getElementById('riskSidebarPanels').style.display = isHist ? 'none' : 'block';
+    // '' restores the CSS-declared display:flex on #riskSidebarPanels (avoids collapsing the gap).
+    document.getElementById('riskSidebarPanels').style.display = isHist ? 'none' : '';
     document.getElementById('historicalSidebarPanels').style.display = isHist ? 'block' : 'none';
+
+    var infoBtn = document.getElementById('mapViewInfoBtn');
+    if (infoBtn) {
+        infoBtn.title = isHist
+            ? (infoBtn.dataset.histTip || '')
+            : (infoBtn.dataset.riskTip || '');
+    }
 
     // Show/hide legends
     document.getElementById('legendRiskZones').style.display  = isHist ? 'none'  : 'block';
@@ -3229,32 +3254,9 @@ function clearBirdChartSequenceTimers() {
     }
 }
 
-function animateBirdChartDotsThenLine(yearData, peakMarkers) {
+function animateBirdChartDotsThenLine() {
     clearBirdChartSequenceTimers();
-
-    var dotsOnly = new Array(yearData.length).fill(null);
-    birdChart.data.datasets[0].showLine = false;
-    birdChart.data.datasets[0].data = dotsOnly.slice();
-    birdChart.data.datasets[1].data = new Array(yearData.length).fill(null);
-    birdChart.update('none');
-
-    var stepMs = 110;
-    yearData.forEach(function(value, index) {
-        var t = setTimeout(function() {
-            dotsOnly[index] = value;
-            birdChart.data.datasets[0].data = dotsOnly.slice();
-            birdChart.update('none');
-        }, index * stepMs);
-        birdChartSequenceTimers.push(t);
-    });
-
-    var finalT = setTimeout(function() {
-        birdChart.data.datasets[0].showLine = true;
-        birdChart.data.datasets[0].data = yearData.slice();
-        birdChart.data.datasets[1].data = peakMarkers;
-        birdChart.update();
-    }, (yearData.length * stepMs) + 80);
-    birdChartSequenceTimers.push(finalT);
+    if (birdChart) birdChart.update('none');
 }
 
 function applyAvpStaggerReveal(selector, initialDelayMs, stepMs) {
@@ -3367,19 +3369,27 @@ function updateBirdTrendMeta(currentYear, currentStats, previousStats) {
     var peakDeltaTextEl = document.getElementById('birdTrendPeakDelta');
 
     if (peakTextEl) {
-        peakTextEl.textContent = 'Peak value: ' + currentStats.peak + ' (' + months[currentStats.peakIndex] + ' ' + currentYear + ')';
+        var yearKey = String(currentYear);
+        var topSite = null, topCount = -1;
+        if (kbaSiteAnnualSpecies) {
+            Object.keys(kbaSiteAnnualSpecies).forEach(function(site) {
+                var v = Number(kbaSiteAnnualSpecies[site][yearKey]);
+                if (!isNaN(v) && v > topCount) { topCount = v; topSite = site; }
+            });
+        }
+        peakTextEl.textContent = topSite
+            ? 'Top site (' + currentYear + '): ' + topSite + ' — ' + topCount.toFixed(1) + ' avg species/mo'
+            : 'Top site (' + currentYear + '): no data';
     }
 
     if (!peakDeltaTextEl) return;
-
     if (!previousStats) {
-        peakDeltaTextEl.textContent = 'Peak change vs previous year: baseline year (no comparison)';
+        peakDeltaTextEl.textContent = 'Year-over-year overall richness: baseline year';
         return;
     }
-
-    var peakPctDelta = getPctDelta(currentStats.peak, previousStats.peak);
-    var phrase = peakPctDelta >= 0 ? 'increase' : 'decrease';
-    peakDeltaTextEl.textContent = 'Peak ' + phrase + ' by ' + Math.abs(peakPctDelta).toFixed(1) + '% vs ' + (currentYear - 1);
+    var pct = getPctDelta(currentStats.avg, previousStats.avg);
+    var dir = pct >= 0 ? 'up' : 'down';
+    peakDeltaTextEl.textContent = 'Year-over-year overall richness: ' + dir + ' ' + Math.abs(pct).toFixed(1) + '% vs ' + (currentYear - 1);
 }
 
 function applyActivityIcon(iconId, delta, hasPrev, isBeneficialWhenDown) {
@@ -3520,23 +3530,10 @@ function updateYearDrivenUpdatesOnly(currentYear) {
 }
 
 function updateChartForYear(year) {
-    var yearData = birdRichnessData[year] || birdRichnessData[DASHBOARD_MIN_YEAR] || new Array(12).fill(0);
-    var currentStats = getBirdYearStats(year);
+    // Chart shows all years at once; just redraw the selected-year highlight and update meta.
+    if (birdChart) birdChart.update('none');
+    var currentStats  = getBirdYearStats(year);
     var previousStats = (year > DASHBOARD_MIN_YEAR) ? getBirdYearStats(year - 1) : null;
-
-    var minVal = Math.min.apply(null, yearData);
-    var maxVal = Math.max.apply(null, yearData);
-    if (Number.isFinite(minVal) && Number.isFinite(maxVal) && birdChart && birdChart.options && birdChart.options.scales && birdChart.options.scales.y) {
-        var pad = Math.max(5, Math.round((maxVal - minVal) * 0.2));
-        birdChart.options.scales.y.min = Math.max(0, Math.floor(minVal - pad));
-        birdChart.options.scales.y.max = Math.ceil(maxVal + pad);
-    }
-
-    var peakMarkers = new Array(yearData.length).fill(null);
-    peakMarkers[currentStats.peakIndex] = currentStats.peak;
-
-    animateBirdChartDotsThenLine(yearData, peakMarkers);
-
     updateBirdTrendMeta(year, currentStats, previousStats);
 }
 
@@ -3618,58 +3615,101 @@ function fetchHistoricalRowsForSelections(selections) {
         });
 }
 
-// Bird Richness Trend Chart
+// Bird Richness Trend Chart — multi-line, one line per KBA/PA site, years on x-axis
+var SITE_PALETTE = ['#2563eb','#16a34a','#dc2626','#d97706','#8b5cf6','#0891b2'];
+var yearLabels = [];
+for (var _y = DASHBOARD_MIN_YEAR; _y <= DASHBOARD_MAX_YEAR; _y++) yearLabels.push(String(_y));
+
+var richnessSiteDatasets = [];
+var richnessSiteNames = Object.keys(kbaSiteAnnualSpecies || {}).sort();
+richnessSiteNames.forEach(function(siteName, idx) {
+    var color = SITE_PALETTE[idx % SITE_PALETTE.length];
+    var siteData = kbaSiteAnnualSpecies[siteName] || {};
+    var values = yearLabels.map(function(yr) {
+        var v = siteData[yr];
+        return (v !== undefined && v !== null) ? Number(v) : null;
+    });
+    richnessSiteDatasets.push({
+        label: siteName,
+        data: values,
+        borderColor: color,
+        backgroundColor: color + '1a',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointHoverRadius: 7,
+        tension: 0.3,
+        fill: false,
+        spanGaps: true
+    });
+});
+
+// Plugin: draws a dashed vertical line at the selected year
+var selectedYearLinePlugin = {
+    id: 'selectedYearLine',
+    afterDraw: function(chart) {
+        var yr = String(getSelectedDashboardYear());
+        var idx = chart.data.labels ? chart.data.labels.indexOf(yr) : -1;
+        if (idx === -1 || !chart.data.datasets.length) return;
+        var meta0 = chart.getDatasetMeta(0);
+        if (!meta0 || !meta0.data || !meta0.data[idx]) return;
+        var x = meta0.data[idx].x;
+        var yScale = chart.scales['y'];
+        if (!yScale) return;
+        var c = chart.ctx;
+        c.save();
+        c.beginPath();
+        c.setLineDash([4, 4]);
+        c.strokeStyle = 'rgba(255,255,255,0.22)';
+        c.lineWidth = 1.5;
+        c.moveTo(x, yScale.top);
+        c.lineTo(x, yScale.bottom);
+        c.stroke();
+        c.restore();
+    }
+};
+
 var ctx = document.getElementById('birdRichnessChart').getContext('2d');
 var birdChart = new Chart(ctx, {
     type: 'line',
+    plugins: [selectedYearLinePlugin],
     data: {
-        labels: months,
-        datasets: [
-            {
-                label: 'Bird Richness',
-                data: birdRichnessData[DASHBOARD_MIN_YEAR] || new Array(12).fill(0),
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
-                tension: 0.4,
-                pointBackgroundColor: '#3b82f6',
-                pointBorderColor: '#3b82f6',
-                pointRadius: 4,
-                borderWidth: 2
-            },
-            {
-                label: 'Peak',
-                data: new Array(months.length).fill(null),
-                showLine: false,
-                pointRadius: 6,
-                pointHoverRadius: 7,
-                pointBackgroundColor: '#f59e0b',
-                pointBorderColor: '#f59e0b'
-            }
-        ]
+        labels: yearLabels,
+        datasets: richnessSiteDatasets
     },
     options: {
         responsive: true,
         maintainAspectRatio: true,
-        animation: {
-            duration: 620,
-            easing: 'easeOutQuart'
-        },
+        animation: { duration: 500, easing: 'easeOutQuart' },
+        interaction: { mode: 'index', intersect: false },
         scales: {
             x: {
+                title: { display: true, text: 'Year', color: '#a0a4b0', font: { size: 11 } },
                 grid: { color: 'rgba(255,255,255,0.06)' },
                 ticks: { color: '#a0a4b0' }
             },
             y: {
                 beginAtZero: true,
                 min: 0,
-                max: 50,
+                title: { display: true, text: 'Avg species / month', color: '#a0a4b0', font: { size: 11 } },
                 grid: { color: 'rgba(255,255,255,0.06)' },
                 ticks: { color: '#a0a4b0' }
             }
         },
         plugins: {
-            legend: { display: false }
+            legend: {
+                display: true,
+                position: 'top',
+                labels: { usePointStyle: true, boxWidth: 10, color: '#a0a4b0', font: { size: 11 } }
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        var v = context.parsed.y;
+                        if (v === null || v === undefined) return context.dataset.label + ': —';
+                        return context.dataset.label + ': ' + Number(v).toFixed(1) + ' species/mo';
+                    }
+                }
+            }
         }
     }
 });
