@@ -16,8 +16,8 @@ require_once __DIR__ . '/../includes/db.php';
 $year  = isset($_GET['year'])  ? (int)$_GET['year']  : 0;
 $month = isset($_GET['month']) ? (int)$_GET['month'] : 0;
 $selectedBird = isset($_GET['bird']) ? trim((string) $_GET['bird']) : '';
-$migrationFilter = isset($_GET['migration']) ? trim((string) $_GET['migration']) : '';
-$lightFilter = isset($_GET['light']) ? trim((string) $_GET['light']) : '';
+$migrationFilter = isset($_GET['migration']) ? strtolower(trim((string) $_GET['migration'])) : '';
+$lightFilter = isset($_GET['light']) ? strtolower(trim((string) $_GET['light'])) : '';
 $hasFilters = ($selectedBird !== '' || $migrationFilter !== '' || $lightFilter !== '');
 
 if ($year < 2000 || $year > 2100) {

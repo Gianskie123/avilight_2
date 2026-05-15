@@ -129,7 +129,7 @@ try {
     // ecological_monthly_summary — per-city per-month data for the historical overlay.
     $historical_env_monthly = [];
     $monthlyStmt = $mysql->query("SELECT area, year, month,
-            viirs_avg, ndvi_avg, lst_avg, lst_night_avg, precipitation_total
+            viirs_avg, ndvi_avg, lst_avg, lst_day_avg, lst_night_avg, precipitation_total
         FROM ecological_monthly_summary
         WHERE year BETWEEN 2014 AND 2025
           AND area IS NOT NULL
@@ -147,7 +147,9 @@ try {
         $historical_env_monthly[$yr][$mo][$area] = [
             'viirs'         => isset($mr['viirs_avg'])           ? (float) $mr['viirs_avg']           : null,
             'ndvi'          => isset($mr['ndvi_avg'])            ? (float) $mr['ndvi_avg']            : null,
-            'lst'           => isset($mr['lst_avg'])             ? (float) $mr['lst_avg']             : null,
+            // Prefer the explicit day column; fall back to the generic avg if not populated.
+            'lst'           => isset($mr['lst_day_avg'])         ? (float) $mr['lst_day_avg']
+                             : (isset($mr['lst_avg'])            ? (float) $mr['lst_avg']             : null),
             'lst_night'     => isset($mr['lst_night_avg'])       ? (float) $mr['lst_night_avg']       : null,
             'precipitation' => isset($mr['precipitation_total']) ? (float) $mr['precipitation_total'] : null,
         ];
@@ -550,9 +552,9 @@ try {
                     <button type="button" id="histSiteDetailClose" class="hist-site-close-btn" aria-label="Close site detail">×</button>
                 </div>
 
-                <div id="histSiteEnvWrap" style="display:none; margin-bottom:10px; background:rgba(2, 12, 42, 0.6); border:1px solid var(--border-color); border-radius:8px; padding:8px 10px;">
+                <div id="histSiteEnvWrap" style="display:none; margin-bottom:10px; background:var(--bg-input); border:1px solid var(--border-color); border-radius:8px; padding:8px 10px;">
                     <div id="histSiteEnvLabel" style="font-size:0.76rem; color:var(--text-secondary); margin-bottom:4px;">Environmental Value</div>
-                    <div id="histSiteEnvValue" style="font-size:1.45rem; line-height:1; font-weight:700; color:#86efac;">—</div>
+                    <div id="histSiteEnvValue" style="font-size:1.45rem; line-height:1; font-weight:700; color:var(--text-primary);">—</div>
                 </div>
 
                 <div class="dash-stat-label" style="margin:0 0 8px 0;">Observed Species by Category</div>
@@ -1809,6 +1811,7 @@ function showHistoricalSiteDetail(site) {
     if (hasEnvSelection && municipalityEnv && envWrapEl && envLabelEl && envValueEl) {
         envLabelEl.textContent = municipalityEnv.label + ' · ' + selections.year + ' · ' + getMonthName(selections.month);
         envValueEl.textContent = municipalityEnv.valueText;
+        envValueEl.style.color = municipalityEnv.color || '';
         envWrapEl.style.display = 'block';
     } else if (envWrapEl) {
         envWrapEl.style.display = 'none';
@@ -1856,7 +1859,10 @@ function getHistoricalEnvConfig(envType, landTempPeriod) {
     if (envType === 'land_temp') {
         var isNight = landTempPeriod === 'night';
         return {
-            key: 'lst',
+            // key is used for the yearly-data fallback; night has no yearly breakdown so use
+            // 'lst_night' which won't exist in yearly data — this correctly shows no data
+            // rather than silently displaying day values.
+            key: isNight ? 'lst_night' : 'lst',
             monthlyKey: isNight ? 'lst_night' : 'lst',
             label: isNight ? 'Land Temp (Night)' : 'Land Temp (Day)',
             decimals: 1,
@@ -2250,6 +2256,17 @@ function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
             summary.tolerant = tolerantCount;
             summary.sensitive = sensitiveCount;
         }
+    }
+
+    // When a filter is active, the excluded category is definitionally 0 regardless of
+    // how the speciesLookup classified the filtered species list.
+    if (selections) {
+        var smigF = String(selections.migrationFilter || '').toLowerCase();
+        var slitF = String(selections.lightFilter     || '').toLowerCase();
+        if (smigF === 'resident')  summary.migrant   = 0;
+        if (smigF === 'migratory') summary.resident  = 0;
+        if (slitF === 'tolerant')  summary.sensitive = 0;
+        if (slitF === 'sensitive') summary.tolerant  = 0;
     }
 
     if (selections && selections.envType && Array.isArray(envRows) && envRows.length) {
