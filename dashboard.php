@@ -126,6 +126,33 @@ try {
         ];
     }
 
+    // ecological_monthly_summary — per-city per-month data for the historical overlay.
+    $historical_env_monthly = [];
+    $monthlyStmt = $mysql->query("SELECT area, year, month,
+            viirs_avg, ndvi_avg, lst_avg, lst_night_avg, precipitation_total
+        FROM ecological_monthly_summary
+        WHERE year BETWEEN 2014 AND 2025
+          AND area IS NOT NULL
+        ORDER BY year ASC, month ASC, area ASC");
+    $monthlyRows = $monthlyStmt ? ($monthlyStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    foreach ($monthlyRows as $mr) {
+        $yr   = (int) ($mr['year']  ?? 0);
+        $mo   = (int) ($mr['month'] ?? 0);
+        $area = trim((string) ($mr['area'] ?? ''));
+        if ($yr < 2014 || $yr > 2025 || $mo < 1 || $mo > 12 || $area === '') {
+            continue;
+        }
+        if (!isset($historical_env_monthly[$yr]))      $historical_env_monthly[$yr]      = [];
+        if (!isset($historical_env_monthly[$yr][$mo])) $historical_env_monthly[$yr][$mo] = [];
+        $historical_env_monthly[$yr][$mo][$area] = [
+            'viirs'         => isset($mr['viirs_avg'])           ? (float) $mr['viirs_avg']           : null,
+            'ndvi'          => isset($mr['ndvi_avg'])            ? (float) $mr['ndvi_avg']            : null,
+            'lst'           => isset($mr['lst_avg'])             ? (float) $mr['lst_avg']             : null,
+            'lst_night'     => isset($mr['lst_night_avg'])       ? (float) $mr['lst_night_avg']       : null,
+            'precipitation' => isset($mr['precipitation_total']) ? (float) $mr['precipitation_total'] : null,
+        ];
+    }
+
     // Cross-reference accented/unaccented city name variants so the JS computeZoneLight
     // fallback finds entries regardless of how the DB stored city names.
     $accent_map = ['ñ'=>'n','Ñ'=>'n','á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','Á'=>'a','É'=>'e','Í'=>'i','Ó'=>'o','Ú'=>'u'];
@@ -146,6 +173,7 @@ try {
     }
 } catch (Throwable $e) {
     $kba_data = json_decode((string) file_get_contents('data/sample_kba.json'), true) ?: [];
+    $historical_env_monthly = $historical_env_monthly ?? [];
 }
 ?>
 
@@ -620,6 +648,7 @@ if ($kba_data) {
 $risk_zones_json = json_encode($risk_zones);
 $dashboard_thresholds_json = json_encode($dashboard_thresholds, JSON_UNESCAPED_UNICODE);
 $historical_env_yearly_json = json_encode($historical_env_yearly, JSON_UNESCAPED_UNICODE);
+$historical_env_monthly_json = json_encode($historical_env_monthly ?? [], JSON_UNESCAPED_UNICODE);
 $risk_site_yearly_json = json_encode($risk_site_yearly, JSON_UNESCAPED_UNICODE);
 $risk_snapshot_year_json = json_encode($risk_snapshot_year);
 
@@ -629,6 +658,7 @@ $extra_scripts = <<<SCRIPTS
 var riskZones = {$risk_zones_json};
 var dashboardThresholds = {$dashboard_thresholds_json};
 var historicalEnvYearly = {$historical_env_yearly_json};
+var historicalEnvMonthly = {$historical_env_monthly_json};
 var riskSiteYearly = {$risk_site_yearly_json};
 var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
@@ -1816,17 +1846,19 @@ function normalizeAreaKey(name) {
 }
 
 function getHistoricalEnvConfig(envType, landTempPeriod) {
-    if (envType === 'viirs') return { key: 'viirs', label: 'VIIRS', decimals: 1, unit: ' nW' };
-    if (envType === 'ndvi') return { key: 'ndvi', label: 'NDVI', decimals: 2, unit: '' };
+    if (envType === 'viirs') return { key: 'viirs', monthlyKey: 'viirs', label: 'VIIRS', decimals: 1, unit: ' nW' };
+    if (envType === 'ndvi')  return { key: 'ndvi',  monthlyKey: 'ndvi',  label: 'NDVI',  decimals: 2, unit: '' };
     if (envType === 'land_temp') {
+        var isNight = landTempPeriod === 'night';
         return {
             key: 'lst',
-            label: landTempPeriod === 'night' ? 'Land Temp (Night)' : 'Land Temp (Day)',
+            monthlyKey: isNight ? 'lst_night' : 'lst',
+            label: isNight ? 'Land Temp (Night)' : 'Land Temp (Day)',
             decimals: 1,
             unit: ' °C'
         };
     }
-    if (envType === 'precip') return { key: 'precipitation', label: 'Precip', decimals: 0, unit: ' mm' };
+    if (envType === 'precip') return { key: 'precipitation', monthlyKey: 'precipitation', label: 'Precip', decimals: 0, unit: ' mm' };
     return null;
 }
 
@@ -1913,7 +1945,7 @@ function getEnvValueFromCell(cellProps, envType, year, month, landTempPeriod) {
     return null;
 }
 
-function getEnvColor(envType, valueObj, landCoverClass) {
+function getEnvColor(envType, valueObj, landCoverClass, landTempPeriod) {
     if (envType === 'land_cover') {
         var colors = {
             'Urban & Built-up': '#ef4444',
@@ -1926,10 +1958,32 @@ function getEnvColor(envType, valueObj, landCoverClass) {
     }
 
     var value = valueObj ? valueObj.value : 0;
-    if (envType === 'ndvi') return value > 0.65 ? '#16a34a' : (value > 0.45 ? '#84cc16' : '#eab308');
-    if (envType === 'viirs') return value > 40 ? '#ef4444' : (value > 28 ? '#f59e0b' : '#22c55e');
-    if (envType === 'precip') return value > 220 ? '#0ea5e9' : (value > 140 ? '#38bdf8' : '#93c5fd');
-    if (envType === 'land_temp') return value > 31 ? '#ef4444' : (value > 27 ? '#f97316' : '#22c55e');
+
+    if (envType === 'viirs') {
+        var hiT  = Number((dashboardThresholds && dashboardThresholds.high_risk) || 60);
+        var modT = Number((dashboardThresholds && dashboardThresholds.mod_risk)  || 40);
+        var loT  = Number((dashboardThresholds && dashboardThresholds.low_risk)  || 25);
+        if (value > hiT)  return '#7f1d1d'; // critical
+        if (value > modT) return '#ef4444'; // high
+        if (value > loT)  return '#f59e0b'; // moderate
+        return '#22c55e';                   // low
+    }
+
+    if (envType === 'ndvi') {
+        return value > 0.5 ? '#16a34a' : (value > 0.3 ? '#84cc16' : '#eab308');
+    }
+
+    if (envType === 'precip') {
+        return value > 200 ? '#0ea5e9' : (value > 100 ? '#38bdf8' : '#93c5fd');
+    }
+
+    if (envType === 'land_temp') {
+        if (landTempPeriod === 'night') {
+            return value > 25 ? '#ef4444' : (value > 20 ? '#f97316' : '#22c55e');
+        }
+        return value > 31 ? '#ef4444' : (value > 27 ? '#f97316' : '#22c55e');
+    }
+
     return '#94a3b8';
 }
 
@@ -1978,22 +2032,39 @@ function getCoverageFeaturesForSelections(selections) {
 function buildMunicipalityEnvRows(selections, coverageFeatures) {
     if (selections.envType !== 'land_cover') {
         var envConfig = getHistoricalEnvConfig(selections.envType, selections.landTempPeriod);
-        var yearBucket = historicalEnvYearly && historicalEnvYearly[String(selections.year)] ? historicalEnvYearly[String(selections.year)] : null;
-        if (!envConfig || !yearBucket) return [];
+        if (!envConfig) return [];
 
-        var rowsFromSummary = Object.keys(yearBucket).map(function(cityName) {
-            var record = yearBucket[cityName] || {};
-            var numeric = record[envConfig.key];
+        // Prefer monthly-specific data when a month is selected.
+        var sourceDict = null;
+        if (selections.month > 0 && historicalEnvMonthly) {
+            var mb = historicalEnvMonthly[String(selections.year)];
+            if (mb) sourceDict = mb[String(selections.month)] || null;
+        }
+        // Fall back to annual averages.
+        if (!sourceDict && historicalEnvYearly) {
+            sourceDict = historicalEnvYearly[String(selections.year)] || null;
+        }
+        if (!sourceDict) return [];
+
+        var mkey = envConfig.monthlyKey || envConfig.key;
+        var rowsFromSummary = Object.keys(sourceDict).map(function(cityKey) {
+            var record = sourceDict[cityKey] || {};
+            var numeric = record[mkey];
             if (numeric == null || !Number.isFinite(Number(numeric))) {
                 return null;
             }
             var value = Number(numeric);
+            // Capitalise city display name (city_key is lowercase from ecological_monthly_summary).
+            var displayName = cityKey.split(' ').map(function(w) {
+                return w.charAt(0).toUpperCase() + w.slice(1);
+            }).join(' ');
             return {
-                city: cityName,
+                city: displayName,
+                cityKey: cityKey,
                 label: envConfig.label,
                 valueText: value.toFixed(envConfig.decimals) + envConfig.unit,
                 numericValue: value,
-                color: getEnvColor(selections.envType, { value: value }, '')
+                color: getEnvColor(selections.envType, { value: value }, '', selections.landTempPeriod)
             };
         }).filter(function(row) { return row !== null; });
 
@@ -2070,7 +2141,7 @@ function buildMunicipalityEnvRows(selections, coverageFeatures) {
             label: example ? example.label : 'Value',
             valueText: avg.toFixed(example ? example.decimals : 1) + (example ? example.unit : ''),
             numericValue: avg,
-            color: getEnvColor(selections.envType, { value: avg }, '')
+            color: getEnvColor(selections.envType, { value: avg }, '', selections.landTempPeriod)
         };
     });
 
@@ -2174,7 +2245,9 @@ function buildHistoricalBoundarySummary(cityName, rows, envRows, selections) {
 
     if (selections && selections.envType && Array.isArray(envRows) && envRows.length) {
         var cityEnv = envRows.find(function(item) {
-            return normalizeAreaKey(item.city || '') === cityNorm;
+            // Match by normalised city name OR by the raw city_key (lowercase) from monthly data.
+            return normalizeAreaKey(item.city || '') === cityNorm ||
+                   (item.cityKey && item.cityKey === (cityName || '').toLowerCase());
         }) || null;
 
         if (cityEnv) {
@@ -2228,25 +2301,60 @@ function renderHistoricalMap(rows, selections, options) {
         clearHistoricalObservationLayers();
     }
 
-    if (selections.envType && envCoverageGeoData) {
+    if (selections.envType === 'land_cover' && envCoverageGeoData) {
+        // Land cover: keep cell-level GeoJSON rendering — genuine cell-level variation.
         var coverageFeatures = getCoverageFeaturesForSelections(selections);
         var envLayer = L.geoJSON({ type: 'FeatureCollection', features: coverageFeatures }, {
             style: function(feature) {
                 var props = feature.properties || {};
-                if (selections.envType === 'land_cover') {
-                    var coverClass = getLandCoverCategoryByCode(props.land_cover);
-                    var coverColor = getEnvColor('land_cover', null, coverClass);
-                    return { color: coverColor, weight: 0, fillColor: coverColor, fillOpacity: 0.78 };
-                }
-
-                var valueObj = getEnvValueFromCell(props, selections.envType, selections.year, selections.month, selections.landTempPeriod);
-                var envColor = getEnvColor(selections.envType, valueObj, '');
-                return { color: envColor, weight: 0, fillColor: envColor, fillOpacity: 0.7 };
+                var coverClass = getLandCoverCategoryByCode(props.land_cover);
+                var coverColor = getEnvColor('land_cover', null, coverClass);
+                return { color: coverColor, weight: 0, fillColor: coverColor, fillOpacity: 0.78 };
             },
             interactive: false
         }).addTo(map);
         historicalEnvLayers.push(envLayer);
         latestHistoricalContext.envRows = buildMunicipalityEnvRows(selections, coverageFeatures);
+
+    } else if (selections.envType && municipalityGeoData) {
+        // Non-land_cover overlays: colour each city polygon from real ecological_monthly_summary
+        // data (monthly when a specific month is selected, annual otherwise).
+        var envConfig = getHistoricalEnvConfig(selections.envType, selections.landTempPeriod);
+        var mkey = envConfig ? (envConfig.monthlyKey || envConfig.key) : null;
+
+        var sourceDict = null;
+        if (selections.month > 0 && historicalEnvMonthly) {
+            var mb = historicalEnvMonthly[String(selections.year)];
+            if (mb) sourceDict = mb[String(selections.month)] || null;
+        }
+        if (!sourceDict && historicalEnvYearly) {
+            sourceDict = historicalEnvYearly[String(selections.year)] || null;
+        }
+
+        var cityEnvLayer = L.geoJSON(municipalityGeoData, {
+            style: function(feature) {
+                var cityName = getMunicipalityName(feature);
+                var cityKey  = cityName.toLowerCase();
+                // Try lowercase key (monthly data) then display-name key (yearly fallback).
+                var record = null;
+                if (sourceDict && mkey) {
+                    record = sourceDict[cityKey] || sourceDict[cityName] || null;
+                }
+                var value = (record && record[mkey] != null) ? Number(record[mkey]) : null;
+                var fillColor = value !== null
+                    ? getEnvColor(selections.envType, { value: value }, '', selections.landTempPeriod)
+                    : '#94a3b8';
+                return {
+                    color: '#ffffff',
+                    weight: 0.8,
+                    fillColor: fillColor,
+                    fillOpacity: value !== null ? 0.70 : 0.12
+                };
+            },
+            interactive: false
+        }).addTo(map);
+        historicalEnvLayers.push(cityEnvLayer);
+        latestHistoricalContext.envRows = buildMunicipalityEnvRows(selections, []);
     }
 
     if (selections.showObservation && !preserveObservation) {
@@ -2396,63 +2504,69 @@ function renderHistoricalMap(rows, selections, options) {
 function getEnvironmentalLegendHTML(envType, landTempPeriod) {
     if (!envType) return '';
 
-    if (envType === 'land_cover') {
-        var items = [
-            { label: 'Urban & Built-up', color: '#ef4444' },
-            { label: 'Water Bodies', color: '#38bdf8' },
-            { label: 'Forest', color: '#16a34a' },
-            { label: 'Croplands', color: '#facc15' },
-            { label: 'Grasslands', color: '#84cc16' },
-            { label: 'Wetlands', color: '#14b8a6' },
-            { label: 'Woody Savannas', color: '#a16207' },
-            { label: 'Cropland Mosaics', color: '#f59e0b' },
-            { label: 'Barren', color: '#92400e' }
-        ];
-
-        return items.map(function(item) {
-            return '<div class="map-legend-item" style="margin-bottom:3px;">' +
-                '<span class="map-legend-dot" style="background:' + item.color + ';"></span>' +
-                '<span style="font-size:0.76rem;">' + item.label + '</span>' +
-            '</div>';
-        }).join('');
+    function legendRow(color, label) {
+        return '<div class="map-legend-item" style="margin-bottom:4px;">' +
+            '<span class="map-legend-dot" style="background:' + color + '; flex-shrink:0;"></span>' +
+            '<span style="font-size:0.74rem;">' + label + '</span>' +
+        '</div>';
     }
 
-    var scale = {
-        ndvi: {
-            title: 'NDVI',
-            gradient: 'linear-gradient(to right,#eab308,#84cc16,#16a34a)',
-            low: 'Low',
-            high: 'High'
-        },
-        viirs: {
-            title: 'VIIRS (nW)',
-            gradient: 'linear-gradient(to right,#22c55e,#f59e0b,#ef4444)',
-            low: 'Low',
-            high: 'High'
-        },
-        precip: {
-            title: 'Precip (mm)',
-            gradient: 'linear-gradient(to right,#93c5fd,#38bdf8,#0ea5e9)',
-            low: 'Low',
-            high: 'High'
-        },
-        land_temp: {
-            title: landTempPeriod === 'night' ? 'Land Temp Night (°C)' : 'Land Temp Day (°C)',
-            gradient: 'linear-gradient(to right,#22c55e,#f97316,#ef4444)',
-            low: 'Cool',
-            high: 'Warm'
+    if (envType === 'land_cover') {
+        var lcItems = [
+            { label: 'Urban & Built-up', color: '#ef4444' },
+            { label: 'Water Bodies',     color: '#38bdf8' },
+            { label: 'Forest',           color: '#16a34a' },
+            { label: 'Croplands',        color: '#facc15' },
+            { label: 'Grasslands',       color: '#84cc16' },
+            { label: 'Wetlands',         color: '#14b8a6' },
+            { label: 'Woody Savannas',   color: '#a16207' },
+            { label: 'Cropland Mosaics', color: '#f59e0b' },
+            { label: 'Barren',           color: '#92400e' }
+        ];
+        return lcItems.map(function(item) { return legendRow(item.color, item.label); }).join('');
+    }
+
+    if (envType === 'viirs') {
+        var loT  = Number((dashboardThresholds && dashboardThresholds.low_risk)  || 25);
+        var modT = Number((dashboardThresholds && dashboardThresholds.mod_risk)  || 40);
+        var hiT  = Number((dashboardThresholds && dashboardThresholds.high_risk) || 60);
+        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">VIIRS Night Light (nW/cm²/sr)</div>' +
+            legendRow('#22c55e', '&lt; '  + loT  + ' nW — Low') +
+            legendRow('#f59e0b', loT  + ' – ' + modT + ' nW — Moderate') +
+            legendRow('#ef4444', modT + ' – ' + hiT  + ' nW — High') +
+            legendRow('#7f1d1d', '&gt; '  + hiT  + ' nW — Critical');
+    }
+
+    if (envType === 'ndvi') {
+        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">NDVI (vegetation index)</div>' +
+            legendRow('#eab308', '&lt; 0.30 — Low vegetation') +
+            legendRow('#84cc16', '0.30 – 0.50 — Moderate') +
+            legendRow('#16a34a', '&gt; 0.50 — Good vegetation');
+    }
+
+    if (envType === 'precip') {
+        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">Precipitation (mm / month)</div>' +
+            legendRow('#93c5fd', '&lt; 100 mm — Dry') +
+            legendRow('#38bdf8', '100 – 200 mm — Moderate') +
+            legendRow('#0ea5e9', '&gt; 200 mm — Wet');
+    }
+
+    if (envType === 'land_temp') {
+        var isNight = landTempPeriod === 'night';
+        var title = isNight ? 'Land Surface Temp — Night (°C)' : 'Land Surface Temp — Day (°C)';
+        if (isNight) {
+            return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">' + title + '</div>' +
+                legendRow('#22c55e', '&lt; 20 °C — Cool') +
+                legendRow('#f97316', '20 – 25 °C — Warm') +
+                legendRow('#ef4444', '&gt; 25 °C — Hot');
         }
-    };
+        return '<div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:5px;">' + title + '</div>' +
+            legendRow('#22c55e', '&lt; 27 °C — Cool') +
+            legendRow('#f97316', '27 – 31 °C — Warm') +
+            legendRow('#ef4444', '&gt; 31 °C — Hot');
+    }
 
-    var cfg = scale[envType];
-    if (!cfg) return '';
-
-    return '<div style="font-size:0.74rem; color:var(--text-secondary); margin-bottom:4px;">' + cfg.title + '</div>' +
-        '<div style="display:flex; align-items:center; gap:6px;">' +
-            '<span style="font-size:0.72rem; color:var(--text-muted);">' + cfg.low + '</span>' +
-            '<div style="flex:1; height:10px; border-radius:3px; background:' + cfg.gradient + ';"></div>' +
-            '<span style="font-size:0.72rem; color:var(--text-muted);">' + cfg.high + '</span>' +
-        '</div>';
+    return '';
 }
 
 function updateEnvironmentalLegend(selections) {
@@ -2563,9 +2677,9 @@ function renderEnvironmentalSidebar(rows, selections) {
         var sum = 0;
         envRows.forEach(function(item) { sum += item.numericValue; });
         var avg = sum / envRows.length;
-        var sampleValObj = getEnvValueFromCell({ latitude: 14.6, longitude: 121.0, land_cover: 13 }, selections.envType, selections.year, selections.month, selections.landTempPeriod);
+        var avgCfg = getHistoricalEnvConfig(selections.envType, selections.landTempPeriod);
         avgEl.style.display = 'block';
-        avgEl.textContent = 'Metro Manila average value: ' + avg.toFixed(sampleValObj.decimals) + sampleValObj.unit;
+        avgEl.textContent = 'Metro Manila average: ' + avg.toFixed(avgCfg ? avgCfg.decimals : 1) + (avgCfg ? avgCfg.unit : '');
     } else {
         avgEl.style.display = 'none';
         avgEl.textContent = '';
