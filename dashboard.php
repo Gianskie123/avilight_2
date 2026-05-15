@@ -2746,51 +2746,57 @@ function renderEnvironmentalRows() {
         envRows.sort(function(a, b) { return a.city.localeCompare(b.city); });
     }
 
-    // Min-max scaling so inter-city variance is visually amplified.
-    var maxVal = 1, minVal = 0, range = 1;
+    // Max-value scaling: highest city = 100% bar, all others proportional.
+    var maxVal = 1, avgPct = 0;
     if (hasNumeric) {
         var nums = envRows.map(function(r) { return r.numericValue != null ? r.numericValue : 0; });
-        maxVal = Math.max.apply(null, nums);
-        minVal = Math.min.apply(null, nums);
-        if (maxVal === minVal) minVal = 0; // flat dataset: fall back to 0-based
-        maxVal = maxVal || 1;
-        range  = (maxVal - minVal) || 1;
+        maxVal = Math.max.apply(null, nums) || 1;
+        var avg = nums.reduce(function(s, v) { return s + v; }, 0) / (nums.length || 1);
+        avgPct = Math.round((avg / maxVal) * 100);
     }
 
     var rowsToShow = envRowsExpanded ? envRows : envRows.slice(0, 6);
 
     var rowsHtml = rowsToShow.map(function(item, idx) {
-        // 1 decimal place, consistent across all rows.
+        // Consistent 1 decimal place on all rows.
         var numStr = item.numericValue != null
             ? item.numericValue.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
             : item.valueText;
 
-        // Min-max bar width; floor at 6% so the lowest city still shows colour.
+        // (value / max) * 100; 2% floor keeps a sliver visible for near-zero values.
         var barPct = hasNumeric
-            ? Math.max(6, Math.round(((item.numericValue - minVal) / range) * 100))
+            ? Math.max(2, Math.round((item.numericValue / maxVal) * 100))
             : 0;
 
-        var bgColor  = item.color || '#64748b';
-        var isLast   = (idx === rowsToShow.length - 1);
+        var bgColor = item.color || '#64748b';
+        var isLast  = (idx === rowsToShow.length - 1);
 
-        // Bar is rendered as an inline background gradient on the row itself —
-        // no separate element, zero added vertical height.
+        // Bar = inline background gradient (zero added height).
+        // No dotted leader — the bar edge already guides the eye to the value.
+        // Value text is always var(--text-secondary) for WCAG contrast; the bar handles color coding.
         return '<div style="' +
             'padding:5px 0;' +
             (isLast ? '' : 'border-bottom:1px solid var(--border-color);') +
             (barPct ? 'background:linear-gradient(to right,' + hexToRgba(bgColor, 0.14) + ' ' + barPct + '%,transparent ' + barPct + '%);' : '') +
             'border-radius:2px;' +
         '">' +
-            '<div style="display:flex; align-items:baseline;">' +
-                '<span class="hist-env-text" style="font-size:0.74rem; color:var(--text-secondary); white-space:nowrap;">' + escapeHtml(item.city) + '</span>' +
-                '<span style="flex:1; border-bottom:1px dotted var(--border-color); margin:0 5px 3px 5px;"></span>' +
-                '<span class="hist-env-text" style="font-size:0.74rem; font-weight:600; color:' + bgColor + '; white-space:nowrap;">' + numStr + '</span>' +
+            '<div style="display:flex; align-items:baseline; gap:6px;">' +
+                '<span class="hist-env-text" style="font-size:0.74rem; color:var(--text-secondary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.city) + '</span>' +
+                '<span class="hist-env-text" style="font-size:0.74rem; font-weight:600; color:var(--text-secondary); white-space:nowrap;">' + numStr + '</span>' +
             '</div>' +
         '</div>';
     }).join('');
 
-    document.getElementById('histEnvRows').innerHTML = rowsHtml ||
-        '<div style="font-size:0.76rem; color:var(--text-muted); padding:4px 0;">No data for selected filter.</div>';
+    // Absolute vertical dashed line marks the dataset average across the full list.
+    var avgLineHtml = (hasNumeric && avgPct > 2 && avgPct < 98)
+        ? '<div style="position:absolute;left:' + avgPct + '%;top:0;bottom:0;width:0;' +
+          'border-left:1.5px dashed rgba(148,163,184,0.5);pointer-events:none;z-index:2;" ' +
+          'title="Dataset average"></div>'
+        : '';
+
+    document.getElementById('histEnvRows').innerHTML = rowsHtml
+        ? '<div style="position:relative;">' + rowsHtml + avgLineHtml + '</div>'
+        : '<div style="font-size:0.76rem; color:var(--text-muted); padding:4px 0;">No data for selected filter.</div>';
 
     var toggleEl = document.getElementById('histEnvToggle');
     if (envRows.length <= 6) {
