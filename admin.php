@@ -874,8 +874,8 @@ function showToast(title, lines, type = 'info') {
         </div>`;
 
     document.getElementById('toastContainer').appendChild(toast);
-    setTimeout(() => { if (toast.parentNode) toast.style.opacity = '0'; }, 4700);
-    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 5000);
+    setTimeout(() => { if (toast.parentNode) toast.style.opacity = '0'; }, 9700);
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 10000);
 }
 
 // ── Validation log loader ─────────────────────────────────────────────────────
