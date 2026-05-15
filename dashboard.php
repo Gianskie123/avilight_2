@@ -2212,6 +2212,7 @@ function buildMunicipalityEnvRows(selections, coverageFeatures) {
                 city: cityName,
                 label: dominantClass,
                 valueText: coveragePct + '%',
+                numericValue: coveragePct,
                 color: getEnvColor('land_cover', null, dominantClass)
             };
         }
@@ -2862,29 +2863,37 @@ function renderEnvironmentalRows() {
 
     var rowsToShow = envRowsExpanded ? envRows : envRows.slice(0, 6);
 
+    var isLandCover = !!(latestHistoricalContext.selections && latestHistoricalContext.selections.envType === 'land_cover');
+
     var rowsHtml = rowsToShow.map(function(item, idx) {
-        // Consistent 1 decimal place on all rows.
+        var bgColor = item.color || '#64748b';
+        var isLast  = (idx === rowsToShow.length - 1);
+        var border  = isLast ? '' : 'border-bottom:1px solid var(--border-color);';
+
+        if (isLandCover) {
+            // Badge pill: color dot + "Dominant Class · XX%"
+            return '<div style="padding:5px 0;' + border + '">' +
+                '<div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">' +
+                    '<span style="font-size:0.74rem; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.city) + '</span>' +
+                    '<span style="display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px;' +
+                        'background:' + hexToRgba(bgColor, 0.18) + '; border:1px solid ' + hexToRgba(bgColor, 0.4) + '; white-space:nowrap; flex-shrink:0;">' +
+                        '<span style="width:7px;height:7px;border-radius:50%;background:' + bgColor + ';flex-shrink:0;"></span>' +
+                        '<span style="font-size:0.71rem; font-weight:600; color:var(--text-secondary);">' + escapeHtml(item.label) + ' &middot; ' + item.valueText + '</span>' +
+                    '</span>' +
+                '</div>' +
+            '</div>';
+        }
+
+        // Numeric covariates: background-gradient bar + value
         var numStr = item.numericValue != null
             ? item.numericValue.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
             : item.valueText;
+        var barPct = hasNumeric ? Math.max(2, Math.round((item.numericValue / maxVal) * 100)) : 0;
 
-        // (value / max) * 100; 2% floor keeps a sliver visible for near-zero values.
-        var barPct = hasNumeric
-            ? Math.max(2, Math.round((item.numericValue / maxVal) * 100))
-            : 0;
-
-        var bgColor = item.color || '#64748b';
-        var isLast  = (idx === rowsToShow.length - 1);
-
-        // Bar = inline background gradient (zero added height).
-        // No dotted leader — the bar edge already guides the eye to the value.
-        // Value text is always var(--text-secondary) for WCAG contrast; the bar handles color coding.
         return '<div style="' +
-            'padding:5px 0;' +
-            (isLast ? '' : 'border-bottom:1px solid var(--border-color);') +
+            'padding:5px 0;' + border +
             (barPct ? 'background:linear-gradient(to right,' + hexToRgba(bgColor, 0.14) + ' ' + barPct + '%,transparent ' + barPct + '%);' : '') +
-            'border-radius:2px;' +
-        '">' +
+            'border-radius:2px;">' +
             '<div style="display:flex; align-items:baseline; gap:6px;">' +
                 '<span class="hist-env-text" style="font-size:0.74rem; color:var(--text-secondary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.city) + '</span>' +
                 '<span class="hist-env-text" style="font-size:0.74rem; font-weight:600; color:var(--text-secondary); white-space:nowrap;">' + numStr + '</span>' +
@@ -2892,8 +2901,8 @@ function renderEnvironmentalRows() {
         '</div>';
     }).join('');
 
-    // Absolute vertical dashed line marks the dataset average across the full list.
-    var avgLineHtml = (hasNumeric && avgPct > 2 && avgPct < 98)
+    // Absolute vertical dashed line marks the dataset average (numeric covariates only).
+    var avgLineHtml = (!isLandCover && hasNumeric && avgPct > 2 && avgPct < 98)
         ? '<div style="position:absolute;left:' + avgPct + '%;top:0;bottom:0;width:0;' +
           'border-left:1.5px dashed rgba(148,163,184,0.5);pointer-events:none;z-index:2;" ' +
           'title="Dataset average"></div>'
