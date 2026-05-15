@@ -48,8 +48,11 @@ function loadDashboardThresholdConfig(): array {
 $dashboard_thresholds = loadDashboardThresholdConfig();
 $kba_data = [];
 $historical_env_yearly = [];
-$risk_site_yearly = [];
-$risk_snapshot_year = 2025;
+$risk_site_yearly      = [];
+$kbaSiteYearly         = [];  // [year][siteName] = annual viirs avg from kba_pa_monthly_stats
+$kbaAllYearlyViirs     = [];  // [year] = avg viirs across all sites
+$kbaMonthlySpecies     = [];  // [year] = 12-element array of monthly species sums
+$risk_snapshot_year    = 2025;
 $risk_city_map = [
     'Las Piñas-Parañaque Wetland Park' => 'Las Piñas',
     'Ninoy Aquino Parks and Wildlife Center' => 'Quezon City',
@@ -101,6 +104,46 @@ try {
             $risk_snapshot_year = max($risk_snapshot_year, (int) $row['snapshot_year']);
         }
     }
+
+    // kba_pa_monthly_stats — per-site monthly VIIRS and species counts for the Risk Zone view.
+    try {
+        $kmsStmt = $mysql->query(
+            "SELECT kba_pa_name, year, month, viirs_avg, species_count
+             FROM kba_pa_monthly_stats
+             ORDER BY year ASC, kba_pa_name ASC, month ASC"
+        );
+        $kmsRows = $kmsStmt ? $kmsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $siteYearViirs = [];
+        foreach ($kmsRows as $r) {
+            $yr      = (int)   ($r['year']          ?? 0);
+            $mo      = (int)   ($r['month']         ?? 0);
+            $name    = (string)($r['kba_pa_name']   ?? '');
+            $viirs   = isset($r['viirs_avg'])     && $r['viirs_avg']     !== null ? (float)$r['viirs_avg']     : null;
+            $species = isset($r['species_count']) && $r['species_count'] !== null ? (int)  $r['species_count'] : 0;
+            if ($yr < 2000 || $yr > 2100 || $mo < 1 || $mo > 12 || $name === '') continue;
+            // Monthly species sums across all sites (0-indexed for JS array)
+            if (!isset($kbaMonthlySpecies[$yr])) $kbaMonthlySpecies[$yr] = array_fill(0, 12, 0);
+            $kbaMonthlySpecies[$yr][$mo - 1] += $species;
+            // Collect monthly viirs per site to average annually
+            if ($viirs !== null) {
+                $siteYearViirs[$name][$yr][] = $viirs;
+            }
+        }
+        // Annual average VIIRS per site per year
+        foreach ($siteYearViirs as $name => $yearData) {
+            foreach ($yearData as $yr => $vals) {
+                if (!isset($kbaSiteYearly[$yr])) $kbaSiteYearly[$yr] = [];
+                $kbaSiteYearly[$yr][$name] = round(array_sum($vals) / count($vals), 4);
+            }
+        }
+        // Annual average across all sites per year (info card)
+        foreach ($kbaSiteYearly as $yr => $siteVals) {
+            $filtered = array_filter($siteVals, function ($v) { return $v !== null; });
+            if (count($filtered) > 0) {
+                $kbaAllYearlyViirs[$yr] = round(array_sum($filtered) / count($filtered), 4);
+            }
+        }
+    } catch (Throwable $_) { /* kba_pa_monthly_stats may not exist yet; degraded gracefully */ }
 
     // ecological_yearly_summary — Metro Manila aggregate for the information cards.
     // Join a subquery that averages lst_night_avg per area/year from the monthly table,
@@ -495,20 +538,21 @@ try {
                     </div>
                 </div>
                 <div class="dash-stat-card" id="riskLightIntensityCard">
-                    <div class="dash-stat-label">Light Intensity <span id="lightIntensityYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
+                    <div class="dash-stat-label">KBA &amp; PA Avg VIIRS <span id="lightIntensityYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
                     <div>
                         <span class="dash-stat-value" id="lightIntensityValue">0.0 nW</span>
                         <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0%</span>
                     </div>
                     <div class="dash-stat-desc">
-                        Metro Manila avg. VIIRS night-light radiance for the selected year. Higher intensity correlates with larger, brighter circles on the map and increased disturbance risk to bird species.
+                        Annual avg. VIIRS night-light radiance across all monitored KBA &amp; PA sites for the selected year. Higher values drive larger circles and a worse risk classification on the map.
                     </div>
                 </div>
             </div>
 
             <!-- Bird Richness Trend -->
             <div class="chart-card" id="riskBirdTrendCard">
-                <div class="section-title">Bird Richness Trend</div>
+                <div class="section-title">KBA &amp; PA Bird Richness</div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Monthly unique species observed across all KBA &amp; PA sites</div>
                 <div class="bird-richness-controls">
                     <label class="slider-label" for="yearSlider">
                         <span>Year: <strong id="yearDisplay">2014</strong></span>
@@ -665,8 +709,11 @@ $risk_zones_json = json_encode($risk_zones);
 $dashboard_thresholds_json = json_encode($dashboard_thresholds, JSON_UNESCAPED_UNICODE);
 $historical_env_yearly_json = json_encode($historical_env_yearly, JSON_UNESCAPED_UNICODE);
 $historical_env_monthly_json = json_encode($historical_env_monthly ?? [], JSON_UNESCAPED_UNICODE);
-$risk_site_yearly_json = json_encode($risk_site_yearly, JSON_UNESCAPED_UNICODE);
-$risk_snapshot_year_json = json_encode($risk_snapshot_year);
+$risk_site_yearly_json      = json_encode($risk_site_yearly,      JSON_UNESCAPED_UNICODE);
+$kba_site_yearly_json       = json_encode($kbaSiteYearly,         JSON_UNESCAPED_UNICODE);
+$kba_all_yearly_viirs_json  = json_encode($kbaAllYearlyViirs,     JSON_UNESCAPED_UNICODE);
+$kba_monthly_species_json   = json_encode($kbaMonthlySpecies,     JSON_UNESCAPED_UNICODE);
+$risk_snapshot_year_json    = json_encode($risk_snapshot_year);
 
 $extra_scripts = <<<SCRIPTS
 <script>
@@ -675,7 +722,10 @@ var riskZones = {$risk_zones_json};
 var dashboardThresholds = {$dashboard_thresholds_json};
 var historicalEnvYearly = {$historical_env_yearly_json};
 var historicalEnvMonthly = {$historical_env_monthly_json};
-var riskSiteYearly = {$risk_site_yearly_json};
+var riskSiteYearly    = {$risk_site_yearly_json};
+var kbaSiteYearly     = {$kba_site_yearly_json};      // {year: {siteName: annualViirs}}
+var kbaAllYearlyViirs = {$kba_all_yearly_viirs_json}; // {year: allSitesAvgViirs}
+var kbaMonthlySpecies = {$kba_monthly_species_json};  // {year: [12 monthly species sums]}
 var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
 var DASHBOARD_MAX_YEAR = 2025;
@@ -901,28 +951,27 @@ function classifyRiskByLight(lightValue) {
 }
 
 function computeZoneLight(zone, zoneIndex, year) {
-    // Use site-footprint snapshot values for the snapshot year so Dashboard matches Reports.
+    // Primary: per-site annual VIIRS averaged from monthly values in kba_pa_monthly_stats.
+    var siteBucket = kbaSiteYearly && kbaSiteYearly[String(year)] ? kbaSiteYearly[String(year)] : null;
+    if (siteBucket && siteBucket[zone.name] !== undefined && siteBucket[zone.name] !== null) {
+        return Math.max(0, Number(siteBucket[zone.name]));
+    }
+
+    // Fallback 1: snapshot-year light_exposure from kba_pa_audit_live.
     if (year === Number(zone.snapshot_year || riskSnapshotYear)) {
         return Math.max(0, Number(zone.light_exposure || 0));
     }
 
-    var yearlyBySite = riskSiteYearly && riskSiteYearly[zone.name] ? riskSiteYearly[zone.name] : null;
-    if (yearlyBySite && yearlyBySite[String(year)] !== undefined && yearlyBySite[String(year)] !== null) {
-        return Math.max(0, Number(yearlyBySite[String(year)]));
-    }
-
-    // Get city for this zone from mapping
+    // Fallback 2: city-level VIIRS from ecological_yearly_summary.
     var city = riskCityMap[zone.name] || null;
-    if (!city) return Math.max(0, Number(zone.light_exposure || 0));
-
-    // Look up viirs_avg from ecological_yearly_summary for this city and year
-    var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)] ? historicalEnvYearly[String(year)] : null;
-    if (!yearBucket || !yearBucket[city]) {
-        return Math.max(0, Number(zone.light_exposure || 0));
+    if (city) {
+        var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)] ? historicalEnvYearly[String(year)] : null;
+        if (yearBucket && yearBucket[city] && yearBucket[city].viirs !== null && yearBucket[city].viirs !== undefined) {
+            return Math.max(0, Number(yearBucket[city].viirs));
+        }
     }
 
-    var viirs = yearBucket[city].viirs;
-    return viirs !== null && viirs !== undefined ? Math.max(0, Number(viirs)) : Math.max(0, Number(zone.light_exposure || 0));
+    return Math.max(0, Number(zone.light_exposure || 0));
 }
 
 function deriveRiskZoneData(year) {
@@ -3128,21 +3177,9 @@ if (histSiteDetailCloseEl) {
     });
 }
 
-// Bird Richness fallback data per year (2014-2025), monthly values
-var birdRichnessData = {
-    2014: [120, 135, 128, 142, 155, 148, 160, 158, 145, 138, 130, 125],
-    2015: [128, 140, 135, 150, 162, 155, 168, 165, 152, 144, 136, 130],
-    2016: [132, 145, 138, 155, 168, 160, 172, 170, 158, 148, 140, 135],
-    2017: [138, 150, 143, 160, 174, 166, 178, 175, 163, 153, 145, 140],
-    2018: [145, 158, 150, 168, 182, 174, 186, 183, 170, 160, 152, 146],
-    2019: [150, 163, 156, 174, 188, 180, 192, 189, 176, 166, 157, 151],
-    2020: [140, 152, 144, 162, 175, 167, 179, 177, 163, 153, 144, 138],
-    2021: [148, 161, 153, 170, 184, 175, 188, 185, 172, 161, 152, 146],
-    2022: [155, 169, 161, 178, 193, 184, 197, 194, 180, 169, 160, 153],
-    2023: [162, 176, 168, 186, 201, 192, 205, 202, 188, 176, 167, 160],
-    2024: [168, 183, 174, 193, 208, 199, 212, 209, 195, 183, 174, 167],
-    2025: [170, 185, 176, 195, 210, 201, 214, 211, 197, 185, 176, 169]
-};
+// Monthly unique-species sums across all KBA & PA sites, from kba_pa_monthly_stats via PHP.
+// Keys are year strings; values are 0-indexed arrays of 12 monthly totals.
+var birdRichnessData = kbaMonthlySpecies;
 
 var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -3373,7 +3410,8 @@ function applyActivityIcon(iconId, delta, hasPrev, isBeneficialWhenDown) {
 // viirsPctDelta is a percentage (getPctDelta result), not absolute nW.
 function updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta) {
     var prevYear = currentYear - 1;
-    var hasPrev = birdRichnessData.hasOwnProperty(prevYear);
+    var hasPrev = birdRichnessData.hasOwnProperty(prevYear) ||
+                  !!(kbaAllYearlyViirs && kbaAllYearlyViirs.hasOwnProperty(String(prevYear)));
     var periodLabel = hasPrev ? (currentYear + ' vs ' + prevYear) : (currentYear + ' baseline year');
 
     var birdChangeEl = document.getElementById('recentBirdChange');
@@ -3414,30 +3452,14 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta) {
     }
 }
 
-// Resolve Metro Manila avg VIIRS for a year from ecological_yearly_summary data.
-// Prefers the 'All Areas' aggregate row (same source as Home tab) then falls back
-// to the mean of all per-city entries, then to the KBA/PA site footprint average.
-function getMetroViirsForYear(year, kbaFallback) {
-    var bucket = historicalEnvYearly && historicalEnvYearly[String(year)] ? historicalEnvYearly[String(year)] : null;
-    if (bucket) {
-        // Prefer the pre-aggregated 'All Areas' row (matches home tab exactly)
-        var allAreas = bucket['All Areas'];
-        if (allAreas && allAreas.viirs !== null && allAreas.viirs !== undefined) {
-            return Math.max(0, Number(allAreas.viirs));
-        }
-        // Fall back to average of all per-city rows
-        var cityKeys = Object.keys(bucket).filter(function(k) { return k !== 'All Areas'; });
-        if (cityKeys.length) {
-            var sum = 0, cnt = 0;
-            cityKeys.forEach(function(k) {
-                var v = bucket[k] && bucket[k].viirs !== null && bucket[k].viirs !== undefined ? Number(bucket[k].viirs) : null;
-                if (v !== null && !isNaN(v)) { sum += v; cnt++; }
-            });
-            if (cnt > 0) return Math.max(0, sum / cnt);
-        }
+// Resolve KBA & PA avg VIIRS for a year — annual average across all monitored sites
+// from kba_pa_monthly_stats (via PHP). Falls back to the summarizeRiskYear footprint average.
+function getKbaViirsForYear(year, kbaFallback) {
+    var v = kbaAllYearlyViirs && kbaAllYearlyViirs[String(year)];
+    if (v !== undefined && v !== null && !isNaN(Number(v))) {
+        return Math.max(0, Number(v));
     }
-    // Last resort: KBA/PA site footprint average (original behaviour)
-    return Math.max(0, kbaFallback);
+    return Math.max(0, Number(kbaFallback) || 0);
 }
 
 function updateAtRiskCardDescription() {
@@ -3457,10 +3479,10 @@ function updateYearDrivenUpdatesOnly(currentYear) {
     var currentRiskSummary = summarizeRiskYear(currentYear);
     var previousRiskSummary = (previousYear >= DASHBOARD_MIN_YEAR) ? summarizeRiskYear(previousYear) : null;
 
-    // Resolve light intensity from Metro Manila aggregate (matches home tab)
-    var currentViirs  = getMetroViirsForYear(currentYear,  currentRiskSummary.avgViirs);
+    // Resolve light intensity from KBA & PA annual averages in kba_pa_monthly_stats.
+    var currentViirs  = getKbaViirsForYear(currentYear,  currentRiskSummary.avgViirs);
     var previousViirs = previousRiskSummary
-        ? getMetroViirsForYear(previousYear, previousRiskSummary.avgViirs)
+        ? getKbaViirsForYear(previousYear, previousRiskSummary.avgViirs)
         : null;
 
     // Update stat card values
@@ -3498,7 +3520,7 @@ function updateYearDrivenUpdatesOnly(currentYear) {
 }
 
 function updateChartForYear(year) {
-    var yearData = birdRichnessData[year] || birdRichnessData[DASHBOARD_MIN_YEAR];
+    var yearData = birdRichnessData[year] || birdRichnessData[DASHBOARD_MIN_YEAR] || new Array(12).fill(0);
     var currentStats = getBirdYearStats(year);
     var previousStats = (year > DASHBOARD_MIN_YEAR) ? getBirdYearStats(year - 1) : null;
 
@@ -3605,7 +3627,7 @@ var birdChart = new Chart(ctx, {
         datasets: [
             {
                 label: 'Bird Richness',
-                data: birdRichnessData[DASHBOARD_MIN_YEAR],
+                data: birdRichnessData[DASHBOARD_MIN_YEAR] || new Array(12).fill(0),
                 borderColor: '#3b82f6',
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
                 fill: true,
@@ -3639,9 +3661,9 @@ var birdChart = new Chart(ctx, {
                 ticks: { color: '#a0a4b0' }
             },
             y: {
-                beginAtZero: false,
-                min: 100,
-                max: 230,
+                beginAtZero: true,
+                min: 0,
+                max: 50,
                 grid: { color: 'rgba(255,255,255,0.06)' },
                 ticks: { color: '#a0a4b0' }
             }

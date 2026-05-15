@@ -201,6 +201,114 @@ function compute_year_readiness(PDO $pdo): array {
     return ['ready' => $ready, 'not_ready' => $not_ready, 'year_detail' => array_values($detail)];
 }
 
+// ── KBA/PA monthly stats rebuild ──────────────────────────────────────────────
+/**
+ * Populates kba_pa_monthly_stats from kba_pa_coords grid cells.
+ *
+ * VIIRS avg  — viirs table, joined on (latitude, longitude) using idx_viirs_master.
+ * Species ct — raw_bird_observation, joined on (grid_lat, grid_lon) using idx_bird_grid_time.
+ *
+ * Full rebuild: TRUNCATEs the table first so the result is always authoritative.
+ */
+function rebuild_kba_pa_monthly_stats(PDO $pdo): int {
+    $sites = $pdo->query(
+        "SELECT kba_pa_id, kba_pa_name, grid_cells_json
+         FROM kba_pa_coords
+         WHERE grid_cells_json IS NOT NULL
+           AND grid_cells_json NOT IN ('', '[]')"
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($sites)) return 0;
+
+    $pdo->exec("DROP TEMPORARY TABLE IF EXISTS _kpa_cells");
+    $pdo->exec("
+        CREATE TEMPORARY TABLE _kpa_cells (
+            kba_pa_id BIGINT UNSIGNED NOT NULL,
+            lat       DECIMAL(10,8)  NOT NULL,
+            lon       DECIMAL(11,8)  NOT NULL,
+            KEY idx_ll (lat, lon),
+            KEY idx_id (kba_pa_id)
+        )
+    ");
+
+    $insCell = $pdo->prepare("INSERT INTO _kpa_cells (kba_pa_id, lat, lon) VALUES (?,?,?)");
+    foreach ($sites as $site) {
+        $cells = json_decode((string)($site['grid_cells_json'] ?? '[]'), true);
+        if (!is_array($cells)) continue;
+        foreach ($cells as $cell) {
+            if (!isset($cell['lat'], $cell['lon'])) continue;
+            $insCell->execute([(int)$site['kba_pa_id'], (float)$cell['lat'], (float)$cell['lon']]);
+        }
+    }
+
+    $pdo->exec('TRUNCATE TABLE kba_pa_monthly_stats');
+
+    // A) One row per (site, year, month) where VIIRS data exists.
+    //    final_master_grid.idx_spatial_temporal (lat, lon, year, month) is used via the lat/lon join.
+    //    Using final_master_grid instead of viirs to avoid rows with null lat/lon.
+    $pdo->exec("
+        INSERT INTO kba_pa_monthly_stats
+            (kba_pa_id, kba_pa_name, year, month, viirs_avg, species_count)
+        SELECT
+            c.kba_pa_id, kc.kba_pa_name, fmg.year, fmg.month,
+            AVG(fmg.viirs_avg_rad), 0
+        FROM _kpa_cells c
+        JOIN kba_pa_coords kc ON kc.kba_pa_id = c.kba_pa_id
+        JOIN final_master_grid fmg
+            ON  fmg.lat = c.lat
+            AND fmg.lon = c.lon
+        WHERE fmg.viirs_avg_rad IS NOT NULL
+        GROUP BY c.kba_pa_id, kc.kba_pa_name, fmg.year, fmg.month
+    ");
+
+    // B) Fill species counts on existing rows.
+    //    raw_bird_observation.idx_bird_grid_time (grid_lat, grid_lon, year, month) used via lat/lon join.
+    $pdo->exec("
+        UPDATE kba_pa_monthly_stats kms
+        JOIN (
+            SELECT c.kba_pa_id, rbo.year, rbo.month,
+                   COUNT(DISTINCT rbo.species_id) AS cnt
+            FROM _kpa_cells c
+            JOIN raw_bird_observation rbo
+                ON  rbo.grid_lat = c.lat
+                AND rbo.grid_lon = c.lon
+            WHERE rbo.species_id IS NOT NULL
+            GROUP BY c.kba_pa_id, rbo.year, rbo.month
+        ) sp
+            ON  sp.kba_pa_id = kms.kba_pa_id
+            AND sp.year      = kms.year
+            AND sp.month     = kms.month
+        SET kms.species_count = sp.cnt
+    ");
+
+    // C) Insert months that have bird data but no corresponding VIIRS row.
+    $pdo->exec("
+        INSERT INTO kba_pa_monthly_stats
+            (kba_pa_id, kba_pa_name, year, month, viirs_avg, species_count)
+        SELECT sp.kba_pa_id, kc.kba_pa_name, sp.year, sp.month, NULL, sp.cnt
+        FROM (
+            SELECT c.kba_pa_id, rbo.year, rbo.month,
+                   COUNT(DISTINCT rbo.species_id) AS cnt
+            FROM _kpa_cells c
+            JOIN raw_bird_observation rbo
+                ON  rbo.grid_lat = c.lat
+                AND rbo.grid_lon = c.lon
+            WHERE rbo.species_id IS NOT NULL
+            GROUP BY c.kba_pa_id, rbo.year, rbo.month
+        ) sp
+        JOIN kba_pa_coords kc ON kc.kba_pa_id = sp.kba_pa_id
+        LEFT JOIN kba_pa_monthly_stats kms
+            ON  kms.kba_pa_id = sp.kba_pa_id
+            AND kms.year      = sp.year
+            AND kms.month     = sp.month
+        WHERE kms.id IS NULL
+    ");
+
+    $pdo->exec("DROP TEMPORARY TABLE IF EXISTS _kpa_cells");
+
+    return (int)$pdo->query('SELECT COUNT(*) FROM kba_pa_monthly_stats')->fetchColumn();
+}
+
 // ── Dry-run: return coverage summary for frontend confirmation dialog ──────────
 if (!$confirmed) {
     try {
@@ -368,6 +476,14 @@ if ($success) {
         }
 
         $log_lines[] = json_encode(['level' => 'info', 'msg' => "BAU prewarm complete — {$prewarmOk} city-month combinations cached, {$prewarmFail} failed."]);
+
+        // Rebuild KBA/PA monthly stats (viirs_avg + species_count per site/year/month).
+        try {
+            $kpaRows = rebuild_kba_pa_monthly_stats($pdo);
+            $log_lines[] = json_encode(['level' => 'info', 'msg' => "kba_pa_monthly_stats rebuilt ({$kpaRows} rows)."]);
+        } catch (Throwable $kpaEx) {
+            $log_lines[] = json_encode(['level' => 'warning', 'msg' => 'kba_pa_monthly_stats rebuild skipped (non-fatal): ' . $kpaEx->getMessage()]);
+        }
     } catch (Throwable $e) {
         $log_lines[] = json_encode(['level' => 'warning', 'msg' => 'Post-rebuild hooks failed (non-fatal): ' . $e->getMessage()]);
     }
