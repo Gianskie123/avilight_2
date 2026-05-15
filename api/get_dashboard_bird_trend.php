@@ -17,18 +17,22 @@ try {
     $pdo = get_mysql_db();
 
         $stmt = $pdo->prepare(
-                'SELECT year, month, AVG(unique_species_count) AS richness
-                 FROM aggregated_bird_observation
-                 WHERE year BETWEEN :start_year AND :end_year
-                     AND month BETWEEN 1 AND 12
-                     AND latitude != 0 AND longitude != 0
-                 GROUP BY year, month
-                 ORDER BY year ASC, month ASC'
+            'SELECT year, month, COUNT(DISTINCT species_id) AS richness
+             FROM raw_bird_observation
+             WHERE year    BETWEEN :start_year AND :end_year
+               AND month   BETWEEN 1 AND 12
+               AND latitude  BETWEEN 14.35 AND 14.82
+               AND longitude BETWEEN 120.90 AND 121.22
+               AND latitude  != 0
+               AND longitude != 0
+               AND species_id IS NOT NULL
+             GROUP BY year, month
+             ORDER BY year ASC, month ASC'
         );
-    $stmt->execute([
-        ':start_year' => $startYear,
-        ':end_year' => $endYear,
-    ]);
+        $stmt->execute([
+            ':start_year' => $startYear,
+            ':end_year'   => $endYear,
+        ]);
 
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
@@ -44,17 +48,6 @@ try {
             continue;
         }
         $series[$year][$month - 1] = round((float) ($row['richness'] ?? 0), 2);
-    }
-
-    foreach ($series as $year => $values) {
-        $nonNull = array_values(array_filter($values, static fn($v) => $v !== null));
-        $fallback = count($nonNull) > 0 ? (array_sum($nonNull) / count($nonNull)) : 0.0;
-        foreach ($values as $idx => $v) {
-            if ($v === null) {
-                $values[$idx] = round($fallback, 2);
-            }
-        }
-        $series[$year] = $values;
     }
 
     echo json_encode([

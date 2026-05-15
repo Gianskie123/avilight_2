@@ -52,7 +52,6 @@ $risk_site_yearly      = [];
 $kbaSiteYearly         = [];  // [year][siteName] = annual viirs avg from kba_pa_monthly_stats
 $kbaAllYearlyViirs     = [];  // [year] = avg viirs across all sites
 $kbaMonthlySpecies     = [];  // [year] = 12-element array of monthly species sums
-$kbaSiteMonthlySpecies = [];  // [siteName][year][monthIndex] = species_count from kba_pa_monthly_stats
 $risk_snapshot_year    = 2025;
 $risk_city_map = [
     'Las Piñas-Parañaque Wetland Park' => 'Las Piñas',
@@ -125,9 +124,6 @@ try {
             // Monthly species sums across all sites (0-indexed for JS array)
             if (!isset($kbaMonthlySpecies[$yr])) $kbaMonthlySpecies[$yr] = array_fill(0, 12, 0);
             $kbaMonthlySpecies[$yr][$mo - 1] += $species;
-            // Per-site monthly species count (0-indexed) for multi-line chart
-            if (!isset($kbaSiteMonthlySpecies[$name][$yr])) $kbaSiteMonthlySpecies[$name][$yr] = array_fill(0, 12, 0);
-            $kbaSiteMonthlySpecies[$name][$yr][$mo - 1] = $species;
             // Collect monthly viirs per site to average annually
             if ($viirs !== null) {
                 $siteYearViirs[$name][$yr][] = $viirs;
@@ -373,10 +369,18 @@ try {
                         <button class="map-view-btn" id="btnHistorical" onclick="setMapView('historical')" aria-pressed="false">📊 Historical Data</button>
                     </div>
                     <span class="map-view-info" id="mapViewInfoBtn"
-                        data-risk-tip="Risk Zone view: KBA &amp; PA sites shown as color-coded circles. Circle color reflects ecological risk level based on VIIRS light exposure and species richness."
+                        data-risk-tip="Risk Zone view: KBA &amp; PA sites are shown as color-coded circles. Circle color reflects ecological risk level based on VIIRS night-light exposure and species richness."
                         data-hist-tip="Historical Data view: plots bird observation sites by species richness for a selected year and month. Use the filters to explore species, migration status, and light tolerance."
-                        title="Risk Zone view: KBA &amp; PA sites shown as color-coded circles. Circle color reflects ecological risk level based on VIIRS light exposure and species richness."
+                        onclick="toggleMapViewInfoPopover(event)"
+                        style="cursor:pointer;"
                         aria-label="Map view info">i</span>
+                    <div id="mapViewInfoPopover" style="
+                        display:none; position:absolute; top:calc(100% + 6px); right:0; z-index:1200;
+                        max-width:280px; padding:10px 13px;
+                        background:var(--bg-card); border:1px solid var(--border-color);
+                        border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.18);
+                        font-size:0.74rem; color:var(--text-secondary); line-height:1.5;">
+                    </div>
                 </div>
 
                 <!-- Historical data filters (hidden by default) -->
@@ -546,13 +550,13 @@ try {
                     </div>
                 </div>
                 <div class="dash-stat-card" id="riskLightIntensityCard">
-                    <div class="dash-stat-label">KBA &amp; PA Avg VIIRS <span id="lightIntensityYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
+                    <div class="dash-stat-label">Metro Manila Avg VIIRS <span id="lightIntensityYear" style="font-size:0.72rem; font-weight:400; color:var(--text-muted);"></span></div>
                     <div>
                         <span class="dash-stat-value" id="lightIntensityValue">0.0 nW</span>
                         <span class="dash-stat-trend" id="lightIntensityTrend">↔ 0.0%</span>
                     </div>
                     <div class="dash-stat-desc">
-                        Annual avg. VIIRS night-light radiance across all monitored KBA &amp; PA sites for the selected year.
+                        Annual avg. VIIRS night-light radiance across Metro Manila cities for the selected year.
                     </div>
                 </div>
             </div>
@@ -560,7 +564,7 @@ try {
             <!-- Bird Richness Trend -->
             <div class="chart-card" id="riskBirdTrendCard">
                 <div class="section-title">KBA &amp; PA Bird Richness</div>
-                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Annual avg. unique species per site — click legend to isolate, hover for values</div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Monthly unique species observed across Metro Manila — hover for values</div>
                 <div class="bird-richness-controls">
                     <label class="slider-label" for="yearSlider">
                         <span>Year: <strong id="yearDisplay">2014</strong></span>
@@ -570,7 +574,7 @@ try {
                 </div>
                 <canvas id="birdRichnessChart"></canvas>
                 <div class="dash-stat-desc" style="margin-top:8px;" id="birdTrendMeta">
-                    <div id="birdTrendPeak">Top site (selected year): —</div>
+                    <div id="birdTrendPeak">Peak: —</div>
                     <div id="birdTrendPeakDelta">Year-over-year overall richness: —</div>
                 </div>
             </div>
@@ -721,7 +725,6 @@ $risk_site_yearly_json      = json_encode($risk_site_yearly,      JSON_UNESCAPED
 $kba_site_yearly_json         = json_encode($kbaSiteYearly,         JSON_UNESCAPED_UNICODE);
 $kba_all_yearly_viirs_json    = json_encode($kbaAllYearlyViirs,     JSON_UNESCAPED_UNICODE);
 $kba_monthly_species_json     = json_encode($kbaMonthlySpecies,     JSON_UNESCAPED_UNICODE);
-$kba_site_monthly_species_json = json_encode($kbaSiteMonthlySpecies, JSON_UNESCAPED_UNICODE);
 $risk_snapshot_year_json    = json_encode($risk_snapshot_year);
 
 $extra_scripts = <<<SCRIPTS
@@ -735,7 +738,6 @@ var riskSiteYearly    = {$risk_site_yearly_json};
 var kbaSiteYearly        = {$kba_site_yearly_json};         // {year: {siteName: annualViirs}}
 var kbaAllYearlyViirs    = {$kba_all_yearly_viirs_json};    // {year: allSitesAvgViirs}
 var kbaMonthlySpecies    = {$kba_monthly_species_json};     // {year: [12 monthly species sums]}
-var kbaSiteMonthlySpecies = {$kba_site_monthly_species_json}; // {siteName: {year: [12 monthly species counts]}}
 var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
 var DASHBOARD_MAX_YEAR = 2025;
@@ -3180,6 +3182,25 @@ function setMapView(view) {
 }
 
 var histFiltersVisible = false;
+
+function toggleMapViewInfoPopover(e) {
+    e.stopPropagation();
+    var popover = document.getElementById('mapViewInfoPopover');
+    var btn     = document.getElementById('mapViewInfoBtn');
+    if (!popover || !btn) return;
+    var isOpen = popover.style.display !== 'none';
+    if (isOpen) {
+        popover.style.display = 'none';
+        return;
+    }
+    popover.textContent = btn.dataset[currentMapView === 'historical' ? 'histTip' : 'riskTip'] || '';
+    popover.style.display = 'block';
+}
+
+document.addEventListener('click', function() {
+    var popover = document.getElementById('mapViewInfoPopover');
+    if (popover) popover.style.display = 'none';
+});
 function toggleHistFilters() {
     histFiltersVisible = !histFiltersVisible;
     var row = document.getElementById('histAdvancedFilters');
@@ -3371,19 +3392,12 @@ function updateBirdTrendMeta(currentYear, currentStats, previousStats) {
     var peakDeltaTextEl = document.getElementById('birdTrendPeakDelta');
 
     if (peakTextEl) {
-        var yearKey = String(currentYear);
-        var topSite = null, topCount = -1;
-        if (kbaSiteMonthlySpecies) {
-            Object.keys(kbaSiteMonthlySpecies).forEach(function(site) {
-                var monthData = (kbaSiteMonthlySpecies[site] || {})[yearKey];
-                if (!monthData) return;
-                var peak = Math.max.apply(null, monthData.filter(function(v) { return v !== null; }));
-                if (peak > topCount) { topCount = peak; topSite = site; }
-            });
-        }
-        peakTextEl.textContent = topSite
-            ? 'Top site (' + currentYear + '): ' + topSite + ' — ' + topCount + ' species (peak month)'
-            : 'Top site (' + currentYear + '): no data';
+        var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var peakCount = currentStats ? currentStats.peak : 0;
+        var peakIdx   = currentStats ? currentStats.peakIndex : 0;
+        peakTextEl.textContent = peakCount > 0
+            ? 'Peak: ' + peakCount + ' species (' + monthNames[peakIdx] + ' ' + currentYear + ')'
+            : 'Peak: no data for ' + currentYear;
     }
 
     if (!peakDeltaTextEl) return;
@@ -3468,12 +3482,15 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta) {
 
 // Resolve KBA & PA avg VIIRS for a year — annual average across all monitored sites
 // from kba_pa_monthly_stats (via PHP). Falls back to the summarizeRiskYear footprint average.
-function getKbaViirsForYear(year, kbaFallback) {
-    var v = kbaAllYearlyViirs && kbaAllYearlyViirs[String(year)];
-    if (v !== undefined && v !== null && !isNaN(Number(v))) {
-        return Math.max(0, Number(v));
-    }
-    return Math.max(0, Number(kbaFallback) || 0);
+function getMetroViirsForYear(year) {
+    var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)];
+    if (!yearBucket) return 0;
+    var vals = [];
+    Object.keys(yearBucket).forEach(function(city) {
+        var v = yearBucket[city] && yearBucket[city].viirs;
+        if (v !== null && v !== undefined && Number.isFinite(Number(v))) vals.push(Number(v));
+    });
+    return vals.length ? Math.max(0, vals.reduce(function(a, b) { return a + b; }, 0) / vals.length) : 0;
 }
 
 function updateAtRiskCardDescription() {
@@ -3493,10 +3510,9 @@ function updateYearDrivenUpdatesOnly(currentYear) {
     var currentRiskSummary = summarizeRiskYear(currentYear);
     var previousRiskSummary = (previousYear >= DASHBOARD_MIN_YEAR) ? summarizeRiskYear(previousYear) : null;
 
-    // Resolve light intensity from KBA & PA annual averages in kba_pa_monthly_stats.
-    var currentViirs  = getKbaViirsForYear(currentYear,  currentRiskSummary.avgViirs);
+    var currentViirs  = getMetroViirsForYear(currentYear)  || currentRiskSummary.avgViirs  || 0;
     var previousViirs = previousRiskSummary
-        ? getKbaViirsForYear(previousYear, previousRiskSummary.avgViirs)
+        ? (getMetroViirsForYear(previousYear) || previousRiskSummary.avgViirs || 0)
         : null;
 
     // Update stat card values
@@ -3535,14 +3551,9 @@ function updateYearDrivenUpdatesOnly(currentYear) {
 
 function updateChartForYear(year) {
     if (birdChart) {
-        var yr = String(year);
-        birdChart.data.datasets.forEach(function(ds) {
-            var yearData = (kbaSiteMonthlySpecies[ds.label] || {})[yr];
-            ds.data = yearData ? yearData.slice() : new Array(12).fill(null);
-        });
-        var allValues = birdChart.data.datasets.reduce(function(acc, ds) {
-            return acc.concat(ds.data.filter(function(v) { return v !== null; }));
-        }, []);
+        var yearData = birdRichnessData[year] || new Array(12).fill(0);
+        birdChart.data.datasets[0].data = yearData.slice();
+        var allValues = yearData.filter(function(v) { return v !== null && v > 0; });
         if (allValues.length && birdChart.options.scales.y) {
             var maxVal = Math.max.apply(null, allValues);
             birdChart.options.scales.y.max = Math.ceil(maxVal * 1.2) || 10;
@@ -3632,36 +3643,24 @@ function fetchHistoricalRowsForSelections(selections) {
         });
 }
 
-// Bird Richness Trend Chart — multi-line, one line per KBA/PA site, months on x-axis
-var SITE_PALETTE = ['#2563eb','#16a34a','#dc2626','#d97706','#8b5cf6','#0891b2'];
-
-function buildSiteDatasets(year) {
-    var yr = String(year);
-    var datasets = [];
-    Object.keys(kbaSiteMonthlySpecies || {}).sort().forEach(function(siteName, idx) {
-        var color = SITE_PALETTE[idx % SITE_PALETTE.length];
-        var yearData = (kbaSiteMonthlySpecies[siteName] || {})[yr] || new Array(12).fill(null);
-        datasets.push({
-            label: siteName,
-            data: yearData.slice(),
-            borderColor: color,
-            backgroundColor: color + '1a',
-            borderWidth: 2.5,
-            pointRadius: 4,
-            pointHoverRadius: 7,
-            tension: 0.3,
-            fill: false
-        });
-    });
-    return datasets;
-}
-
+// Bird Richness Trend Chart — single line, Metro Manila unique species per month
 var ctx = document.getElementById('birdRichnessChart').getContext('2d');
 var birdChart = new Chart(ctx, {
     type: 'line',
     data: {
         labels: months,
-        datasets: buildSiteDatasets(riskSnapshotYear)
+        datasets: [{
+            label: 'Metro Manila',
+            data: birdRichnessData[riskSnapshotYear] || new Array(12).fill(0),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59,130,246,0.08)',
+            borderWidth: 2,
+            borderDash: [5, 4],
+            pointRadius: 2.5,
+            pointHoverRadius: 5,
+            tension: 0.3,
+            fill: false
+        }]
     },
     options: {
         responsive: true,
@@ -3681,11 +3680,7 @@ var birdChart = new Chart(ctx, {
             }
         },
         plugins: {
-            legend: {
-                display: true,
-                position: 'top',
-                labels: { usePointStyle: true, boxWidth: 10, color: '#a0a4b0', font: { size: 11 } }
-            },
+            legend: { display: false },
             tooltip: {
                 callbacks: {
                     label: function(context) {
