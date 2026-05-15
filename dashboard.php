@@ -2727,12 +2727,17 @@ function toggleEnvSort() {
     renderEnvironmentalRows();
 }
 
+function hexToRgba(hex, alpha) {
+    var r = parseInt(hex.slice(1, 3), 16) || 0;
+    var g = parseInt(hex.slice(3, 5), 16) || 0;
+    var b = parseInt(hex.slice(5, 7), 16) || 0;
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
 function renderEnvironmentalRows() {
     if (!latestHistoricalContext) return;
 
-    var envRows = (latestHistoricalContext.envRows || []).slice(); // shallow copy before sort
-
-    // Numeric values present → support sort; otherwise always alphabetical
+    var envRows = (latestHistoricalContext.envRows || []).slice();
     var hasNumeric = envRows.length && envRows[0].numericValue != null;
 
     if (envSortByValue && hasNumeric) {
@@ -2741,32 +2746,45 @@ function renderEnvironmentalRows() {
         envRows.sort(function(a, b) { return a.city.localeCompare(b.city); });
     }
 
-    var maxVal = hasNumeric ? Math.max.apply(null, envRows.map(function(r) { return r.numericValue || 0; })) : 1;
-    maxVal = maxVal || 1;
+    // Min-max scaling so inter-city variance is visually amplified.
+    var maxVal = 1, minVal = 0, range = 1;
+    if (hasNumeric) {
+        var nums = envRows.map(function(r) { return r.numericValue != null ? r.numericValue : 0; });
+        maxVal = Math.max.apply(null, nums);
+        minVal = Math.min.apply(null, nums);
+        if (maxVal === minVal) minVal = 0; // flat dataset: fall back to 0-based
+        maxVal = maxVal || 1;
+        range  = (maxVal - minVal) || 1;
+    }
 
     var rowsToShow = envRowsExpanded ? envRows : envRows.slice(0, 6);
 
     var rowsHtml = rowsToShow.map(function(item, idx) {
-        // Show only the raw number — no label, no unit (header carries context)
+        // 1 decimal place, consistent across all rows.
         var numStr = item.numericValue != null
-            ? (item.numericValue % 1 === 0
-                ? item.numericValue.toLocaleString()
-                : parseFloat(item.numericValue.toFixed(item.numericValue < 1 ? 2 : 1)).toLocaleString())
+            ? item.numericValue.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
             : item.valueText;
 
-        var barPct = hasNumeric ? Math.max(3, Math.round((item.numericValue / maxVal) * 100)) : 0;
-        var isLast = (idx === rowsToShow.length - 1);
+        // Min-max bar width; floor at 6% so the lowest city still shows colour.
+        var barPct = hasNumeric
+            ? Math.max(6, Math.round(((item.numericValue - minVal) / range) * 100))
+            : 0;
 
-        return '<div style="padding:5px 0;' + (isLast ? '' : ' border-bottom:1px solid var(--border-color);') + '">' +
-            // City name + dotted leader + value
-            '<div style="display:flex; align-items:baseline; margin-bottom:3px;">' +
+        var bgColor  = item.color || '#64748b';
+        var isLast   = (idx === rowsToShow.length - 1);
+
+        // Bar is rendered as an inline background gradient on the row itself —
+        // no separate element, zero added vertical height.
+        return '<div style="' +
+            'padding:5px 0;' +
+            (isLast ? '' : 'border-bottom:1px solid var(--border-color);') +
+            (barPct ? 'background:linear-gradient(to right,' + hexToRgba(bgColor, 0.14) + ' ' + barPct + '%,transparent ' + barPct + '%);' : '') +
+            'border-radius:2px;' +
+        '">' +
+            '<div style="display:flex; align-items:baseline;">' +
                 '<span class="hist-env-text" style="font-size:0.74rem; color:var(--text-secondary); white-space:nowrap;">' + escapeHtml(item.city) + '</span>' +
                 '<span style="flex:1; border-bottom:1px dotted var(--border-color); margin:0 5px 3px 5px;"></span>' +
-                '<span class="hist-env-text" style="font-size:0.74rem; font-weight:600; color:' + item.color + '; white-space:nowrap;">' + numStr + '</span>' +
-            '</div>' +
-            // Mini bar proportional to value
-            '<div style="height:3px; border-radius:2px; background:var(--bg-input); overflow:hidden;">' +
-                '<div style="height:100%; width:' + barPct + '%; background:' + item.color + '; border-radius:2px;"></div>' +
+                '<span class="hist-env-text" style="font-size:0.74rem; font-weight:600; color:' + bgColor + '; white-space:nowrap;">' + numStr + '</span>' +
             '</div>' +
         '</div>';
     }).join('');
