@@ -1445,6 +1445,8 @@ async function buildMasterGrid(btn) {
 // ── Sync Report Data ─────────────────────────────────────────────────────────
 
 async function syncReportData(btn) {
+    const statusEl = document.getElementById('syncReportStatus');
+
     const confirmed = await showConfirmModal({
         title: 'Sync Report Data',
         subtitle: 'Rebuilds ecological summary and clears all report caches',
@@ -1459,7 +1461,8 @@ async function syncReportData(btn) {
 
     const originalText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Syncing… (may take up to 90 seconds)';
+    btn.textContent = 'Syncing…';
+    statusEl.innerHTML = '<div class="alert alert-info" style="font-size:.875rem;">Rebuilding ecological yearly summary — this may take up to 90 seconds. Do not close this page.</div>';
 
     let data;
     try {
@@ -1471,7 +1474,7 @@ async function syncReportData(btn) {
     } catch (err) {
         btn.disabled = false;
         btn.textContent = originalText;
-        showToast('Sync Failed', [err.message], 'danger');
+        statusEl.innerHTML = `<div class="alert alert-danger" style="font-size:.875rem;">Sync failed: ${err.message}</div>`;
         return;
     }
 
@@ -1479,13 +1482,23 @@ async function syncReportData(btn) {
     btn.textContent = originalText;
 
     if (data.success) {
-        const msgs = [
-            `Ecological summary rebuilt in ${data.summary_table?.elapsed_s ?? '?'}s.`,
-            `${data.cache_files_purged ?? 0} cached report file(s) cleared.`,
-            `${data.snapshot_cache_cleared ?? 0} snapshot cache entry(ies) cleared.`,
-        ];
-        showToast('Report Data Synced', msgs, 'success');
+        const elapsed    = data.elapsed_s ?? '?';
+        const rows       = data.summary_table?.total_rows ?? '?';
+        const files      = data.cache_files_purged ?? 0;
+        const snapCleared = data.snapshot_cache_cleared ?? 0;
+        statusEl.innerHTML = `<div class="alert alert-info" style="font-size:.875rem;">
+            Sync complete in ${elapsed}s. &nbsp;|&nbsp;
+            Summary rows: ${rows} &nbsp;|&nbsp;
+            Report cache files purged: ${files} &nbsp;|&nbsp;
+            Snapshot cache entries cleared: ${snapCleared}
+        </div>`;
+        showToast('Report Data Synced', [
+            `Ecological summary rebuilt in ${elapsed}s.`,
+            `${files} cached report file(s) cleared.`,
+            `${snapCleared} snapshot cache entry(ies) cleared.`,
+        ], 'success');
     } else {
+        statusEl.innerHTML = `<div class="alert alert-danger" style="font-size:.875rem;">Sync failed: ${data.error || 'Unknown error.'}</div>`;
         showToast('Sync Failed', [data.error || 'Unknown error.'], 'danger');
     }
 }
