@@ -211,9 +211,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="login-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <div class="login-hint">
-        First-time setup? Use your administrator credentials to sign in.
-    </div>
 </div>
 <script>
 function refreshCaptcha() {
