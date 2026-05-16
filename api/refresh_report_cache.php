@@ -487,6 +487,7 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
             WITH raw_richness AS (
                 SELECT r.year, COUNT(DISTINCT r.species_id) AS bird_richness
                 FROM raw_bird_observation r
+                JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
                 WHERE r.year IS NOT NULL
                   AND r.species_id IS NOT NULL
                 GROUP BY r.year
@@ -615,12 +616,18 @@ try {
             $cacheDir = __DIR__ . '/../data/cache/reports';
             $purgedFiles = rrc_purgeCacheFiles($cacheDir);
 
-            // 4. Clear snapshot_cache so pre-aggregated snapshot metrics are recomputed fresh
+            // 4. Clear snapshot_cache and snapshot_species_presence so stale pre-aggregated
+            //    metrics are recomputed fresh with the current query logic on next request.
             if ($summaryOnly) {
                 try {
                     $snapshotCacheCleared = (int) $pdo->query('SELECT COUNT(*) FROM snapshot_cache')->fetchColumn();
                     $pdo->exec('TRUNCATE TABLE snapshot_cache');
                 } catch (Throwable $scEx) {
+                    // Table may not exist yet — non-fatal
+                }
+                try {
+                    $pdo->exec('TRUNCATE TABLE snapshot_species_presence');
+                } catch (Throwable $sspEx) {
                     // Table may not exist yet — non-fatal
                 }
             }
@@ -640,7 +647,7 @@ try {
 
     echo json_encode([
         'success'          => true,
-        'message'          => $summaryOnly ? 'Ecological yearly summary refreshed (summary-only mode).' : 'Spatial maps rebuilt and report cache purged. Ecological summary not modified.',
+        'message'          => $summaryOnly ? 'Ecological yearly summary refreshed; snapshot caches cleared.' : 'Spatial maps rebuilt and report cache purged. Ecological summary not modified.',
         'elapsed_s'        => round($t3 - $t0, 2),
         'spatial_maps'     => array_merge($spatialStats, ['elapsed_s' => round($t1 - $t0, 2)]),
         'summary_table'    => array_merge($summaryStats, ['elapsed_s' => round($t2 - $t1, 2)]),
