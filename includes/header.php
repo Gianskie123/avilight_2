@@ -68,8 +68,9 @@ if (in_array($current_page, $avp_pages, true)) {
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?>AVILIGHT Dashboard</title>
-    
+    <title>AVILIGHT<?php echo isset($page_title) ? ' | ' . htmlspecialchars($page_title) : ''; ?></title>
+    <link rel="icon" type="image/png" href="AviLight_Logo.png">
+
     <!-- Stylesheets -->
     <link rel="stylesheet" href="assets/css/main.css">
     

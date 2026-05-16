@@ -48,9 +48,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header('Location: loading.php?next=home.php');
                     exit;
                 }
-                // Normal flow: ask for OTP via email
-                $_SESSION['otp_pending_user'] = $user;
-                header('Location: login_otp_email.php');
+                // Send OTP directly to the account email — no address prompt needed
+                $sent = generate_and_send_otp($user, $user['email'] ?? '');
+                if ($sent) {
+                    header('Location: login_otp.php');
+                } else {
+                    $_SESSION['otp_pending_user'] = $user;
+                    header('Location: login_otp_email.php');
+                }
                 exit;
             } else {
                 $error = 'Invalid email or password.';
@@ -72,7 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avilight | Login</title>
+    <title>AVILIGHT | Login</title>
+    <link rel="icon" type="image/png" href="AviLight_Logo.png">
     <link rel="stylesheet" href="assets/css/main.css">
     <style>
         body {

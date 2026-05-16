@@ -488,7 +488,7 @@ $pa_count  = $kba_data ? count(array_filter($kba_data, fn($a) => $a['type'] === 
             <div class="kba-table-footer">
                 <p class="kba-footnote">
                     Status is scored from Richness, NDVI, ALAN, LST, and Precipitation weights.
-                    Adjust weights in <a href="admin.php#threshold-config">Admin › Threshold Config</a>.
+                    Adjust weights in <a href="admin.php#threshold-config">Admin › Model &amp; Thresholds</a>.
                 </p>
                 <a href="reports.php#kba-audit-table" class="kba-report-link">View Full Report →</a>
             </div>

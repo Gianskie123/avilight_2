@@ -293,7 +293,6 @@ require_once 'includes/header.php';
         <h4>Sync Report Data</h4>
         <p style="margin: 0 0 10px; color: var(--text-secondary, #94a3b8); font-size: 13px;">
             Rebuilds the ecological yearly summary and clears all precomputed report caches.
-            Use after uploading new observation data to ensure the Reports tab matches the Dashboard.
         </p>
         <button class="btn btn-outline" id="syncReportDataBtn" onclick="syncReportData(this)">
             Sync Report Data
@@ -2009,6 +2008,25 @@ document.querySelectorAll('.settings-nav button').forEach(btn => {
         }
     });
 });
+
+// Activate the correct panel when arriving via a hash link (e.g. from home.php)
+(function () {
+    var hash = window.location.hash.replace('#', '');
+    if (!hash) return;
+    var cardToPanel = {
+        'threshold-config': 'settings-model',
+        'settings-model':   'settings-model',
+        'settings-data':    'settings-data',
+        'settings-integrity': 'settings-integrity',
+        'settings-access':  'settings-access',
+    };
+    var panelId = cardToPanel[hash];
+    if (!panelId) return;
+    var btn = document.querySelector('.settings-nav button[data-settings-target="' + panelId + '"]');
+    if (btn) btn.click();
+    var anchor = document.getElementById(hash);
+    if (anchor) setTimeout(function () { anchor.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120);
+}());
 </script>
 EOD;
 

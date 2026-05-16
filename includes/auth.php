@@ -566,10 +566,60 @@ function _clear_otp_session(): void {
  * Uses HTTPS (port 443) which works on all Railway plans.
  */
 function _send_otp_email(string $to, string $code): bool {
-    $subject = 'Your AVILIGHT login code';
-    $body    = "Your AVILIGHT verification code is:\n\n    {$code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n";
+    $subject  = 'Your AVILIGHT verification code';
+    $plain    = "Your AVILIGHT verification code is: {$code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n";
+    $html     = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
-    return _resend_send(AVILIGHT_OTP_FROM, $to, $subject, $body);
+        <!-- Header -->
+        <tr>
+          <td style="background:#0f172a;padding:28px 32px;text-align:center;">
+            <span style="color:#38bdf8;font-size:22px;font-weight:800;letter-spacing:3px;font-family:'Segoe UI',sans-serif;">AVILIGHT</span>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px 32px 32px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#0f172a;">Verify your identity</p>
+            <p style="margin:0 0 32px;font-size:14px;color:#64748b;line-height:1.7;">Use the code below to complete your sign-in.<br>It expires in <strong style="color:#0f172a;">10 minutes</strong>.</p>
+
+            <!-- OTP box -->
+            <div style="display:inline-block;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:20px 48px;margin-bottom:32px;">
+              <span style="font-size:40px;font-weight:800;letter-spacing:14px;color:#0f172a;font-family:'Courier New',Courier,monospace;">{$code}</span>
+            </div>
+
+            <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.6;">Never share this code with anyone.<br>AVILIGHT will never ask for your verification code.</p>
+          </td>
+        </tr>
+
+        <!-- Divider -->
+        <tr><td style="padding:0 32px;"><div style="height:1px;background:#f1f5f9;"></div></td></tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px;text-align:center;">
+            <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6;">
+              This email was sent by the AVILIGHT ecological monitoring platform.<br>
+              If you did not attempt to sign in, you can safely ignore this email.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+HTML;
+
+    return _resend_send(AVILIGHT_OTP_FROM, $to, $subject, $plain, $html);
 }
 
 /**
@@ -580,20 +630,22 @@ function smtp_last_error(): string {
 }
 
 /**
- * Send a plain-text email via the Resend HTTP API.
+ * Send an email via the Resend HTTP API.
  * Uses HTTPS (port 443) — works on all Railway plans, no SMTP ports needed.
  *
  * @param string $from    Sender address (must be verified in Resend).
  * @param string $to      Recipient address.
  * @param string $subject Message subject.
- * @param string $body    Plain-text message body.
+ * @param string $text    Plain-text fallback body.
+ * @param string $html    Optional HTML body.
  * @return bool  True if Resend accepted the message; false on any error.
  */
 function _resend_send(
     string $from,
     string $to,
     string $subject,
-    string $body
+    string $text,
+    string $html = ''
 ): bool {
     $GLOBALS['AVILIGHT_SMTP_LAST_ERROR'] = '';
 
@@ -604,12 +656,17 @@ function _resend_send(
         return false;
     }
 
-    $payload = json_encode([
+    $data = [
         'from'    => $from,
         'to'      => [$to],
         'subject' => $subject,
-        'text'    => $body,
-    ]);
+        'text'    => $text,
+    ];
+    if ($html !== '') {
+        $data['html'] = $html;
+    }
+
+    $payload = json_encode($data);
 
     $ch = curl_init('https://api.resend.com/emails');
     curl_setopt_array($ch, [

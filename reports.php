@@ -731,7 +731,6 @@ $extra_head = <<<'HTML'
 }
 
 .section-card {
-    background: var(--bg-card-alt);
 }
 
 .section-divider {
@@ -1915,7 +1914,7 @@ require_once 'includes/header.php';
                                                 $contribTotal = (float) ($area['contrib_total'] ?? 0.0);
 
                                                 $effectiveness = (float) ($area['effectiveness_score'] ?? 0);
-                                                $effectivenessClass = $effectiveness >= 75 ? 'success' : ($effectiveness >= 40 ? 'warning' : 'danger');
+                                                $effectivenessClass = $effectiveness >= 60 ? 'success' : ($effectiveness >= 40 ? 'warning' : 'danger');
                                                 $statusText = (string) ($area['status'] ?? 'Unknown');
                                                 $statusClass = 'warning';
                                                 if ($statusText === 'Good') {
@@ -1925,7 +1924,7 @@ require_once 'includes/header.php';
                                                 } elseif ($statusText === 'At Risk') {
                                                     $statusClass = 'warning';
                                                 } elseif ($statusText === 'Moderate') {
-                                                    $statusClass = 'info';
+                                                    $statusClass = 'success';
                                                 }
                                                 ?>
                                                 <tr>

@@ -55,7 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avilight | Send Verification Code</title>
+    <title>AVILIGHT | Send Verification Code</title>
+    <link rel="icon" type="image/png" href="AviLight_Logo.png">
     <link rel="stylesheet" href="assets/css/main.css">
     <style>
         body {
