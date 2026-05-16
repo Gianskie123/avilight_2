@@ -499,36 +499,34 @@ try {
         $kba_audit_data = decorateKbaAuditRows($kba_audit_data, $threshold_config);
     }
 
-    $trendRowsStmt = $mysql_reports->query("SELECT year, bird_richness, viirs_avg, ndvi_avg, lst_avg, precipitation_total
-        FROM ecological_yearly_summary
-        WHERE area = 'All Areas'
-        ORDER BY year ASC");
-    $trendRows = $trendRowsStmt ? ($trendRowsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    $trendEndpointsStmt = $mysql_reports->prepare(
+        "SELECT
+            year,
+            AVG(bird_richness)       AS bird_richness,
+            AVG(viirs_avg)           AS viirs_avg,
+            AVG(ndvi_avg)            AS ndvi_avg,
+            AVG(lst_avg)             AS lst_avg,
+            AVG(precipitation_total) AS precipitation_total
+         FROM ecological_yearly_summary
+         WHERE year IN (:y_min, :y_max)
+         GROUP BY year
+         ORDER BY year ASC"
+    );
+    $trendEndpointsStmt->execute([':y_min' => $year_min, ':y_max' => $year_max]);
+    $trendRows = $trendEndpointsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    if (empty($trendRows)) {
-        $bestArea = (string) ($mysql_reports->query("SELECT area FROM ecological_yearly_summary GROUP BY area ORDER BY COUNT(*) DESC, area ASC LIMIT 1")->fetchColumn() ?: '');
-        if ($bestArea !== '') {
-            $fallbackTrendStmt = $mysql_reports->prepare("SELECT year, bird_richness, viirs_avg, ndvi_avg, lst_avg, precipitation_total
-                FROM ecological_yearly_summary
-                WHERE area = :area
-                ORDER BY year ASC");
-            $fallbackTrendStmt->execute([':area' => $bestArea]);
-            $trendRows = $fallbackTrendStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        }
-    }
-
-    if (!empty($trendRows)) {
+    if (count($trendRows) >= 2) {
         $firstTrend = $trendRows[0];
-        $lastTrend = $trendRows[count($trendRows) - 1];
+        $lastTrend  = $trendRows[count($trendRows) - 1];
         $trend_context = [
-            'year_start' => (int) ($firstTrend['year'] ?? 0),
-            'year_end' => (int) ($lastTrend['year'] ?? 0),
-            'richness_start' => (float) ($firstTrend['bird_richness'] ?? 0),
-            'richness_end' => (float) ($lastTrend['bird_richness'] ?? 0),
-            'viirs_start' => (float) ($firstTrend['viirs_avg'] ?? 0),
-            'viirs_end' => (float) ($lastTrend['viirs_avg'] ?? 0),
-            'ndvi_start' => (float) ($firstTrend['ndvi_avg'] ?? 0),
-            'ndvi_end' => (float) ($lastTrend['ndvi_avg'] ?? 0),
+            'year_start'     => (int)   ($firstTrend['year']                ?? 0),
+            'year_end'       => (int)   ($lastTrend['year']                 ?? 0),
+            'richness_start' => (float) ($firstTrend['bird_richness']       ?? 0),
+            'richness_end'   => (float) ($lastTrend['bird_richness']        ?? 0),
+            'viirs_start'    => (float) ($firstTrend['viirs_avg']           ?? 0),
+            'viirs_end'      => (float) ($lastTrend['viirs_avg']            ?? 0),
+            'ndvi_start'     => (float) ($firstTrend['ndvi_avg']            ?? 0),
+            'ndvi_end'       => (float) ($lastTrend['ndvi_avg']             ?? 0),
         ];
     }
 
