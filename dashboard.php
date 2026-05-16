@@ -251,9 +251,9 @@ try {
 }
 ?>
 
-<div class="alert alert-info" role="status">
-    📅 <strong>Dataset Period: 2014 – 2025</strong> | <strong>Monitoring Status: 2014 – 2025</strong> —
-    All metrics, readings, and site analyses are loaded from the database for the selected period.
+<div class="page-header">
+    <h1 class="page-title">Dashboard — Ecological Monitoring</h1>
+    <p class="page-subtitle">Live risk zone assessment and historical bird observation data for Metro Manila KBA &amp; Protected Areas.</p>
 </div>
 
 <div class="dashboard-layout">
@@ -627,10 +627,6 @@ try {
         </div>
 
         <div id="historicalSidebarPanels" style="display:none;">
-            <div class="page-header" style="margin-bottom:16px;">
-                <h1 class="page-title">Historical Data View</h1>
-                <p class="page-subtitle">Bird observation sites plotted by species richness. Use filters to explore species, migration status, and light tolerance across years.</p>
-            </div>
             <div class="dash-stat-card historical-site-card" id="histSiteDetailCard" style="display:none; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
                     <div>
