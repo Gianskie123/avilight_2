@@ -21,10 +21,6 @@ try {
              FROM raw_bird_observation
              WHERE year    BETWEEN :start_year AND :end_year
                AND month   BETWEEN 1 AND 12
-               AND latitude  BETWEEN 14.35 AND 14.82
-               AND longitude BETWEEN 120.90 AND 121.22
-               AND latitude  != 0
-               AND longitude != 0
                AND species_id IS NOT NULL
              GROUP BY year, month
              ORDER BY year ASC, month ASC'

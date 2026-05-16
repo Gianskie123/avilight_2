@@ -3500,26 +3500,30 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta) {
     }
 }
 
-// Resolve KBA & PA avg VIIRS for a year — annual average across all monitored sites
-// from kba_pa_monthly_stats (via PHP). Falls back to the summarizeRiskYear footprint average.
+// Resolve Metro Manila avg VIIRS for a year — matches the historical view computation.
+// Primary: ecological_yearly_summary via historicalEnvYearly (flat AVG across all cell-months,
+// same source as the historical view overlay). Fallback: metroYearlyViirs from
+// ecological_monthly_summary (avg-of-monthly-avgs, which can diverge due to unequal
+// per-month cell coverage).
 function getMetroViirsForYear(year) {
-    // Primary: pre-computed Metro Manila average from ecological_monthly_summary
-    // (each city averaged monthly → then averaged across all cities).
+    // Primary: average city entries from ecological_yearly_summary — same source and
+    // aggregation as the historical view, excluding the 'All Areas' composite.
+    var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)];
+    if (yearBucket) {
+        var vals = [];
+        Object.keys(yearBucket).forEach(function(city) {
+            if (city === 'All Areas') return;
+            var cv = yearBucket[city] && yearBucket[city].viirs;
+            if (cv !== null && cv !== undefined && Number.isFinite(Number(cv))) vals.push(Number(cv));
+        });
+        if (vals.length) return Math.max(0, vals.reduce(function(a, b) { return a + b; }, 0) / vals.length);
+    }
+    // Fallback: metroYearlyViirs from ecological_monthly_summary.
     var v = metroYearlyViirs && metroYearlyViirs[String(year)];
     if (v !== undefined && v !== null && Number.isFinite(Number(v)) && Number(v) > 0) {
         return Math.max(0, Number(v));
     }
-    // Fallback: average all city entries from ecological_yearly_summary,
-    // explicitly excluding the 'All Areas' composite to avoid double-counting.
-    var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)];
-    if (!yearBucket) return 0;
-    var vals = [];
-    Object.keys(yearBucket).forEach(function(city) {
-        if (city === 'All Areas') return;
-        var cv = yearBucket[city] && yearBucket[city].viirs;
-        if (cv !== null && cv !== undefined && Number.isFinite(Number(cv))) vals.push(Number(cv));
-    });
-    return vals.length ? Math.max(0, vals.reduce(function(a, b) { return a + b; }, 0) / vals.length) : 0;
+    return 0;
 }
 
 function updateAtRiskCardDescription() {

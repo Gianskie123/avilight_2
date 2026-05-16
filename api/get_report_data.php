@@ -939,6 +939,109 @@ function fetchSnapshotSpeciesDistributions(PDO $pdo, string $selectedArea, int $
 }
 
 function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea, int $snapshotStartYear, int $snapshotStartMonth, int $snapshotEndYear, int $snapshotEndMonth): array {
+    // ── Primary path: ecological_monthly_summary ─────────────────────────────
+    // Small pre-aggregated table (one row per city/year/month) built with the
+    // same formulas as the dashboard's ecological_yearly_summary, so values
+    // are guaranteed to match.  No large-table JOIN or ROUND() needed.
+    // ecological_monthly_summary.area stores lowercase city keys; $cities uses
+    // title case.  The column's utf8mb4_general_ci collation makes the WHERE
+    // filter case-insensitive, but we normalise the returned keys to title case
+    // for the richness lookup below.
+    $cityKeyMap = [];
+    foreach ($cities as $c) {
+        $cityKeyMap[strtolower(trim((string) $c))] = $c;
+    }
+
+    $covariateSql = "SELECT
+            area,
+            AVG(viirs_avg)           AS viirs,
+            AVG(ndvi_avg)            AS ndvi,
+            AVG(lst_avg)             AS lst,
+            SUM(precipitation_total) AS precipitation
+        FROM ecological_monthly_summary
+        WHERE ((year * 12) + month)
+              BETWEEN ((:cov_start_year * 12) + :cov_start_month)
+                  AND ((:cov_end_year   * 12) + :cov_end_month)
+          AND (:cov_area_all = 'All Areas' OR area = :cov_area_value)
+        GROUP BY area";
+    $covStmt = $pdo->prepare($covariateSql);
+    $covStmt->bindValue(':cov_start_year',  $snapshotStartYear,  PDO::PARAM_INT);
+    $covStmt->bindValue(':cov_start_month', $snapshotStartMonth, PDO::PARAM_INT);
+    $covStmt->bindValue(':cov_end_year',    $snapshotEndYear,    PDO::PARAM_INT);
+    $covStmt->bindValue(':cov_end_month',   $snapshotEndMonth,   PDO::PARAM_INT);
+    $covStmt->bindValue(':cov_area_all',    $selectedArea,       PDO::PARAM_STR);
+    $covStmt->bindValue(':cov_area_value',  $selectedArea,       PDO::PARAM_STR);
+    $covStmt->execute();
+    $covRows = $covStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    if (!empty($covRows)) {
+        $covByArea = [];
+        foreach ($covRows as $cr) {
+            $raw = strtolower(trim((string) ($cr['area'] ?? '')));
+            if ($raw === '') continue;
+            $titleArea = $cityKeyMap[$raw] ?? ucwords($raw);
+            $covByArea[$titleArea] = [
+                'viirs'         => $cr['viirs']        !== null ? (float) $cr['viirs']        : null,
+                'ndvi'          => $cr['ndvi']          !== null ? (float) $cr['ndvi']          : null,
+                'lst'           => $cr['lst']           !== null ? (float) $cr['lst']           : null,
+                'precipitation' => $cr['precipitation'] !== null ? (float) $cr['precipitation'] : null,
+            ];
+        }
+
+        $richnessSql = "SELECT m.area, COUNT(DISTINCT r.species_id) AS bird_richness
+            FROM raw_bird_observation r
+            JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
+            WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
+              AND " . buildSnapshotRangeSql('r') . "
+              AND (:selected_area_all = 'All Areas' OR m.area = :selected_area_value)
+            GROUP BY m.area
+            HAVING COUNT(DISTINCT r.species_id) > 0";
+        $richnessStmt = $pdo->prepare($richnessSql);
+        $richnessStmt->bindValue(':snapshot_start_year',  $snapshotStartYear,  PDO::PARAM_INT);
+        $richnessStmt->bindValue(':snapshot_start_month', $snapshotStartMonth, PDO::PARAM_INT);
+        $richnessStmt->bindValue(':snapshot_end_year',    $snapshotEndYear,    PDO::PARAM_INT);
+        $richnessStmt->bindValue(':snapshot_end_month',   $snapshotEndMonth,   PDO::PARAM_INT);
+        $richnessStmt->bindValue(':selected_area_all',    $selectedArea,       PDO::PARAM_STR);
+        $richnessStmt->bindValue(':selected_area_value',  $selectedArea,       PDO::PARAM_STR);
+        $richnessStmt->execute();
+        $richnessByArea = [];
+        foreach ($richnessStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $rr) {
+            $a = trim((string) ($rr['area'] ?? ''));
+            if ($a !== '') $richnessByArea[$a] = (float) $rr['bird_richness'];
+        }
+
+        $targetAreas = $selectedArea === 'All Areas' ? $cities : [$selectedArea];
+        $points = ['light_richness' => [], 'ndvi_richness' => [], 'lst_richness' => [], 'precipitation_richness' => []];
+        foreach ($targetAreas as $area) {
+            $area = trim((string) $area);
+            if ($area === '') continue;
+            $richness = $richnessByArea[$area] ?? 0.0;
+            if ($richness <= 0.0) continue;
+            $env = $covByArea[$area] ?? ['viirs' => null, 'ndvi' => null, 'lst' => null, 'precipitation' => null];
+            if ($env['viirs'] !== null) {
+                $points['light_richness'][] = ['x' => round($env['viirs'], 4), 'y' => round($richness, 2), 'area' => $area, 'site_name' => $area];
+            }
+            if ($env['ndvi'] !== null) {
+                $points['ndvi_richness'][] = ['x' => round($env['ndvi'], 4), 'y' => round($richness, 2), 'area' => $area, 'site_name' => $area];
+            }
+            if ($env['lst'] !== null) {
+                $points['lst_richness'][] = ['x' => round($env['lst'], 4), 'y' => round($richness, 2), 'area' => $area, 'site_name' => $area];
+            }
+            if ($env['precipitation'] !== null) {
+                $points['precipitation_richness'][] = ['x' => round($env['precipitation'], 4), 'y' => round($richness, 2), 'area' => $area, 'site_name' => $area];
+            }
+        }
+
+        return [
+            'light_richness'         => ['x_label' => 'ALAN (nW/cm²/sr)',   'y_label' => 'Bird Richness (species)', 'points' => $points['light_richness']],
+            'ndvi_richness'          => ['x_label' => 'NDVI (index)',        'y_label' => 'Bird Richness (species)', 'points' => $points['ndvi_richness']],
+            'lst_richness'           => ['x_label' => 'LST (°C)',            'y_label' => 'Bird Richness (species)', 'points' => $points['lst_richness']],
+            'precipitation_richness' => ['x_label' => 'Precipitation (mm)',  'y_label' => 'Bird Richness (species)', 'points' => $points['precipitation_richness']],
+        ];
+    }
+
+    // ── Fallback: ecological_monthly_summary has no rows for this range ───────
+    // Drop through to the original live-query paths.
     if (snapshotSummaryHasRows($pdo, $selectedArea, $snapshotStartYear, $snapshotStartMonth, $snapshotEndYear, $snapshotEndMonth)) {
         // Richness: COUNT DISTINCT species per area, matching Historical Trends computation
         $richnessSql = "SELECT m.area, COUNT(DISTINCT r.species_id) AS bird_richness
