@@ -105,26 +105,22 @@ try {
         }
     }
 
-    // kba_pa_monthly_stats — per-site monthly VIIRS and species counts for the Risk Zone view.
+    // kba_pa_monthly_stats — per-site monthly VIIRS for the Risk Zone view.
+    // species_count was removed from this table; only viirs_avg is stored.
     try {
         $kmsStmt = $mysql->query(
-            "SELECT kba_pa_name, year, month, viirs_avg, species_count
+            "SELECT kba_pa_name, year, month, viirs_avg
              FROM kba_pa_monthly_stats
              ORDER BY year ASC, kba_pa_name ASC, month ASC"
         );
         $kmsRows = $kmsStmt ? $kmsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
         $siteYearViirs = [];
         foreach ($kmsRows as $r) {
-            $yr      = (int)   ($r['year']          ?? 0);
-            $mo      = (int)   ($r['month']         ?? 0);
-            $name    = (string)($r['kba_pa_name']   ?? '');
-            $viirs   = isset($r['viirs_avg'])     && $r['viirs_avg']     !== null ? (float)$r['viirs_avg']     : null;
-            $species = isset($r['species_count']) && $r['species_count'] !== null ? (int)  $r['species_count'] : 0;
+            $yr   = (int)   ($r['year']        ?? 0);
+            $mo   = (int)   ($r['month']       ?? 0);
+            $name = (string)($r['kba_pa_name'] ?? '');
+            $viirs = isset($r['viirs_avg']) && $r['viirs_avg'] !== null ? (float)$r['viirs_avg'] : null;
             if ($yr < 2000 || $yr > 2100 || $mo < 1 || $mo > 12 || $name === '') continue;
-            // Monthly species sums across all sites (0-indexed for JS array)
-            if (!isset($kbaMonthlySpecies[$yr])) $kbaMonthlySpecies[$yr] = array_fill(0, 12, 0);
-            $kbaMonthlySpecies[$yr][$mo - 1] += $species;
-            // Collect monthly viirs per site to average annually
             if ($viirs !== null) {
                 $siteYearViirs[$name][$yr][] = $viirs;
             }
@@ -136,14 +132,14 @@ try {
                 $kbaSiteYearly[$yr][$name] = round(array_sum($vals) / count($vals), 4);
             }
         }
-        // Annual average across all sites per year (info card)
+        // Annual average across KBA/PA sites only (used by computeZoneLight fallback)
         foreach ($kbaSiteYearly as $yr => $siteVals) {
-            $filtered = array_filter($siteVals, function ($v) { return $v !== null; });
+            $filtered = array_filter($siteVals, fn($v) => $v !== null);
             if (count($filtered) > 0) {
                 $kbaAllYearlyViirs[$yr] = round(array_sum($filtered) / count($filtered), 4);
             }
         }
-    } catch (Throwable $_) { /* kba_pa_monthly_stats may not exist yet; degraded gracefully */ }
+    } catch (Throwable $_) { /* kba_pa_monthly_stats may not exist yet; degrade gracefully */ }
 
     // ecological_yearly_summary — Metro Manila aggregate for the information cards.
     // Join a subquery that averages lst_night_avg per area/year from the monthly table,
@@ -207,6 +203,28 @@ try {
             'lst_night'     => isset($mr['lst_night_avg'])       ? (float) $mr['lst_night_avg']       : null,
             'precipitation' => isset($mr['precipitation_total']) ? (float) $mr['precipitation_total'] : null,
         ];
+    }
+
+    // Metro Manila yearly VIIRS — average each city's monthly viirs across all 12
+    // months, then average across all cities. Source: ecological_monthly_summary.
+    // This is the authoritative Metro Manila light figure shown on the info cards.
+    $metro_yearly_viirs = [];
+    foreach ($historical_env_monthly as $yr => $months) {
+        $city_vals = [];
+        foreach ($months as $mo => $cities) {
+            foreach ($cities as $area => $data) {
+                if ($data['viirs'] !== null) {
+                    $city_vals[$area][] = $data['viirs'];
+                }
+            }
+        }
+        $city_avgs = [];
+        foreach ($city_vals as $cVals) {
+            $city_avgs[] = array_sum($cVals) / count($cVals);
+        }
+        if (!empty($city_avgs)) {
+            $metro_yearly_viirs[$yr] = round(array_sum($city_avgs) / count($city_avgs), 4);
+        }
     }
 
     // Cross-reference accented/unaccented city name variants so the JS computeZoneLight
@@ -723,8 +741,9 @@ $historical_env_yearly_json = json_encode($historical_env_yearly, JSON_UNESCAPED
 $historical_env_monthly_json = json_encode($historical_env_monthly ?? [], JSON_UNESCAPED_UNICODE);
 $risk_site_yearly_json      = json_encode($risk_site_yearly,      JSON_UNESCAPED_UNICODE);
 $kba_site_yearly_json         = json_encode($kbaSiteYearly,         JSON_UNESCAPED_UNICODE);
-$kba_all_yearly_viirs_json    = json_encode($kbaAllYearlyViirs,     JSON_UNESCAPED_UNICODE);
-$kba_monthly_species_json     = json_encode($kbaMonthlySpecies,     JSON_UNESCAPED_UNICODE);
+$kba_all_yearly_viirs_json    = json_encode($kbaAllYearlyViirs,    JSON_UNESCAPED_UNICODE);
+$kba_monthly_species_json     = json_encode($kbaMonthlySpecies,    JSON_UNESCAPED_UNICODE);
+$metro_yearly_viirs_json      = json_encode($metro_yearly_viirs,   JSON_UNESCAPED_UNICODE);
 $risk_snapshot_year_json    = json_encode($risk_snapshot_year);
 
 $extra_scripts = <<<SCRIPTS
@@ -736,8 +755,9 @@ var historicalEnvYearly = {$historical_env_yearly_json};
 var historicalEnvMonthly = {$historical_env_monthly_json};
 var riskSiteYearly    = {$risk_site_yearly_json};
 var kbaSiteYearly        = {$kba_site_yearly_json};         // {year: {siteName: annualViirs}}
-var kbaAllYearlyViirs    = {$kba_all_yearly_viirs_json};    // {year: allSitesAvgViirs}
-var kbaMonthlySpecies    = {$kba_monthly_species_json};     // {year: [12 monthly species sums]}
+var kbaAllYearlyViirs    = {$kba_all_yearly_viirs_json};    // {year: avg viirs across KBA/PA sites only}
+var kbaMonthlySpecies    = {$kba_monthly_species_json};     // {year: [12 monthly species sums]} — empty after species_count removal
+var metroYearlyViirs     = {$metro_yearly_viirs_json};      // {year: metro-wide avg viirs from ecological_monthly_summary}
 var riskCityMap = {$risk_city_map_json};
 var DASHBOARD_MIN_YEAR = 2014;
 var DASHBOARD_MAX_YEAR = 2025;
@@ -3483,12 +3503,21 @@ function updateRecentUpdates(currentYear, birdPctDelta, viirsPctDelta) {
 // Resolve KBA & PA avg VIIRS for a year — annual average across all monitored sites
 // from kba_pa_monthly_stats (via PHP). Falls back to the summarizeRiskYear footprint average.
 function getMetroViirsForYear(year) {
+    // Primary: pre-computed Metro Manila average from ecological_monthly_summary
+    // (each city averaged monthly → then averaged across all cities).
+    var v = metroYearlyViirs && metroYearlyViirs[String(year)];
+    if (v !== undefined && v !== null && Number.isFinite(Number(v)) && Number(v) > 0) {
+        return Math.max(0, Number(v));
+    }
+    // Fallback: average all city entries from ecological_yearly_summary,
+    // explicitly excluding the 'All Areas' composite to avoid double-counting.
     var yearBucket = historicalEnvYearly && historicalEnvYearly[String(year)];
     if (!yearBucket) return 0;
     var vals = [];
     Object.keys(yearBucket).forEach(function(city) {
-        var v = yearBucket[city] && yearBucket[city].viirs;
-        if (v !== null && v !== undefined && Number.isFinite(Number(v))) vals.push(Number(v));
+        if (city === 'All Areas') return;
+        var cv = yearBucket[city] && yearBucket[city].viirs;
+        if (cv !== null && cv !== undefined && Number.isFinite(Number(cv))) vals.push(Number(cv));
     });
     return vals.length ? Math.max(0, vals.reduce(function(a, b) { return a + b; }, 0) / vals.length) : 0;
 }

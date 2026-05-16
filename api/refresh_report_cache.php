@@ -576,6 +576,7 @@ try {
     $spatialStats = [];
     $summaryStats = [];
     $purgedFiles = 0;
+    $snapshotCacheCleared = 0;
     $lastError = null;
     $t1 = $t0;
     $t2 = $t0;
@@ -616,6 +617,17 @@ try {
             // 3. Purge stale file-cache entries so the next request rebuilds fresh
             $cacheDir = __DIR__ . '/../data/cache/reports';
             $purgedFiles = rrc_purgeCacheFiles($cacheDir);
+
+            // 4. Clear snapshot_cache so pre-aggregated snapshot metrics are recomputed fresh
+            if ($summaryOnly) {
+                try {
+                    $snapshotCacheCleared = (int) $pdo->query('SELECT COUNT(*) FROM snapshot_cache')->fetchColumn();
+                    $pdo->exec('TRUNCATE TABLE snapshot_cache');
+                } catch (Throwable $scEx) {
+                    // Table may not exist yet — non-fatal
+                }
+            }
+
             $t3 = microtime(true);
             $lastError = null;
             break;
@@ -636,6 +648,7 @@ try {
         'spatial_maps'     => array_merge($spatialStats, ['elapsed_s' => round($t1 - $t0, 2)]),
         'summary_table'    => array_merge($summaryStats, ['elapsed_s' => round($t2 - $t1, 2)]),
         'cache_files_purged' => $purgedFiles,
+        'snapshot_cache_cleared' => $snapshotCacheCleared,
         'retry_attempts'    => $attempt,
         'deadlock_recovered' => $lastError === null && $attempt > 1,
         'refreshed_at'     => date('Y-m-d H:i:s'),
