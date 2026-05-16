@@ -295,7 +295,7 @@ require_once 'includes/header.php';
             Rebuilds the ecological yearly summary and clears all precomputed report caches.
             Use after uploading new observation data to ensure the Reports tab matches the Dashboard.
         </p>
-        <button class="btn btn-outline" id="syncReportDataBtn" onclick="syncReportData.call(this)">
+        <button class="btn btn-outline" id="syncReportDataBtn" onclick="syncReportData(this)">
             Sync Report Data
         </button>
         <div id="syncReportStatus" style="margin-top: 10px;"></div>
