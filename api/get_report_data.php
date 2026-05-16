@@ -603,7 +603,7 @@ function ensureSnapshotSpeciesPresenceTable(PDO $pdo): void {
             LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
         JOIN city_grid_map        m  ON m.lat = r.grid_lat AND m.lon = r.grid_lon
-        JOIN species_masterlist   sm ON sm.species_id = r.species_id
+        LEFT JOIN species_masterlist sm ON sm.species_id = r.species_id
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL AND m.area IS NOT NULL
         GROUP BY m.area, r.year, r.month, r.species_id
         ON DUPLICATE KEY UPDATE
@@ -627,7 +627,7 @@ function rebuildSnapshotSpeciesPresenceTable(PDO $pdo): void {
             LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
         JOIN city_grid_map        m  ON m.lat = r.grid_lat AND m.lon = r.grid_lon
-        JOIN species_masterlist   sm ON sm.species_id = r.species_id
+        LEFT JOIN species_masterlist sm ON sm.species_id = r.species_id
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL AND m.area IS NOT NULL
         GROUP BY m.area, r.year, r.month, r.species_id
         ON DUPLICATE KEY UPDATE
