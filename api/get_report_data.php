@@ -602,7 +602,7 @@ function ensureSnapshotSpeciesPresenceTable(PDO $pdo): void {
             LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))),
             LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
-        JOIN observation_city_map m  ON m.rbo_id     = r.id
+        JOIN city_grid_map        m  ON m.lat = r.grid_lat AND m.lon = r.grid_lon
         JOIN species_masterlist   sm ON sm.species_id = r.species_id
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL AND m.area IS NOT NULL
         GROUP BY m.area, r.year, r.month, r.species_id
@@ -626,7 +626,7 @@ function rebuildSnapshotSpeciesPresenceTable(PDO $pdo): void {
             LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))),
             LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified')))
         FROM raw_bird_observation r
-        JOIN observation_city_map m  ON m.rbo_id     = r.id
+        JOIN city_grid_map        m  ON m.lat = r.grid_lat AND m.lon = r.grid_lon
         JOIN species_masterlist   sm ON sm.species_id = r.species_id
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL AND m.area IS NOT NULL
         GROUP BY m.area, r.year, r.month, r.species_id
@@ -923,7 +923,7 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
         // Richness: COUNT DISTINCT species per area, matching Historical Trends computation
         $richnessSql = "SELECT m.area, COUNT(DISTINCT r.species_id) AS bird_richness
             FROM raw_bird_observation r
-            JOIN observation_city_map m ON m.rbo_id = r.id
+            JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
             WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
               AND " . buildSnapshotRangeSql('r') . "
               AND (:selected_area_all = 'All Areas' OR m.area = :selected_area_value)
@@ -1041,7 +1041,7 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
     $snapshotRangeSql = buildSnapshotRangeSql('r');
     $richnessSql = "SELECT m.area, COUNT(DISTINCT r.species_id) AS bird_richness
         FROM raw_bird_observation r
-        JOIN observation_city_map m ON m.rbo_id = r.id
+        JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
           AND {$snapshotRangeSql}
           AND m.area IN ({$areaListSql})";
@@ -1453,7 +1453,7 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
                                 {$selectArea},
                                 COUNT(DISTINCT r.species_id) AS bird_richness
                         FROM raw_bird_observation r
-                        JOIN observation_city_map m ON m.rbo_id = r.id
+                        JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
                         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
                             AND " . buildSnapshotRangeSql('r') . "
                             AND (:selected_area_all = 'All Areas' OR m.area = :selected_area_value)
@@ -1531,7 +1531,7 @@ function fetchTopSitesRichnessData(PDO $pdo, array $cities, string $selectedArea
             {$selectArea2},
                         COUNT(DISTINCT r.species_id) AS bird_richness
                 FROM raw_bird_observation r
-                JOIN observation_city_map m ON m.rbo_id = r.id
+                JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
         WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
           AND {$snapshotRangeSql}
           {$areaClause}

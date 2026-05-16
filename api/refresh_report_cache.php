@@ -287,8 +287,7 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
                 r.year,
                 COUNT(DISTINCT r.species_id) AS bird_richness
             FROM raw_bird_observation r
-            JOIN observation_city_map m ON m.rbo_id = r.id
-            JOIN species_masterlist sm ON sm.species_id = r.species_id
+            JOIN city_grid_map m ON m.lat = r.grid_lat AND m.lon = r.grid_lon
             WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
             GROUP BY m.area, r.year');
 
@@ -488,9 +487,7 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
             WITH raw_richness AS (
                 SELECT r.year, COUNT(DISTINCT r.species_id) AS bird_richness
                 FROM raw_bird_observation r
-                JOIN observation_city_map m ON m.rbo_id = r.id
-                WHERE m.area IN (SELECT area FROM ({$citySql}) cities)
-                  AND r.year IS NOT NULL
+                WHERE r.year IS NOT NULL
                   AND r.species_id IS NOT NULL
                 GROUP BY r.year
             ),
