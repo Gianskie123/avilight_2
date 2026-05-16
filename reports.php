@@ -3872,7 +3872,7 @@ function wireFilterButtons() {
     var globalAreaFilter = document.getElementById('globalAreaFilter');
 
     function refreshAreaDependentReports() {
-        fetchReportData('snapshot', { forceRefresh: true });
+        fetchReportData('snapshot');
         fetchReportData('trend');
         if (diagnosticsLoaded || (document.getElementById('tab-diagnostics') && document.getElementById('tab-diagnostics').classList.contains('is-active'))) {
             fetchReportData('diagnostics', { includeDiagnostics: true });
