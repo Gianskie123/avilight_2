@@ -1,7 +1,7 @@
 <?php
 $page_title = 'Admin Panel';
 require_once 'includes/auth.php';
-require_admin(); // Require admin access
+require_login(); // EMS and IT_admin both allowed; section-level guards use $is_it_admin
 require_once 'includes/db.php';
 
 $is_it_admin = is_it_admin();
@@ -177,7 +177,9 @@ require_once 'includes/header.php';
         <button type="button" class="is-active" data-settings-target="settings-data">Data &amp; Covariates</button>
         <button type="button" data-settings-target="settings-model">Model &amp; Thresholds</button>
         <button type="button" data-settings-target="settings-integrity">System Integrity</button>
+        <?php if ($is_it_admin): ?>
         <button type="button" data-settings-target="settings-access">Access &amp; Security</button>
+        <?php endif; ?>
     </nav>
     <div>
         <section id="settings-data" class="settings-panel is-active">

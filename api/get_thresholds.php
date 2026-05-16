@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: application/json');
 require_once __DIR__ . '/../includes/auth.php';
-require_admin();
+require_login();
 
 $defaults = [
     'high_risk'           => 60.0,
