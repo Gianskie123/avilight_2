@@ -706,14 +706,6 @@ function getOrComputeSnapshotMetrics(
         ];
     }
 
-    return [
-        'migration' => ['migratory' => 0, 'resident' => 0, 'unclassified' => 0],
-        'light' => ['sensitive' => 0, 'tolerant' => 0, 'unclassified' => 0],
-        'richness' => 0,
-        'from_cache' => false,
-        'cache_miss' => true,
-    ];
-
     $distributions = fetchSnapshotSpeciesDistributions(
         $pdo,
         $selectedArea,
@@ -2834,120 +2826,119 @@ try {
 
     $snapshotDistributions = [];
     $snapshotDistributionsError = '';
-    try {
-        // Check cache first for snapshot distributions
-        $cachedMetrics = getOrComputeSnapshotMetrics(
-            $mysql,
-            $selected_area,
-            $snapshot_start_year,
-            $snapshot_start_month,
-            $snapshot_end_year,
-            $snapshot_end_month,
-            $metro_manila_cities
-        );
-        
-        if ($cachedMetrics['from_cache']) {
-            // Use cached data
-            $snapshotDistributions = [
-                'migration_status' => [
-                    'labels' => ['Migratory', 'Resident', 'Unclassified'],
-                    'data' => [
-                        $cachedMetrics['migration']['migratory'],
-                        $cachedMetrics['migration']['resident'],
-                        $cachedMetrics['migration']['unclassified'],
-                    ],
-                    'total_species' => array_sum($cachedMetrics['migration']),
-                ],
-                'light_tolerance' => [
-                    'labels' => ['Sensitive', 'Tolerant', 'Unclassified'],
-                    'data' => [
-                        $cachedMetrics['light']['sensitive'],
-                        $cachedMetrics['light']['tolerant'],
-                        $cachedMetrics['light']['unclassified'],
-                    ],
-                    'total_species' => array_sum($cachedMetrics['light']),
-                ],
-            ];
-        } else {
-            // Compute and cache
-            $distributions = fetchSnapshotSpeciesDistributions(
+    $snapshotScatterData = [];
+    $snapshotScatterError = '';
+    $topSitesRichnessData = [];
+    $topSitesError = '';
+
+    // Snapshot queries are expensive (multi-table spatial joins). Skip them entirely
+    // for scope=trend: the JS fires a separate scope=snapshot request for this data
+    // and only calls updateTrendCharts() on the trend response, which never reads
+    // snapshotDistributions, snapshotScatterData, or topSitesRichnessData.
+    if ($scope !== 'trend') {
+        try {
+            $cachedMetrics = getOrComputeSnapshotMetrics(
                 $mysql,
+                $selected_area,
+                $snapshot_start_year,
+                $snapshot_start_month,
+                $snapshot_end_year,
+                $snapshot_end_month,
+                $metro_manila_cities
+            );
+
+            if ($cachedMetrics['from_cache']) {
+                $snapshotDistributions = [
+                    'migration_status' => [
+                        'labels' => ['Migratory', 'Resident', 'Unclassified'],
+                        'data' => [
+                            $cachedMetrics['migration']['migratory'],
+                            $cachedMetrics['migration']['resident'],
+                            $cachedMetrics['migration']['unclassified'],
+                        ],
+                        'total_species' => array_sum($cachedMetrics['migration']),
+                    ],
+                    'light_tolerance' => [
+                        'labels' => ['Sensitive', 'Tolerant', 'Unclassified'],
+                        'data' => [
+                            $cachedMetrics['light']['sensitive'],
+                            $cachedMetrics['light']['tolerant'],
+                            $cachedMetrics['light']['unclassified'],
+                        ],
+                        'total_species' => array_sum($cachedMetrics['light']),
+                    ],
+                ];
+            } else {
+                $distributions = fetchSnapshotSpeciesDistributions(
+                    $mysql,
+                    $selected_area,
+                    $snapshot_start_year,
+                    $snapshot_start_month,
+                    $snapshot_end_year,
+                    $snapshot_end_month
+                );
+                $snapshotDistributions = $distributions;
+
+                if (isset($distributions['migration_status']['data'], $distributions['light_tolerance']['data'])) {
+                    $mig = $distributions['migration_status']['data'];
+                    $light = $distributions['light_tolerance']['data'];
+                    cacheSnapshotMetrics(
+                        $mysql,
+                        $selected_area,
+                        $snapshot_start_year,
+                        $snapshot_start_month,
+                        $snapshot_end_year,
+                        $snapshot_end_month,
+                        ['migratory' => $mig[0] ?? 0, 'resident' => $mig[1] ?? 0, 'unclassified' => $mig[2] ?? 0],
+                        ['sensitive' => $light[0] ?? 0, 'tolerant' => $light[1] ?? 0, 'unclassified' => $light[2] ?? 0],
+                        $distributions['migration_status']['total_species'] ?? 0
+                    );
+                }
+            }
+        } catch (Throwable $distEx) {
+            $snapshotDistributionsError = $distEx->getMessage();
+            $snapshotDistributions = [
+                'migration_status' => ['labels' => [], 'data' => [], 'total_species' => 0],
+                'light_tolerance' => ['labels' => [], 'data' => [], 'total_species' => 0],
+            ];
+        }
+
+        try {
+            $snapshotScatterData = fetchSnapshotScatterData(
+                $mysql,
+                $metro_manila_cities,
                 $selected_area,
                 $snapshot_start_year,
                 $snapshot_start_month,
                 $snapshot_end_year,
                 $snapshot_end_month
             );
-            $snapshotDistributions = $distributions;
-            
-            // Store in cache asynchronously
-            if (isset($distributions['migration_status']['data'], $distributions['light_tolerance']['data'])) {
-                $mig = $distributions['migration_status']['data'];
-                $light = $distributions['light_tolerance']['data'];
-                cacheSnapshotMetrics($mysql, $selected_area, $snapshot_start_year, $snapshot_start_month, $snapshot_end_year, $snapshot_end_month, 
-                    ['migratory' => $mig[0] ?? 0, 'resident' => $mig[1] ?? 0, 'unclassified' => $mig[2] ?? 0],
-                    ['sensitive' => $light[0] ?? 0, 'tolerant' => $light[1] ?? 0, 'unclassified' => $light[2] ?? 0],
-                    $distributions['migration_status']['total_species'] ?? 0
-                );
-            }
+        } catch (Throwable $scatterEx) {
+            $snapshotScatterData = emptySnapshotScatterData();
+            $snapshotScatterError = $scatterEx->getMessage();
         }
-    } catch (Throwable $distEx) {
-        $snapshotDistributionsError = $distEx->getMessage();
-        $snapshotDistributions = [
-            'migration_status' => ['labels' => [], 'data' => [], 'total_species' => 0],
-            'light_tolerance' => ['labels' => [], 'data' => [], 'total_species' => 0],
-        ];
-    }
-    
-    $snapshotScatterData = [];
-    $snapshotScatterError = '';
-    try {
-        $snapshotScatterData = fetchSnapshotScatterData(
-            $mysql,
-            $metro_manila_cities,
-            $selected_area,
-            $snapshot_start_year,
-            $snapshot_start_month,
-            $snapshot_end_year,
-            $snapshot_end_month
-        );
-    } catch (Throwable $scatterEx) {
-        $snapshotScatterData = emptySnapshotScatterData();
-        $snapshotScatterError = $scatterEx->getMessage();
-    }
-    
-    $topSitesRichnessData = [];
-    $topSitesError = '';
-    try {
-        $topSitesRichnessData = fetchTopSitesRichnessData(
-            $mysql,
-            $metro_manila_cities,
-            $selected_area,
-            $snapshot_start_year,
-            $snapshot_start_month,
-            $snapshot_end_year,
-            $snapshot_end_month,
-            10
-        );
-    } catch (Throwable $topSitesEx) {
-        $topSitesError = $topSitesEx->getMessage();
-        $topSitesRichnessData = ['labels' => [], 'data' => [], 'rows' => []];
+
+        try {
+            $topSitesRichnessData = fetchTopSitesRichnessData(
+                $mysql,
+                $metro_manila_cities,
+                $selected_area,
+                $snapshot_start_year,
+                $snapshot_start_month,
+                $snapshot_end_year,
+                $snapshot_end_month,
+                10
+            );
+        } catch (Throwable $topSitesEx) {
+            $topSitesError = $topSitesEx->getMessage();
+            $topSitesRichnessData = ['labels' => [], 'data' => [], 'rows' => []];
+        }
     }
 
-
-    $trendHistoricalData = [
-        'labels' => array_map(static fn($r) => (int) $r['year'], $unified),
-        'richness' => array_map(static fn($r) => $r['bird_richness'], $unified),
-        'viirs' => array_map(static fn($r) => $r['viirs'], $unified),
-        'ndvi' => array_map(static fn($r) => $r['ndvi'], $unified),
-        'lst' => array_map(static fn($r) => $r['lst'], $unified),
-        'precip' => array_map(static fn($r) => $r['precipitation'], $unified),
-    ];
 
     $trendHistoricalData = [];
     $normalized = null;
-    
-    // Build trend data with defensive checks
+
     if (!empty($unified) && is_array($unified)) {
         try {
             $trendHistoricalData = [
