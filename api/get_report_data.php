@@ -823,29 +823,49 @@ function cachePut(string $cachePath, array $payload): void {
 }
 
 function fetchSnapshotSpeciesDistributions(PDO $pdo, string $selectedArea, int $snapshotStartYear, int $snapshotStartMonth, int $snapshotEndYear, int $snapshotEndMonth): array {
-    ensureSnapshotSpeciesPresenceTable($pdo);
-
-    $areaClause = $selectedArea !== 'All Areas' ? ' AND area = :area ' : '';
-    $rangeSql   = buildSnapshotRangeSql('p');
-
-    $migrationSql = "SELECT migratory_status AS category, COUNT(DISTINCT species_id) AS species_count
-        FROM snapshot_species_presence p
-        WHERE {$rangeSql}{$areaClause}
-        GROUP BY migratory_status";
-
-    $lightSql = "SELECT light_tolerance AS category, COUNT(DISTINCT species_id) AS species_count
-        FROM snapshot_species_presence p
-        WHERE {$rangeSql}{$areaClause}
-        GROUP BY light_tolerance";
-
-    $params = [
+    $rangeSql = buildSnapshotRangeSql('r');
+    $params   = [
         ':snapshot_start_year'  => $snapshotStartYear,
         ':snapshot_start_month' => $snapshotStartMonth,
         ':snapshot_end_year'    => $snapshotEndYear,
         ':snapshot_end_month'   => $snapshotEndMonth,
     ];
-    if ($selectedArea !== 'All Areas') {
+
+    if ($selectedArea === 'All Areas') {
+        // Metro Manila: query raw observations directly (no city-grid constraint) so the
+        // count matches the Historical Trend which also uses all rows in raw_bird_observation.
+        $migrationSql = "SELECT
+                LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.migratory_status), ''), 'unclassified'))) AS category,
+                COUNT(DISTINCT r.species_id) AS species_count
+            FROM raw_bird_observation r
+            LEFT JOIN species_masterlist sm ON sm.species_id = r.species_id
+            WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
+              AND {$rangeSql}
+            GROUP BY category";
+
+        $lightSql = "SELECT
+                LOWER(TRIM(COALESCE(NULLIF(TRIM(sm.light_tolerance), ''), 'unclassified'))) AS category,
+                COUNT(DISTINCT r.species_id) AS species_count
+            FROM raw_bird_observation r
+            LEFT JOIN species_masterlist sm ON sm.species_id = r.species_id
+            WHERE r.year IS NOT NULL AND r.species_id IS NOT NULL
+              AND {$rangeSql}
+            GROUP BY category";
+    } else {
+        // City level: use snapshot_species_presence (city_grid_map based, fast pre-aggregated).
+        ensureSnapshotSpeciesPresenceTable($pdo);
         $params[':area'] = $selectedArea;
+        $rangeClauseP    = buildSnapshotRangeSql('p');
+
+        $migrationSql = "SELECT migratory_status AS category, COUNT(DISTINCT species_id) AS species_count
+            FROM snapshot_species_presence p
+            WHERE {$rangeClauseP} AND area = :area
+            GROUP BY migratory_status";
+
+        $lightSql = "SELECT light_tolerance AS category, COUNT(DISTINCT species_id) AS species_count
+            FROM snapshot_species_presence p
+            WHERE {$rangeClauseP} AND area = :area
+            GROUP BY light_tolerance";
     }
 
     $migStmt = $pdo->prepare($migrationSql);
