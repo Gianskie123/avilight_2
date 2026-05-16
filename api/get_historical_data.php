@@ -222,35 +222,26 @@ try {
     $citySummary = [];
 
     if ($hasModernRaw) {
-        $summaryFilterSql = 'rbo.year = :yr ';
-        $summaryParams = [
-            ':yr'      => $year,
-            ':lat_min' => $mm_lat_min,
-            ':lat_max' => $mm_lat_max,
-            ':lng_min' => $mm_lng_min,
-            ':lng_max' => $mm_lng_max,
-        ];
+        // Metro Manila-wide total: all obs, no bounding box — matches Reports tab and metro_yearly_richness approach.
+        $metroFilterSql = 'rbo.year = :yr ';
+        $metroParams    = [':yr' => $year];
         if ($month >= 1 && $month <= 12) {
-            $summaryFilterSql .= 'AND rbo.month = :mo ';
-            $summaryParams[':mo'] = $month;
+            $metroFilterSql .= 'AND rbo.month = :mo ';
+            $metroParams[':mo'] = $month;
         }
-        $summaryFilterSql .= 'AND rbo.latitude BETWEEN :lat_min AND :lat_max '
-            . 'AND rbo.longitude BETWEEN :lng_min AND :lng_max '
-            . 'AND rbo.latitude != 0 AND rbo.longitude != 0 ';
-
         if ($selectedBird !== '') {
-            $summaryFilterSql .= 'AND sm.species_name = :bird ';
-            $summaryParams[':bird'] = $selectedBird;
+            $metroFilterSql .= 'AND sm.species_name = :bird ';
+            $metroParams[':bird'] = $selectedBird;
         }
         if ($migrationFilter !== '') {
             $migrationCode = ($migrationFilter === 'resident') ? 0 : 1;
-            $summaryFilterSql .= 'AND sm.migratory_status_code = :migration ';
-            $summaryParams[':migration'] = $migrationCode;
+            $metroFilterSql .= 'AND sm.migratory_status_code = :migration ';
+            $metroParams[':migration'] = $migrationCode;
         }
         if ($lightFilter !== '') {
             $lightCode = ($lightFilter === 'sensitive') ? 0 : 1;
-            $summaryFilterSql .= 'AND sm.light_tolerance_code = :light ';
-            $summaryParams[':light'] = $lightCode;
+            $metroFilterSql .= 'AND sm.light_tolerance_code = :light ';
+            $metroParams[':light'] = $lightCode;
         }
 
         $summarySql = "SELECT
@@ -261,10 +252,10 @@ try {
                 COUNT(DISTINCT CASE WHEN sm.light_tolerance_code = 0 THEN rbo.species_id END) AS total_sensitive
             FROM raw_bird_observation rbo
             LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
-            WHERE {$summaryFilterSql}";
+            WHERE {$metroFilterSql}";
 
         $summaryStmt = $pdo->prepare($summarySql);
-        $summaryStmt->execute($summaryParams);
+        $summaryStmt->execute($metroParams);
         $summaryRow = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $summary = [
             'total_unique' => (int) ($summaryRow['total_unique'] ?? 0),
@@ -274,7 +265,28 @@ try {
             'sensitive' => (int) ($summaryRow['total_sensitive'] ?? 0),
         ];
 
-        // Use exact grid matching instead of floating-point epsilon comparison for better performance
+        // City-level breakdown: city_grid_map JOIN constrains to Metro Manila cities.
+        $cityFilterSql = 'rbo.year = :yr ';
+        $cityParams    = [':yr' => $year];
+        if ($month >= 1 && $month <= 12) {
+            $cityFilterSql .= 'AND rbo.month = :mo ';
+            $cityParams[':mo'] = $month;
+        }
+        if ($selectedBird !== '') {
+            $cityFilterSql .= 'AND sm.species_name = :bird ';
+            $cityParams[':bird'] = $selectedBird;
+        }
+        if ($migrationFilter !== '') {
+            $migrationCode = ($migrationFilter === 'resident') ? 0 : 1;
+            $cityFilterSql .= 'AND sm.migratory_status_code = :migration ';
+            $cityParams[':migration'] = $migrationCode;
+        }
+        if ($lightFilter !== '') {
+            $lightCode = ($lightFilter === 'sensitive') ? 0 : 1;
+            $cityFilterSql .= 'AND sm.light_tolerance_code = :light ';
+            $cityParams[':light'] = $lightCode;
+        }
+
         $citySql = "SELECT
                 cgm.area AS area,
                 COUNT(DISTINCT rbo.species_id) AS total_unique,
@@ -287,12 +299,12 @@ try {
                 ON cgm.lat = rbo.grid_lat
                AND cgm.lon = rbo.grid_lon
             LEFT JOIN species_masterlist sm ON sm.species_id = rbo.species_id
-            WHERE {$summaryFilterSql}
+            WHERE {$cityFilterSql}
             GROUP BY cgm.area
             ORDER BY cgm.area";
 
         $cityStmt = $pdo->prepare($citySql);
-        $cityStmt->execute($summaryParams);
+        $cityStmt->execute($cityParams);
         $citySummary = $cityStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
