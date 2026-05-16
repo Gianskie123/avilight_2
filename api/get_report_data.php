@@ -976,18 +976,21 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
                         ELSE f.ndvi
                     END
                 ) AS ndvi,
-                AVG(
-                    CASE
-                        WHEN f.lst_day > 100 THEN (f.lst_day * 0.02) - 273.15
-                        WHEN f.lst_day > 0 THEN f.lst_day
-                        ELSE NULL
-                    END
-                ) AS lst,
-                AVG(CASE WHEN f.monthly_precip_mm >= 0 THEN f.monthly_precip_mm ELSE NULL END) AS precipitation
+                COALESCE(
+                    (AVG(CASE WHEN f.lst_day > 100 THEN (f.lst_day * 0.02) - 273.15
+                              WHEN f.lst_day > 0 THEN f.lst_day
+                              ELSE NULL END) +
+                     AVG(CASE WHEN f.lst_night > 100 THEN (f.lst_night * 0.02) - 273.15
+                              WHEN f.lst_night > 0 THEN f.lst_night
+                              ELSE NULL END)) / 2.0,
+                    AVG(CASE WHEN f.lst_day > 100 THEN (f.lst_day * 0.02) - 273.15
+                             WHEN f.lst_day > 0 THEN f.lst_day
+                             ELSE NULL END)
+                ) AS lst
             FROM final_master_grid f
             JOIN city_grid_map c
-              ON c.lat = f.lat
-             AND c.lon = f.lon
+              ON ROUND(c.lat, 6) = ROUND(f.lat, 6)
+             AND ROUND(c.lon, 6) = ROUND(f.lon, 6)
             WHERE " . buildSnapshotRangeSql('f') . "
               AND (:selected_area_all2 = 'All Areas' OR c.area = :selected_area_value2)
             GROUP BY c.area
@@ -1002,6 +1005,42 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
         $stmt->bindValue(':selected_area_value2', $selectedArea, PDO::PARAM_STR);
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        // Precipitation: sum per cell first, then average across cells — matches ecological_yearly_summary pipeline.
+        // Uses separate named params to avoid PDO HY093 (each placeholder used exactly once per statement).
+        $precipSql = "SELECT c.area, AVG(cs.annual_precip) AS precipitation
+            FROM (
+                SELECT f2.lat, f2.lon,
+                    SUM(CASE WHEN f2.monthly_precip_mm >= 0 THEN f2.monthly_precip_mm ELSE NULL END) AS annual_precip
+                FROM final_master_grid f2
+                WHERE (((f2.year * 12) + f2.month) BETWEEN ((:p1_start_year * 12) + :p1_start_month) AND ((:p1_end_year * 12) + :p1_end_month))
+                GROUP BY f2.lat, f2.lon
+            ) cs
+            JOIN city_grid_map c
+              ON ROUND(c.lat, 6) = ROUND(cs.lat, 6)
+             AND ROUND(c.lon, 6) = ROUND(cs.lon, 6)
+            WHERE (:p1_area_all = 'All Areas' OR c.area = :p1_area_value)
+            GROUP BY c.area";
+        $precipStmt = $pdo->prepare($precipSql);
+        $precipStmt->bindValue(':p1_start_year', $snapshotStartYear, PDO::PARAM_INT);
+        $precipStmt->bindValue(':p1_start_month', $snapshotStartMonth, PDO::PARAM_INT);
+        $precipStmt->bindValue(':p1_end_year', $snapshotEndYear, PDO::PARAM_INT);
+        $precipStmt->bindValue(':p1_end_month', $snapshotEndMonth, PDO::PARAM_INT);
+        $precipStmt->bindValue(':p1_area_all', $selectedArea, PDO::PARAM_STR);
+        $precipStmt->bindValue(':p1_area_value', $selectedArea, PDO::PARAM_STR);
+        $precipStmt->execute();
+        $precipByArea = [];
+        foreach ($precipStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $pr) {
+            $a = trim((string) ($pr['area'] ?? ''));
+            if ($a !== '') {
+                $precipByArea[$a] = $pr['precipitation'] !== null ? (float) $pr['precipitation'] : null;
+            }
+        }
+        foreach ($rows as &$row) {
+            $a = trim((string) ($row['area'] ?? ''));
+            $row['precipitation'] = $precipByArea[$a] ?? null;
+        }
+        unset($row);
 
         $points = [
             'light_richness' => [],
@@ -1092,14 +1131,18 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
                     ELSE n.ndvi
                 END
             ) AS ndvi,
-            AVG(
-                CASE
-                    WHEN lt.lst_day > 100 THEN (lt.lst_day * 0.02) - 273.15
-                    WHEN lt.lst_day > 0 THEN lt.lst_day
-                    ELSE NULL
-                END
+            COALESCE(
+                (AVG(CASE WHEN lt.lst_day > 100 THEN (lt.lst_day * 0.02) - 273.15
+                          WHEN lt.lst_day > 0 THEN lt.lst_day
+                          ELSE NULL END) +
+                 AVG(CASE WHEN lt.lst_night > 100 THEN (lt.lst_night * 0.02) - 273.15
+                          WHEN lt.lst_night > 0 THEN lt.lst_night
+                          ELSE NULL END)) / 2.0,
+                AVG(CASE WHEN lt.lst_day > 100 THEN (lt.lst_day * 0.02) - 273.15
+                         WHEN lt.lst_day > 0 THEN lt.lst_day
+                         ELSE NULL END)
             ) AS lst,
-            AVG(CASE WHEN p.precip_mm >= 0 THEN p.precip_mm ELSE NULL END) AS precipitation
+            AVG(p.annual_precip) AS precipitation
         FROM city_grid_map cells
         LEFT JOIN viirs v
                             ON (v.year * 100 + v.month) BETWEEN :viirs_start_ym AND :viirs_end_ym
@@ -1113,9 +1156,13 @@ function fetchSnapshotScatterData(PDO $pdo, array $cities, string $selectedArea,
                             ON (lt.year * 100 + lt.month) BETWEEN :lst_start_ym AND :lst_end_ym
            AND lt.latitude = cells.lat
            AND lt.longitude = cells.lon
-        LEFT JOIN precip p
-                            ON (p.year * 100 + p.month) BETWEEN :precip_start_ym AND :precip_end_ym
-           AND p.latitude = cells.lat
+        LEFT JOIN (
+            SELECT p2.latitude, p2.longitude,
+                SUM(CASE WHEN p2.precip_mm >= 0 THEN p2.precip_mm ELSE NULL END) AS annual_precip
+            FROM precip p2
+            WHERE (p2.year * 100 + p2.month) BETWEEN :precip_start_ym AND :precip_end_ym
+            GROUP BY p2.latitude, p2.longitude
+        ) p ON p.latitude = cells.lat
            AND p.longitude = cells.lon
         WHERE cells.area IN ({$areaListSql})";
 
