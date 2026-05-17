@@ -9,6 +9,37 @@ require_once __DIR__ . '/../includes/auth.php';
 require_admin();
 require_once __DIR__ . '/../includes/db.php';
 
+function resolve_model_bundle_path(string $filePath): ?string {
+    $filePath = trim($filePath);
+    if ($filePath === '') {
+        return null;
+    }
+
+    $candidates = [];
+    $projectRoot = realpath(__DIR__ . '/..');
+    $apiModelsRoot = realpath(__DIR__ . '/../api_models');
+
+    if (preg_match('/^[A-Za-z]:[\\\\\/]/', $filePath) || str_starts_with($filePath, '\\') || str_starts_with($filePath, '/')) {
+        $candidates[] = $filePath;
+    } else {
+        if ($projectRoot !== false) {
+            $candidates[] = $projectRoot . DIRECTORY_SEPARATOR . ltrim($filePath, '/\\');
+        }
+        if ($apiModelsRoot !== false) {
+            $candidates[] = $apiModelsRoot . DIRECTORY_SEPARATOR . ltrim($filePath, '/\\');
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        $resolved = realpath($candidate);
+        if ($resolved !== false) {
+            return $resolved;
+        }
+    }
+
+    return null;
+}
+
 function activate_model_bundle(string $filePath, string $apiModelsDir): ?string {
     $requiredFiles = [
         'xgb_tolerant.json',
@@ -20,8 +51,8 @@ function activate_model_bundle(string $filePath, string $apiModelsDir): ?string 
         'meta_learner.joblib',
     ];
 
-    $resolved = realpath(__DIR__ . '/../' . ltrim($filePath, '/\\'));
-    if ($resolved === false) {
+    $resolved = resolve_model_bundle_path($filePath);
+    if ($resolved === null) {
         return 'Stored model path does not exist.';
     }
 

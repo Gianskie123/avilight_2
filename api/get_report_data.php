@@ -1922,6 +1922,37 @@ function buildDefaultDiagnosticsPayload(array $years): array {
     }
 
     $labels = ['Artificial Light', 'NDVI', 'Temperature', 'Precipitation', 'Seasonality', 'Land Cover', 'Historical Species'];
+function resolve_model_bundle_path(string $filePath): ?string {
+    $filePath = trim($filePath);
+    if ($filePath === '') {
+        return null;
+    }
+
+    $candidates = [];
+    $projectRoot = realpath(__DIR__ . '/..');
+    $apiModelsRoot = realpath(__DIR__ . '/../api_models');
+
+    if (preg_match('/^[A-Za-z]:[\\\\\/]/', $filePath) || str_starts_with($filePath, '\\') || str_starts_with($filePath, '/')) {
+        $candidates[] = $filePath;
+    } else {
+        if ($projectRoot !== false) {
+            $candidates[] = $projectRoot . DIRECTORY_SEPARATOR . ltrim($filePath, '/\\');
+        }
+        if ($apiModelsRoot !== false) {
+            $candidates[] = $apiModelsRoot . DIRECTORY_SEPARATOR . ltrim($filePath, '/\\');
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        $resolved = realpath($candidate);
+        if ($resolved !== false) {
+            return $resolved;
+        }
+    }
+
+    return null;
+}
+
     $emptyImportance = [];
     foreach ($filters as $filter) {
         $emptyImportance[$filter] = [
@@ -2416,8 +2447,8 @@ function resolveDiagnosticsModelDir(PDO $pdo, string $defaultModelsDir): array {
             return $fallback;
         }
 
-        $activeDir = realpath(__DIR__ . '/../' . ltrim((string) $active['file_path'], '/\\'));
-        if ($activeDir === false || !$hasRequired($activeDir)) {
+        $activeDir = resolve_model_bundle_path((string) $active['file_path']);
+        if ($activeDir === null || !$hasRequired($activeDir)) {
             $fallback['note'] = 'Active DB model path is missing required files; using api_models fallback.';
             return $fallback;
         }
