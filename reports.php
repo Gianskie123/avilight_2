@@ -2040,6 +2040,10 @@ require_once 'includes/header.php';
                 <div class="diagnostic-card">
                     <h2 class="card-header">Model Evaluation Metrics</h2>
                     <div class="card-body">
+                        <div id="reportsModelInfo" style="margin-bottom: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.95rem; color: var(--text-secondary);">
+                            <div style="font-weight: 700; color: var(--text-primary);">Current model:</div>
+                            <div id="reportsModelName" style="font-weight: 800; color: var(--accent-blue);">loading…</div>
+                        </div>
                         <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
                             <div style="display: flex; gap: 8px; align-items: center;">
                                 <label for="metricsModelSelect" style="font-weight: 600; font-size: 0.9rem;">Model:</label>
@@ -3534,6 +3538,35 @@ function updateModelMetricsDisplay() {
     if (maeTestingElem) maeTestingElem.textContent = formatMetricValue(testingMetrics.mae);
 }
 
+function updateReportsModelDisplay() {
+    fetch('api/get_active_model.php')
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (payload) {
+            var element = document.getElementById('reportsModelName');
+            if (!element) {
+                return;
+            }
+            if (!payload || !payload.success) {
+                element.textContent = 'unknown';
+                return;
+            }
+            if (!payload.active) {
+                element.textContent = 'default (api_models)';
+                return;
+            }
+            var activeModel = payload.active;
+            element.textContent = activeModel.version || activeModel.file_path || ('id:' + (activeModel.id || '?'));
+        })
+        .catch(function () {
+            var element = document.getElementById('reportsModelName');
+            if (element) {
+                element.textContent = 'error';
+            }
+        });
+}
+
 function clampNumber(value, min, max) {
     var num = Number(value);
     if (!isFinite(num)) num = 0;
@@ -4201,6 +4234,7 @@ initExportSectionModal();
 
 // Initialize model metrics display with default values
 updateModelMetricsDisplay();
+updateReportsModelDisplay();
 
 // Load trend immediately; defer snapshot until user scrolls near it or clicks a tab
 var snapshotLoaded = false;
