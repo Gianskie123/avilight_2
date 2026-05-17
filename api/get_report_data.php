@@ -2859,7 +2859,7 @@ try {
             }
             $seriesRows = $trendStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             $precipitationByYear = fetchHistoricalYearlyPrecipitationSeries(
-                $pdo,
+                $mysql,
                 $metro_manila_cities,
                 $selected_area,
                 $start_year,
