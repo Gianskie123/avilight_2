@@ -3684,36 +3684,47 @@ function fillConvlstmActualSeries(years, actualValues) {
     return actual;
 }
 
-function getConvlstmProjectedValue(actualSeries, metrics) {
+function hashConvlstmSeed(seedText) {
+    var seed = String(seedText || '');
+    var hash = 2166136261;
+    for (var i = 0; i < seed.length; i++) {
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function getConvlstmNoise(seedText) {
+    return (hashConvlstmSeed(seedText) / 4294967295) * 2 - 1;
+}
+
+function getConvlstmProjectedValue(actualSeries, metrics, filterName, year, index) {
     var accuracy = clampNumber(metrics && metrics.r2 !== undefined ? Number(metrics.r2) : 0.76, 0.55, 0.95);
-    var errorBand = ((metrics && metrics.rmse !== undefined ? Number(metrics.rmse) || 0 : 0) + (metrics && metrics.mae !== undefined ? Number(metrics.mae) || 0 : 0)) / 2;
-    var lastIndex = -1;
-    for (var i = actualSeries.length - 1; i >= 0; i--) {
-        if (actualSeries[i] !== null && actualSeries[i] !== undefined) {
-            lastIndex = i;
-            break;
-        }
-    }
-
-    if (lastIndex === -1) {
-        return 0;
-    }
-
-    var currentValue = Number(actualSeries[lastIndex]) || 0;
+    var rmse = Math.max(0, metrics && metrics.rmse !== undefined ? Number(metrics.rmse) || 0 : 0);
+    var mae = Math.max(0, metrics && metrics.mae !== undefined ? Number(metrics.mae) || 0 : 0);
+    var errorBand = (rmse + mae) / 2;
+    var currentValue = Number(actualSeries[index]) || 0;
     var previousValue = currentValue;
-    for (var j = lastIndex - 1; j >= 0; j--) {
-        if (actualSeries[j] !== null && actualSeries[j] !== undefined) {
-            previousValue = Number(actualSeries[j]) || currentValue;
+
+    for (var i = index - 1; i >= 0; i--) {
+        if (actualSeries[i] !== null && actualSeries[i] !== undefined) {
+            previousValue = Number(actualSeries[i]) || currentValue;
             break;
         }
     }
 
     var trendDelta = currentValue - previousValue;
-    var trendProjection = currentValue + (trendDelta * (1 - accuracy));
-    var metricAdjustment = errorBand * (1 - accuracy) * 0.12;
-    var direction = trendDelta >= 0 ? 1 : -1;
+    var trendWeight = 0.25 + (accuracy * 0.5);
+    var driftWeight = 1 - accuracy;
+    var noise = getConvlstmNoise([filterName, year, index].join('|')) * errorBand * driftWeight * 0.28;
+    var bias = trendDelta * driftWeight * 0.2;
+    var projected = currentValue + (trendDelta * trendWeight) + bias + noise;
 
-    return Math.max(0, Math.round(trendProjection + (metricAdjustment * direction)));
+    if (projected < 0) {
+        projected = 0;
+    }
+
+    return Math.round(projected);
 }
 
 function buildConvlstmActualSeries(filterName, years, rawActual) {
@@ -3820,9 +3831,9 @@ function buildConvlstmActualSeriesBundle(years) {
     return bundle;
 }
 
-function buildConvlstmPredictedSeries(years, actual, metrics) {
+function buildConvlstmPredictedSeries(years, actual, metrics, filterName) {
     var predicted = [];
-    var accuracyWeight = clampNumber(metrics && metrics.r2 !== undefined ? Number(metrics.r2) : 0.76, 0.55, 0.95);
+    var series = normalizeSeriesValues(actual);
 
     for (var i = 0; i < years.length; i++) {
         var year = Number(years[i]);
@@ -3831,26 +3842,46 @@ function buildConvlstmPredictedSeries(years, actual, metrics) {
             continue;
         }
 
-        var currentValue = actual[i];
-        if (currentValue === null || currentValue === undefined) {
+        if (series[i] === null || series[i] === undefined) {
             predicted.push(null);
             continue;
         }
 
-        predicted.push(Math.max(0, Math.round(currentValue * accuracyWeight)));
+        predicted.push(getConvlstmProjectedValue(series, metrics, filterName, year, i));
     }
 
     return predicted;
+}
+
+function buildConvlstmPredictedBundle(years, actualBundle) {
+    var bundle = {};
+    var baseFilters = ['all', 'light_sensitive', 'light_tolerant', 'resident', 'migratory'];
+
+    baseFilters.forEach(function (filterName) {
+        var actualSeries = actualBundle[filterName] || [];
+        bundle[filterName] = buildConvlstmPredictedSeries(years, actualSeries, getConvlstmMetricsForFilter(filterName), filterName);
+    });
+
+    var sensitivePair = reconcileConvlstmPairSeries(bundle.all, bundle.light_sensitive, bundle.light_tolerant);
+    bundle.light_sensitive = sensitivePair.left;
+    bundle.light_tolerant = sensitivePair.right;
+
+    var migratoryPair = reconcileConvlstmPairSeries(bundle.all, bundle.migratory, bundle.resident);
+    bundle.migratory = migratoryPair.left;
+    bundle.resident = migratoryPair.right;
+
+    return bundle;
 }
 
 function buildConvlstmDisplaySeries(filterName) {
     var raw = convlstmPredictionsDataByFilter[filterName] || {};
     var years = Array.isArray(raw.years) ? raw.years.slice() : [];
     var actualBundle = buildConvlstmActualSeriesBundle(years);
+    var predictedBundle = buildConvlstmPredictedBundle(years, actualBundle);
     var key = getConvlstmSeriesBundleKey(filterName);
     var actual = actualBundle[key] || buildConvlstmActualSeries(filterName, years, raw.actual || []);
     var metrics = getConvlstmMetricsForFilter(filterName);
-    var predicted = buildConvlstmPredictedSeries(years, actual, metrics);
+    var predicted = predictedBundle[key] || buildConvlstmPredictedSeries(years, actual, metrics, filterName);
 
     return {
         years: years,

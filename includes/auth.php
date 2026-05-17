@@ -207,6 +207,7 @@ function authenticate_user(string $email, string $password) {
 
         if ($success) {
             $_SESSION['user_type'] = $user['user_type'] ?? 'EMS';
+            unset($_SESSION['agreement_accepted']);
             $user_id = $user['user_id'] ?? $user['id'] ?? null;
 
             if ($user_id !== null) {
@@ -322,31 +323,13 @@ function _ensure_access_log_table(PDO $pdo): void {
 
 /**
  * Check whether the currently logged-in user has accepted the User Responsibility Agreement.
- * Session flag is checked first for performance; falls back to the database.
+ * The prompt is intentionally session-scoped so it appears again on each new login.
  */
 function has_accepted_agreement(): bool {
     if (!is_logged_in()) {
         return false;
     }
-    // Fast path: already recorded in session
-    if (!empty($_SESSION['agreement_accepted'])) {
-        return true;
-    }
-    // Slow path: query the database
-    try {
-        require_once __DIR__ . '/db.php';
-        $pdo = get_mysql_db();
-        _ensure_user_agreements_table($pdo);
-        $stmt = $pdo->prepare('SELECT id FROM user_agreements WHERE email = :email LIMIT 1');
-        $stmt->execute([':email' => $_SESSION['user_email']]);
-        if ($stmt->fetch()) {
-            $_SESSION['agreement_accepted'] = true;
-            return true;
-        }
-    } catch (Exception $e) {
-        error_log('[AVILIGHT] has_accepted_agreement error: ' . $e->getMessage());
-    }
-    return false;
+    return !empty($_SESSION['agreement_accepted']);
 }
 
 /**
@@ -513,6 +496,7 @@ function verify_otp(string $submitted) {
     $_SESSION['user_role']  = $role;
     $_SESSION['user_id']    = $user_id;
     $_SESSION['user_type']  = $type;
+    unset($_SESSION['agreement_accepted']);
 
     // Log successful login
     try {
