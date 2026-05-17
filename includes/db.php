@@ -510,8 +510,24 @@ function upsert_mysql_bau_baseline_cache(PDO $pdo, array $payload): void {
 function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
     if (empty($years)) return 0;
     $in = implode(',', array_map('intval', $years));
-    return (int)$pdo->exec("
-        INSERT INTO ecological_monthly_summary
+    // Ensure target table exists
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ecological_monthly_summary (
+        area VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+        year INT NOT NULL,
+        month INT NOT NULL,
+        ndvi_avg DOUBLE NULL,
+        viirs_avg DOUBLE NULL,
+        lst_avg DOUBLE NULL,
+        lst_day_avg DOUBLE NULL,
+        lst_night_avg DOUBLE NULL,
+        precipitation_total DOUBLE NULL,
+        cell_count INT NULL,
+        refreshed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (area, year, month),
+        KEY idx_ems_year (year)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    try {
+        $count = (int)$pdo->exec("INSERT INTO ecological_monthly_summary
             (area, year, month, ndvi_avg, viirs_avg, lst_avg, lst_day_avg, lst_night_avg, precipitation_total, cell_count)
         SELECT
             cc.city_key                                                       AS area,
@@ -559,8 +575,84 @@ function refresh_ecological_monthly_summary(PDO $pdo, array $years): int {
             lst_night_avg       = VALUES(lst_night_avg),
             precipitation_total = VALUES(precipitation_total),
             cell_count          = VALUES(cell_count),
-            refreshed_at        = CURRENT_TIMESTAMP
-    ");
+            refreshed_at        = CURRENT_TIMESTAMP");
+    } catch (PDOException $e) {
+        // Fallback: city_cells table absent or empty — use city_grid_map via lat/lon mapping
+        $count = (int)$pdo->exec("INSERT INTO ecological_monthly_summary
+            (area, year, month, ndvi_avg, viirs_avg, lst_avg, lst_day_avg, lst_night_avg, precipitation_total, cell_count)
+        SELECT
+            cgm.area AS area,
+            g.year,
+            g.month,
+            AVG(CASE WHEN g.ndvi = 0 THEN NULL
+                     WHEN ABS(g.ndvi) > 1 THEN g.ndvi / 10000.0
+                     ELSE g.ndvi END) AS ndvi_avg,
+            AVG(NULLIF(g.viirs_avg_rad, 0)) AS viirs_avg,
+            COALESCE(
+                (AVG(CASE WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                          WHEN g.lst_day > 0   THEN g.lst_day
+                          ELSE NULL END) +
+                 AVG(CASE WHEN g.lst_night > 100 THEN (g.lst_night * 0.02) - 273.15
+                          WHEN g.lst_night > 0   THEN g.lst_night
+                          ELSE NULL END)) / 2.0,
+                AVG(CASE WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                         WHEN g.lst_day > 0   THEN g.lst_day
+                         ELSE NULL END)
+            ) AS lst_avg,
+            AVG(CASE WHEN g.lst_day > 100 THEN (g.lst_day * 0.02) - 273.15
+                     WHEN g.lst_day > 0   THEN g.lst_day
+                     ELSE NULL END) AS lst_day_avg,
+            AVG(CASE WHEN g.lst_night > 100 THEN (g.lst_night * 0.02) - 273.15
+                     WHEN g.lst_night > 0   THEN g.lst_night
+                     ELSE NULL END) AS lst_night_avg,
+            AVG(CASE WHEN g.monthly_precip_mm < 0 THEN NULL ELSE g.monthly_precip_mm END) AS precipitation_total,
+            COUNT(DISTINCT CONCAT(ROUND(g.lat,6), ',', ROUND(g.lon,6))) AS cell_count
+        FROM final_master_grid g
+        JOIN city_grid_map cgm ON ROUND(g.lat,6) = ROUND(cgm.lat,6) AND ROUND(g.lon,6) = ROUND(cgm.lon,6)
+        WHERE g.year IN ({$in})
+          AND g.ndvi IS NOT NULL
+          AND g.viirs_avg_rad IS NOT NULL
+          AND g.lst_day IS NOT NULL
+          AND g.monthly_precip_mm IS NOT NULL
+          AND g.lst_day > 0
+          AND g.viirs_avg_rad >= 0
+        GROUP BY cgm.area, g.year, g.month
+        ON DUPLICATE KEY UPDATE
+            ndvi_avg            = VALUES(ndvi_avg),
+            viirs_avg           = VALUES(viirs_avg),
+            lst_avg             = VALUES(lst_avg),
+            lst_day_avg         = VALUES(lst_day_avg),
+            lst_night_avg       = VALUES(lst_night_avg),
+            precipitation_total = VALUES(precipitation_total),
+            cell_count          = VALUES(cell_count),
+            refreshed_at        = CURRENT_TIMESTAMP");
+    }
+
+    // Continue with previously added monthly precip fallback update
+    // Fallback: if final_master_grid lacked coverage for some (area,year,month),
+    // populate precipitation_total from raw `precip` table by aggregating
+    // monthly precip per lat/lon then averaging across mapped city grid cells.
+    $pdo->exec("UPDATE ecological_monthly_summary em
+        JOIN (
+            SELECT
+                c.area,
+                pr.year,
+                pr.month,
+                AVG(pr.monthly_precip) AS precipitation_total
+            FROM (
+                SELECT latitude AS lat, longitude AS lon, year, month,
+                    SUM(CASE WHEN precip_mm >= 0 THEN precip_mm ELSE 0 END) AS monthly_precip
+                FROM precip
+                GROUP BY latitude, longitude, year, month
+            ) pr
+            JOIN city_grid_map c
+              ON ROUND(c.lat, 6) = ROUND(pr.lat, 6)
+             AND ROUND(c.lon, 6) = ROUND(pr.lon, 6)
+            GROUP BY c.area, pr.year, pr.month
+        ) p ON p.area = em.area AND p.year = em.year AND p.month = em.month
+        SET em.precipitation_total = p.precipitation_total
+        WHERE em.precipitation_total IS NULL OR em.cell_count = 0");
+    return (int) ($count ?? 0);
 }
 
 /**

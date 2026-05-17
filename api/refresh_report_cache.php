@@ -398,6 +398,29 @@ function rrc_refreshSummary(PDO $pdo, array $cities): array {
                 GROUP BY area, year
             ) p ON p.area = e.area AND p.year = e.year
             SET e.precipitation_total = p.precipitation_total');
+        // Fallback: if final_master_grid lacked rows for some years, fill precipitation
+        // from the raw `precip` table by summing per-cell annual precip then averaging
+        // across mapped city cells. This ensures years present only in `precip` are
+        // still represented in the summary.
+        $pdo->exec('UPDATE tmp_rrc_env_area_year e
+            JOIN (
+                SELECT
+                    c.area,
+                    pr.year,
+                    AVG(pr.annual_precip) AS precipitation_total
+                FROM (
+                    SELECT latitude AS lat, longitude AS lon, year,
+                        SUM(CASE WHEN precip_mm >= 0 THEN precip_mm ELSE 0 END) AS annual_precip
+                    FROM precip
+                    GROUP BY latitude, longitude, year
+                ) pr
+                JOIN city_grid_map c
+                  ON ROUND(c.lat, 6) = ROUND(pr.lat, 6)
+                 AND ROUND(c.lon, 6) = ROUND(pr.lon, 6)
+                GROUP BY c.area, pr.year
+            ) p ON p.area = e.area AND p.year = e.year
+            SET e.precipitation_total = p.precipitation_total
+            WHERE e.precipitation_total IS NULL');
         $pdo->exec('UPDATE tmp_rrc_env_area_year e
             JOIN (
                 SELECT
