@@ -107,8 +107,9 @@ $species_data = load_species_from_csv();
 <div class="card" id="analyticsScenarioSection">
     <div class="card-body" style="padding:16px;">
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
-            <div id="analyticsModelInfo" style="grid-column:1 / -1; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">
-                Model: <span id="analyticsModelName">loading…</span>
+            <div id="analyticsModelInfo" style="grid-column:1 / -1; margin-bottom:8px; font-size:0.95rem; color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
+                <div style="font-weight:700; color:var(--text-primary);">Current model:</div>
+                <div id="analyticsModelName" style="font-weight:800; color:var(--accent-blue);">loading…</div>
             </div>
             <div id="bauLeftPanel">
                 <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Business as Usual (BAU)</div>
