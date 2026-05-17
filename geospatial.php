@@ -107,6 +107,9 @@ $species_data = load_species_from_csv();
 <div class="card" id="analyticsScenarioSection">
     <div class="card-body" style="padding:16px;">
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+            <div id="analyticsModelInfo" style="grid-column:1 / -1; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">
+                Model: <span id="analyticsModelName">loading…</span>
+            </div>
             <div id="bauLeftPanel">
                 <div style="font-size:1.02rem; font-weight:700; margin-bottom:4px;">Business as Usual (BAU)</div>
                 <div style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:10px;">Inputs are locked to historical trend averages derived from nighttime radiance and environmental records. No manual adjustment.</div>
@@ -2770,6 +2773,22 @@ function initAnalyticsScenarioUI() {
         highlightSelectedCityBoundary(names[0]);
         focusMapOnCity(names[0]);
     }
+
+    // Fetch active model info for display
+    (function fetchActiveModel() {
+        fetch('api/get_active_model.php')
+            .then(function(r) { return r.json(); })
+            .then(function(j) {
+                var el = document.getElementById('analyticsModelName');
+                if (!el) return;
+                if (!j || !j.success) return el.textContent = 'unknown';
+                if (!j.active) return el.textContent = 'default (api_models)';
+                var ver = j.active.version || j.active.file_path || ('id:' + (j.active.id || '?'));
+                el.textContent = ver;
+            }).catch(function() {
+                var el = document.getElementById('analyticsModelName'); if (el) el.textContent = 'error';
+            });
+    })();
 }
 
 function initMapMonthControls() {

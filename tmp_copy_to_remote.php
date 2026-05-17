@@ -23,6 +23,12 @@ $remoteDsn = "mysql:host={$rhost};port={$rport};dbname={$rdb};charset=utf8mb4";
 try {
     $local = new PDO($localDsn, 'root', '', [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
     $remote = new PDO($remoteDsn, $ruser, $rpass, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+    // Increase remote session lock wait timeout to reduce risk of transient lock failures
+    try {
+        $remote->exec("SET SESSION innodb_lock_wait_timeout = 300");
+    } catch (Throwable $e) {
+        // Non-fatal if the remote server doesn't permit session variable changes
+    }
 } catch (Throwable $e) {
     echo "Connection error: " . $e->getMessage() . "\n";
     exit(1);
@@ -33,18 +39,45 @@ function copy_table($local, $remote, $selectSql, $insertSql, $paramsMap=null, $b
     $rows = $stmt->fetchAll();
     $total = count($rows);
     echo "Found $total rows to copy.\n";
-    $remote->beginTransaction();
     $ins = $remote->prepare($insertSql);
     $i = 0;
+    $batchRows = [];
     foreach ($rows as $r) {
         $bind = [];
         if ($paramsMap === null) $bind = $r; else {
             foreach ($paramsMap as $k=>$src) $bind[$k] = $r[$src] ?? null;
         }
-        $ins->execute($bind);
-        if (++$i % $batch === 0) echo "  copied $i / $total\n";
+        $batchRows[] = $bind;
+        if (count($batchRows) >= $batch) {
+            try {
+                $remote->beginTransaction();
+                foreach ($batchRows as $br) {
+                    $ins->execute($br);
+                    $i++;
+                }
+                $remote->commit();
+            } catch (Throwable $e) {
+                if ($remote->inTransaction()) $remote->rollBack();
+                throw $e;
+            }
+            echo "  copied $i / $total\n";
+            $batchRows = [];
+        }
     }
-    $remote->commit();
+    // final partial batch
+    if (count($batchRows) > 0) {
+        try {
+            $remote->beginTransaction();
+            foreach ($batchRows as $br) {
+                $ins->execute($br);
+                $i++;
+            }
+            $remote->commit();
+        } catch (Throwable $e) {
+            if ($remote->inTransaction()) $remote->rollBack();
+            throw $e;
+        }
+    }
     echo "Copied $i rows.\n";
 }
 
