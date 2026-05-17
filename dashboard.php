@@ -1327,6 +1327,29 @@ var latestHistoricalContext = null;
 var selectedHistoricalSite = null;
 var envRowsExpanded = false;
 var envSortByValue = true; // true = descending value, false = alphabetical
+var precipThresholds = { low: 100, high: 200, max: 300, isMonthly: true };
+
+function computePrecipThresholds(values, isMonthly) {
+    var valid = values.filter(function(v) { return v != null && isFinite(v) && v >= 0; });
+    if (valid.length === 0) return;
+    valid.sort(function(a, b) { return a - b; });
+    var n = valid.length;
+    var low  = valid[Math.floor(n * 0.25)] || 0;
+    var high = valid[Math.floor(n * 0.75)] || 0;
+    var max  = valid[n - 1] || 0;
+    var round = max >= 1000 ? 100 : 10;
+    precipThresholds = {
+        low:  Math.max(1, Math.round(low  / round) * round),
+        high: Math.max(1, Math.round(high / round) * round),
+        max:  Math.max(1, Math.round(max  / round) * round),
+        isMonthly: !!isMonthly
+    };
+}
+
+function formatPrecipTick(v) {
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return String(Math.round(v));
+}
 var historicalClickStep = 0;
 var historicalBarsAnimated = false;
 var HISTORICAL_DEFAULT_CITY = 'Metro Manila';
@@ -2072,7 +2095,7 @@ function getEnvColor(envType, valueObj, landCoverClass, landTempPeriod) {
     }
 
     if (envType === 'precip') {
-        return value > 200 ? '#0ea5e9' : (value > 100 ? '#38bdf8' : '#93c5fd');
+        return value > precipThresholds.high ? '#0ea5e9' : (value > precipThresholds.low ? '#38bdf8' : '#93c5fd');
     }
 
     if (envType === 'land_temp') {
@@ -2692,10 +2715,11 @@ function getEnvironmentalLegendHTML(envType, landTempPeriod) {
     }
 
     if (envType === 'precip') {
+        var ptLabel = precipThresholds.isMonthly ? 'Precipitation (mm / month)' : 'Precipitation (mm / year)';
         return gradientLegend(
-            'Avg Precipitation (mm / month)',
+            ptLabel,
             'linear-gradient(to right,#93c5fd,#38bdf8,#0ea5e9)',
-            ['0', '100', '200', '300+'],
+            ['0', formatPrecipTick(precipThresholds.low), formatPrecipTick(precipThresholds.high), formatPrecipTick(precipThresholds.max) + '+'],
             ['Dry', '', 'Moderate', 'Wet']
         );
     }
@@ -2867,6 +2891,12 @@ function renderEnvironmentalRows() {
 
     var envRows = (latestHistoricalContext.envRows || []).slice();
     var hasNumeric = envRows.length && envRows[0].numericValue != null;
+
+    if (latestHistoricalContext.selections && latestHistoricalContext.selections.envType === 'precip' && hasNumeric) {
+        var isMonthly = !!(latestHistoricalContext.selections.month);
+        computePrecipThresholds(envRows.map(function(r) { return r.numericValue; }), isMonthly);
+        updateEnvironmentalLegend(latestHistoricalContext.selections);
+    }
 
     if (envSortByValue && hasNumeric) {
         envRows.sort(function(a, b) { return b.numericValue - a.numericValue; });
