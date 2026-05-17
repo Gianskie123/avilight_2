@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(curl -s \"http://localhost/GitHub/avilight/api/get_report_data.php?area=All+Areas&snapshot_start_year=2014&snapshot_start_month=1&snapshot_end_year=2025&snapshot_end_month=12\")",
-      "Bash(php -r ' *)"
-    ]
-  }
-}
