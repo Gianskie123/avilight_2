@@ -61,7 +61,7 @@ $units = [
 
 $cacheTtlSeconds = 30 * 24 * 60 * 60;
 $cacheDir = __DIR__ . '/../data/cache/reports';
-$reportCacheSchemaVersion = 'v9';
+$reportCacheSchemaVersion = 'v10';
 
 function safeReportYearBounds(PDO $mysql): array {
     $yearRow = $mysql->query('SELECT MIN(year) AS min_year, MAX(year) AS max_year FROM ecological_yearly_summary')->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -1486,6 +1486,68 @@ function fetchAreaYearlyEnvAverages(PDO $pdo, array $cities, string $selectedAre
     return $values;
 }
 
+function fetchHistoricalYearlyPrecipitationSeries(PDO $pdo, array $cities, string $selectedArea, int $startYear, int $endYear): array {
+    $areaListSql = "'" . implode("','", array_map(static fn($c) => str_replace("'", "''", $c), $cities)) . "'";
+
+    if ($selectedArea === 'All Areas') {
+        $sql = "SELECT prec.year AS year, AVG(prec.area_annual_precip) AS precipitation
+            FROM (
+                SELECT cells.area AS area, cell_precip.year AS year, AVG(cell_precip.annual_precip) AS area_annual_precip
+                FROM (
+                    SELECT g.lat, g.lon, g.year,
+                        SUM(CASE WHEN g.monthly_precip_mm >= 0 THEN g.monthly_precip_mm ELSE NULL END) AS annual_precip
+                    FROM final_master_grid g
+                    WHERE g.year BETWEEN :start_year AND :end_year
+                    GROUP BY g.lat, g.lon, g.year
+                ) cell_precip
+                JOIN city_grid_map cells
+                  ON ROUND(cells.lat, 6) = ROUND(cell_precip.lat, 6)
+                 AND ROUND(cells.lon, 6) = ROUND(cell_precip.lon, 6)
+                WHERE cells.area IN ({$areaListSql})
+                GROUP BY cells.area, cell_precip.year
+            ) prec
+            GROUP BY prec.year
+            ORDER BY prec.year ASC";
+    } else {
+        $sql = "SELECT prec.year AS year, prec.area_annual_precip AS precipitation
+            FROM (
+                SELECT cells.area AS area, cell_precip.year AS year, AVG(cell_precip.annual_precip) AS area_annual_precip
+                FROM (
+                    SELECT g.lat, g.lon, g.year,
+                        SUM(CASE WHEN g.monthly_precip_mm >= 0 THEN g.monthly_precip_mm ELSE NULL END) AS annual_precip
+                    FROM final_master_grid g
+                    WHERE g.year BETWEEN :start_year AND :end_year
+                    GROUP BY g.lat, g.lon, g.year
+                ) cell_precip
+                JOIN city_grid_map cells
+                  ON ROUND(cells.lat, 6) = ROUND(cell_precip.lat, 6)
+                 AND ROUND(cells.lon, 6) = ROUND(cell_precip.lon, 6)
+                WHERE cells.area = :selected_area
+                GROUP BY cells.area, cell_precip.year
+            ) prec
+            ORDER BY prec.year ASC";
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->bindValue(':start_year', $startYear, PDO::PARAM_INT);
+    $stmt->bindValue(':end_year', $endYear, PDO::PARAM_INT);
+    if ($selectedArea !== 'All Areas') {
+        $stmt->bindValue(':selected_area', $selectedArea, PDO::PARAM_STR);
+    }
+    $stmt->execute();
+
+    $precipitationByYear = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+        $year = (int) ($row['year'] ?? 0);
+        if ($year <= 0) {
+            continue;
+        }
+        $precipitationByYear[$year] = isset($row['precipitation']) ? (float) $row['precipitation'] : null;
+    }
+
+    return $precipitationByYear;
+}
+
 function emptySnapshotScatterData(): array {
     return [
         'light_richness' => [
@@ -2796,6 +2858,21 @@ try {
                 throw new Exception("Failed to execute trend query: " . implode(", ", $trendStmt->errorInfo()));
             }
             $seriesRows = $trendStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $precipitationByYear = fetchHistoricalYearlyPrecipitationSeries(
+                $pdo,
+                $metro_manila_cities,
+                $selected_area,
+                $start_year,
+                $end_year
+            );
+
+            foreach ($seriesRows as &$seriesRow) {
+                $year = (int) ($seriesRow['year'] ?? 0);
+                if ($year > 0 && array_key_exists($year, $precipitationByYear)) {
+                    $seriesRow['precipitation'] = $precipitationByYear[$year];
+                }
+            }
+            unset($seriesRow);
         } catch (Exception $e) {
             http_response_code(500);
             echo json_encode([
