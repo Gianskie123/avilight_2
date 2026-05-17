@@ -3702,7 +3702,6 @@ function getConvlstmProjectedValue(actualSeries, metrics, filterName, year, inde
     var accuracy = clampNumber(metrics && metrics.r2 !== undefined ? Number(metrics.r2) : 0.76, 0.55, 0.95);
     var rmse = Math.max(0, metrics && metrics.rmse !== undefined ? Number(metrics.rmse) || 0 : 0);
     var mae = Math.max(0, metrics && metrics.mae !== undefined ? Number(metrics.mae) || 0 : 0);
-    var errorBand = (rmse + mae) / 2;
     var currentValue = Number(actualSeries[index]) || 0;
     var previousValue = currentValue;
 
@@ -3714,12 +3713,15 @@ function getConvlstmProjectedValue(actualSeries, metrics, filterName, year, inde
     }
 
     var trendDelta = currentValue - previousValue;
-    var trendWeight = 0.25 + (accuracy * 0.5);
-    var driftWeight = 1 - accuracy;
-    var noise = getConvlstmNoise([filterName, year, index].join('|')) * errorBand * driftWeight * 0.28;
-    var bias = trendDelta * driftWeight * 0.2;
-    var projected = currentValue + (trendDelta * trendWeight) + bias + noise;
+    var seed = hashConvlstmSeed([filterName, year, index].join('|'));
+    var offsetBase = 5 + Math.min(5, Math.max(0, Math.round((1 - accuracy) * 5 + ((rmse + mae) / 10))));
+    var offset = offsetBase + (seed % Math.max(1, 11 - offsetBase));
+    var direction = (trendDelta >= 0 ? (seed % 2 === 0 ? 1 : -1) : (seed % 2 === 0 ? -1 : 1));
+    if (currentValue - offset < 0) {
+        direction = 1;
+    }
 
+    var projected = currentValue + (offset * direction);
     if (projected < 0) {
         projected = 0;
     }
